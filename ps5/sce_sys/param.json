@@ -1,0 +1,31 @@
+{
+    "ageLevel": {
+        "default": 0
+    },
+    "applicationCategoryType": 65536,
+    "applicationDrmType": "free",
+    "attribute": 1644167168,
+    "attribute2": 0,
+    "attribute3": 524352,
+    "conceptId": "85301",
+    "contentBadgeType": 2,
+    "contentId": "UP9000-PPSA85301_00-PLEXSTATION000001",
+    "contentVersion": "00.001.000",
+    "downloadDataSize": 256,
+    "localizedParameters": {
+        "defaultLanguage": "en-US",
+        "en-US": {
+            "titleName": "PlexStation"
+        }
+    },
+    "masterVersion": "01.00",
+    "pubtools": {
+        "creationDate": "2026-10-06 00:00:00",
+        "loudnessSnd0": "-28.00",
+        "toolVersion": "2.00"
+    },
+    "requiredSystemSoftwareVersion": "0x0000000000000000",
+    "sdkVersion": "0x0000000000000000",
+    "titleId": "PPSA85301",
+    "versionFileUri": ""
+}

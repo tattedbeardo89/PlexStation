@@ -1,0 +1,7 @@
+/build/
+/dist/
+/builds/
+*.log
+
+# Optional prebuilt upstream helper; not part of PlexStation source.
+/patches/Helper.elf
