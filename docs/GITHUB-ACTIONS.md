@@ -29,7 +29,8 @@ The workflow invokes the actual production sequence:
 
 1. Fetch the three exact Git commits into the build cache.
 2. Bootstrap the pinned PS5 payload SDK and host zlib.
-3. Build the native executable converter and verify the runtime module.
+3. Reproduce the clean-room runtime twice, requiring byte identity and its
+   recorded checksum; build the native executable converter.
 4. Build RADV release, including native mesa_clc/vtn_bindgen2; apply the
    existing VLC HDR/refresh patches and rebuild RADV.
 5. Acquire VLC 3.0.24; cross-compile **all** existing dependency recipes,

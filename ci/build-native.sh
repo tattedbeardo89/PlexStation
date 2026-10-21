@@ -7,6 +7,7 @@ cd "$repo"
 # Mounted checkout/cache ownership belongs to the host runner, not container root.
 git config --global --add safe.directory "$repo"
 mkdir -p artifacts/logs /build
+rm -f artifacts/PlexStation-PPSA85301.zip artifacts/SHA256SUMS
 report=$repo/artifacts/validation.json
 stage=initialization
 finish() {
@@ -70,6 +71,8 @@ checkout PS5_Mesa "$PS5_MESA_REVISION"
 # fork and its Meson wrap hashes. The clean-room runtime is checked unchanged.
 stage=sdk
 bash "$PS5_VULKAN/tools/setup-native-dependencies.sh"
+stage=runtime
+bash "$PS5_VULKAN/tools/rebuild-libc.sh"
 (cd "$PS5_VULKAN/runtime" && sha256sum --check --strict libc.prx.sha256)
 stage=converter
 zlib=$(find "$PS5_VULKAN/.deps/native/zlib/root" -name libz.a -type f -print -quit)
