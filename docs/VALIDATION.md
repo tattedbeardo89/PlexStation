@@ -261,4 +261,21 @@ transitions, PS5 pad backend fixtures, separate-process preference persistence,
 secure connection/identity/fallback fixtures, real artwork decode/cache tests,
 package permission regressions and strict native-source host syntax. Actions
 now reruns the host suites and retains their logs before the real cross-build.
-Native build result will be recorded after Actions completes.
+[Actions run 39659172075](https://github.com/tattedbeardo89/PlexStation/actions/runs/39659172075)
+succeeded at `1d140463824cda2eb9055e3242a471e21a0ce861` (5m 42s total).
+All host regression suites, actual native PS5 compilation, complete installation
+validation, ZIP permission checks and both artifact uploads passed. The host
+GnuTLS fixture's old hardcoded checkout path was corrected; no production trust
+checks were relaxed. Local real artwork decoder/cache fixtures also passed
+AddressSanitizer and UndefinedBehaviorSanitizer with leak detection enabled.
+
+Installation artifact:
+`PlexStation-PPSA85301-1d140463824cda2eb9055e3242a471e21a0ce861`
+(37.3 MB); outer artifact SHA256:
+`eae75c50cc4856271ad91b3a75fed5ed020d7fd647e9f004e7690e6dc187208c`.
+Logs/report artifact:
+`PlexStation-build-diagnostics-1d140463824cda2eb9055e3242a471e21a0ce861`
+(183 KB). These results were verified from public Actions step and artifact
+metadata; an authenticated artifact download was not available. Account-scoped
+startup/retry/switching, overlay persistence and resolution of the owner's
+movie-library abort remain pending physical PS5 acceptance.

@@ -49,9 +49,26 @@ cleanup is safer. Real decoder/cache tests use a fake GPU; they cannot validate
 PS5 Vulkan behavior. New `browse:`, `art:` and `gfx: ImGui Vulkan result=` lines
 report phases, sizes/counts and numeric errors without titles, tokens or URLs.
 
+## Successful native test build
+
+[Actions run 39659172075](https://github.com/tattedbeardo89/PlexStation/actions/runs/39659172075)
+built commit `1d140463824cda2eb9055e3242a471e21a0ce861`. All host regression
+suites, real native title compilation, complete-package checks and ZIP mode
+validation passed. Download **PlexStation-PPSA85301-1d140463824cda2eb9055e3242a471e21a0ce861**
+(37.3 MB) under Artifacts on that run page while signed into GitHub. The separate
+`PlexStation-build-diagnostics-1d140463824cda2eb9055e3242a471e21a0ce861` artifact
+contains host/native build logs and the validation report. Physical behavior
+remains pending testing.
+
+To rebuild manually: repository → Actions → Build PlexStation PS5 → Run workflow
+→ branch `feature/plexstation-initial-implementation` → Run workflow. Wait for
+success, open the run, and download its installation artifact (named with the
+built commit SHA). Failed builds publish diagnostics only.
+
 ## Updating from Windows and physical acceptance
 
-Extract the outer Actions artifact ZIP, then the inner installation ZIP.
+Close PlexStation before updating. Extract the outer Actions artifact ZIP,
+then the inner installation ZIP.
 Deploy the entire PPSA85301 folder as described in
 [Windows FTP permissions](CONTROLLER-TESTING.md). **Preserve both `prefs.txt`
 and private `plexstation-account.json` on the console**: do not delete the

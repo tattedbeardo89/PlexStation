@@ -4,10 +4,10 @@ Native PS5 homebrew Plex client under development, derived from
 [ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
-[PMS-connectivity test build 39652707008](https://github.com/tattedbeardo89/PlexStation/actions/runs/39652707008).
+[server reconnection and movie-library safety build 39659172075](https://github.com/tattedbeardo89/PlexStation/actions/runs/39659172075).
 The owner confirms launch, Cross input, completed Plex linking and server
-discovery on build cdfe733. Connecting to that PMS failed; the targeted
-connectivity changes require device acceptance.
+discovery on build cdfe733. Connecting to that PMS failed in the older build; the connectivity, automatic
+reconnection and movie-library safety changes require device acceptance.
 Media playback remains unverified.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
