@@ -84,4 +84,4 @@ cd "$build"
     CFLAGS="$cflags -I$prefix/include" CXXFLAGS="$cflags -I$prefix/include" \
     LDFLAGS="-L$prefix/lib" \
     "${args[@]}"
-make -j"$(nproc)"
+make -j"${BUILD_JOBS:-$(nproc)}"

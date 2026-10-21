@@ -1,0 +1,116 @@
+name: Build PlexStation PS5
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-ps5.yml'
+      - 'ci/**'
+      - 'ps5/**'
+      - 'patches/**'
+      - 'src/**'
+      - 'shaders/**'
+      - 'assets/**'
+      - 'third_party/**'
+      - 'tools/check-package.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plexstation-ps5-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Native PS5 title (Arch container)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      BUILD_JOBS: '2'
+    steps:
+      - name: Check out PlexStation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Prepare build directories and cache key
+        id: key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/logs .ci-cache
+          echo "fingerprint=$(python3 ci/fingerprint.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore exact native dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .ci-cache
+          key: ps5-native-arch-v1-${{ steps.key.outputs.fingerprint }}
+          # No fallback keys: incompatible sysroots/archives must not be reused.
+
+      - name: Build pinned Arch Linux toolchain image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress plain -f ci/Dockerfile.ps5 -t plexstation-ps5:locked . \
+            2>&1 | tee artifacts/logs/container-build.log
+
+      - name: Compile and validate the real native PS5 title
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --init \
+            -e BUILD_JOBS \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -v "$GITHUB_WORKSPACE/.ci-cache:/build" \
+            plexstation-ps5:locked \
+            2>&1 | tee artifacts/logs/container-run.log
+
+      - name: Ensure diagnostics remain accessible
+        if: always()
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" artifacts .ci-cache
+          if [[ ! -f artifacts/validation.json ]]; then
+            python3 - <<'PY'
+          import json, pathlib
+          pathlib.Path('artifacts/validation.json').write_text(json.dumps({
+              'success': False,
+              'native_build': 'not completed',
+              'reason': 'Container preparation or launch failed; inspect logs',
+              'hardware_verification': 'NOT TESTED'
+          }, indent=2)+'\n')
+          PY
+          fi
+          cat artifacts/validation.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete installation folder ZIP
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: PlexStation-PPSA85301-${{ github.sha }}
+          path: |
+            artifacts/PlexStation-PPSA85301.zip
+            artifacts/SHA256SUMS
+            artifacts/validation.json
+            artifacts/packages.txt
+            artifacts/source-SHA256SUMS.txt
+            artifacts/radv-provenance.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload logs and validation report (including failed builds)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: PlexStation-build-diagnostics-${{ github.sha }}
+          path: |
+            artifacts/logs/
+            artifacts/validation.json
+            artifacts/packages.txt
+            artifacts/source-SHA256SUMS.txt
+            artifacts/radv-provenance.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -144,7 +144,7 @@ fi
 # -u vlc_static_modules: libvlccore names the plugin table only weakly
 # (src/modules/bank.c), and a weak reference pulls nothing out of an archive:
 # without it the title links with no plugins at all.
-"$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --error-limit=0 \
+if ! "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --error-limit=0 \
     --eh-frame-hdr --no-dynamic-linker -z nodynamic-undefined-weak "${radv_link_flags[@]}" \
     --version-script "$native/app-symbols.map" --exclude-libs=ALL \
     -e _start -o "$work/llvm-pie.elf" \
@@ -153,8 +153,12 @@ fi
     --start-group "$work/libprobe.a" "${vlc_inputs[@]}" --end-group \
     "$work/stubs/libSceAgc.so" "$work/stubs/libSceAgcDriver.so" "$work/stubs/libSceVideodec2.so" \
     "${radv_link_inputs[@]}" \
-    --as-needed "$sdk"/target/lib/*.so 2>&1 | tee "$work/link.log" | grep -E "error|warning" | head -60
-[[ ${PIPESTATUS[0]} -eq 0 && -f $work/llvm-pie.elf ]] || { echo "link failed: $work/link.log" >&2; exit 1; }
+    --as-needed "$sdk"/target/lib/*.so > "$work/link.log" 2>&1; then
+    tail -60 "$work/link.log" >&2
+    echo "link failed: $work/link.log" >&2
+    exit 1
+fi
+[[ -s $work/llvm-pie.elf ]] || { echo "linker produced no ELF" >&2; exit 1; }
 # Guard: the plugins really are in (vmem's description is a string only it has).
 grep -aq "Video memory output" "$work/llvm-pie.elf" ||
     { echo "no VLC plugins in the title: vlc_static_modules wasn't linked" >&2; exit 1; }
@@ -179,7 +183,7 @@ done
 (cd "$vk/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
 cp "$vk/runtime/libc.prx" "$app/sce_module/libc.prx"
 # Every GOT slot and its symbol, for the startup import report.
-llvm-readelf-18 -r --wide "$work/llvm-pie.elf" |
+"${LLVM_READELF:-llvm-readelf}" -r --wide "$work/llvm-pie.elf" |
     awk '$3 == "R_X86_64_GLOB_DAT" || $3 == "R_X86_64_JUMP_SLOT" { print $1, $5 }' \
     > "$app/imports.txt"
 # Fonts: the interface's, and VLC's subtitle fonts (patches/0001's paths).

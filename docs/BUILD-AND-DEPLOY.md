@@ -1,5 +1,8 @@
 # Build, run and deploy
 
+For a Windows-only machine, see [GitHub Actions and the WSL2 container fallback](GITHUB-ACTIONS.md).
+The committed workflow builds the actual native title; it does not substitute host tests.
+
 ## Verified host core workflow
 
 Requires Linux, g++ with C++17, pkg-config, libcurl headers/library, Python 3 and OpenSSL (local test certificate generation).

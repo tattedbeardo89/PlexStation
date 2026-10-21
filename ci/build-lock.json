@@ -1,0 +1,10 @@
+{
+  "arch_image": "archlinux@sha256:a25b54cf4b9c0de8752f5417c81810fb41bbfa5cdd6a504a9b6816a3b86b1e59",
+  "arch_snapshot": "2026/10/20",
+  "PS5_Vulkan": "f410e67a0241b3e8edcdbcd2a9b285dfc4a412ed",
+  "PS5_PayloadSDK": "b83202be73e930050e00de0f1b4d9ec46c0391bf",
+  "PS5_Mesa": "1ba9874f478657ccf6da72ce55f0260164cc0bd0",
+  "vlc_version": "3.0.24",
+  "vlc_url": "https://download.videolan.org/pub/videolan/vlc/3.0.24/vlc-3.0.24.tar.xz",
+  "title_id": "PPSA85301"
+}

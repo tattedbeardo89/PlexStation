@@ -5,3 +5,9 @@
 
 # Optional prebuilt upstream helper; not part of PlexStation source.
 /patches/Helper.elf
+
+# GitHub Actions / WSL container build state and diagnostics.
+/.ci-cache/
+/artifacts/
+
+__pycache__/

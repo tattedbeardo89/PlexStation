@@ -16,7 +16,7 @@ dl=$work/dl
 src=$work/src
 prefix=$work/prefix-$target
 tools=$work/tools
-jobs=$(nproc)
+jobs=${BUILD_JOBS:-$(nproc)}
 mkdir -p "$dl" "$src" "$prefix" "$tools" "$work/logs"
 export PATH=$tools/bin:$PATH
 export PKG_CONFIG_LIBDIR=$prefix/lib/pkgconfig
@@ -360,7 +360,7 @@ build_bluray() {
         -Dbdj_jar=disabled -Denable_docs=false
     ninja -C "$src/build-bluray-$target" install
     # Its gc_free (graphics controller) clashes with Mesa's (RADV) in the title.
-    llvm-objcopy-18 --redefine-sym gc_free=bluray_gc_free "$prefix/lib/libbluray.a"
+    "${LLVM_OBJCOPY:-llvm-objcopy}" --redefine-sym gc_free=bluray_gc_free "$prefix/lib/libbluray.a"
 }
 
 # ZIP / RAR / 7z (extras): libarchive for VLC's archive module, reading only.

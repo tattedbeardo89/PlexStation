@@ -10,6 +10,13 @@ This exact runtime combination is awaiting hardware verification. PlexStation
 uses independent development identity **PPSA85301**; VLC's **PPSA85300** is
 preserved. No replacement jailbreak or browser runtime is introduced.
 
+## Build the native title in GitHub Actions
+
+Windows users can trigger **Build PlexStation PS5** in the repository Actions tab.
+See [exact workflow, artifact and Windows/WSL2 instructions](docs/GITHUB-ACTIONS.md).
+The workflow targets the actual native title; successful native output has not yet
+been verified. Prior host-test results remain separate.
+
 ## Start development
 
 ```sh

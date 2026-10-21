@@ -46,3 +46,29 @@ firmware 13.40. Record exact build hashes and media properties for each test.
 
 Transcoding, watchlist and the other incomplete features in README are not
 ready for acceptance testing. Do not check them off based on mock responses.
+
+## GitHub Actions build work (2026-10-21)
+
+The existing host results above are preserved; no additional Plex features were
+developed. Native build automation is in .github/workflows/build-ps5.yml. The
+pinned upstream host support was inspected: Arch/CachyOS is supported, while
+its Ubuntu CI demonstrates the converter rather than the full RADV toolchain.
+An Arch container on a GitHub Ubuntu runner is therefore used for the full build.
+
+A real local Docker build was attempted. The official pinned amd64 image
+resolved and package signature keyring initialization worked. The build then
+failed at Arch snapshot database acquisition: the Codex proxy returned HTTP
+403 for archive.archlinux.org. The VLC source host was also denied. No TLS or
+package signature verification was bypassed. No native executable was produced
+by that local attempt. Its diagnostics are in ignored artifacts/logs.
+
+GitHub API attempts to inspect/dispatch workflows returned Forbidden. This is
+a limitation of this chat environment, not proof that Actions is disabled in
+the repository or that hosted Linux runners cannot build the application.
+Git push triggers the new workflow automatically; its eventual run result must
+be inspected before claiming a native build. YAML/shell checks and rejection
+of missing/placeholder package output do not establish build success.
+
+The Windows PowerShell/WSL2 container entry point is supplied but has not been
+run on Windows. PS5 launch, firmware 13.40, kstuff Lite, ShadowMountPlus 1.7
+Beta 5 Fix 1 and playback/A-V sync remain awaiting physical device verification.
