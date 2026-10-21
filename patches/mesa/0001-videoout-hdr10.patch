@@ -1,10 +1,9 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -146,8 +146,46 @@
+@@ -158,7 +158,45 @@
  {
     return -1;
  }
-+
 +static int
 +sceVideoOutSubmitChangeBufferAttribute2(int32_t handle, int32_t set, const void *attribute, const void *option)
 +{
@@ -39,15 +38,15 @@
 +                                            const void *option);
 +int sceVideoOutGetOutputStatus(int32_t handle, struct ps5_video_out_output_status *status);
  #endif
- 
++
 +/* VLC-PS5: HDR10 scanout, 10:10:10:2 in the framebuffers' B,G,R order with
 + * BT.2020 primaries and the PQ curve. */
 +#define VLCPS5_VIDEO_OUT_PIXEL_FORMAT_HDR10 UINT64_C(0x8100070400000000)
 +
- /* The display and its modes: one each per process, as VideoOut is. */
- struct wsi_videoout_mode {
-    uint32_t refresh_millihertz;
-@@ -399,6 +437,89 @@
+ 
+ /* The sizes VideoOut takes buffers of, the largest first, and a buffer's
+  * bytes: a four-byte image in 64 KiB tiles of 128x128 pixels, rounded up to
+@@ -511,6 +549,98 @@
     return VK_SUCCESS;
  }
  
@@ -65,15 +64,21 @@
 +vlcps5_wsi_videoout_set_hdr(int enable)
 +{
 +   struct wsi_videoout_output *out = &videoout_output;
++   call_once(&videoout_once, videoout_output_init_once);
 +   mtx_lock(&out->lock);
 +   int result = -1;
-+   if (out->buffers) {
++   /* The pinned Mesa fork keeps one registered set per display size. */
++   for (uint32_t i = 0; i < out->set_count; i++) {
++      const struct wsi_videoout_size *size = out->sets[i].size;
 +      uint8_t attribute[PS5_VIDEO_OUT_ATTRIBUTE_BYTES] = {0};
 +      sceVideoOutSetBufferAttribute2(attribute,
 +                                     enable ? VLCPS5_VIDEO_OUT_PIXEL_FORMAT_HDR10
 +                                            : PS5_VIDEO_OUT_PIXEL_FORMAT_B8G8R8A8_SDR,
-+                                     PS5_VIDEO_OUT_TILING_64KB_R_X, VIDEOOUT_WIDTH, VIDEOOUT_HEIGHT, 0, 0, 0);
-+      result = sceVideoOutSubmitChangeBufferAttribute2(out->handle, 0, attribute, NULL);
++                                     PS5_VIDEO_OUT_TILING_64KB_R_X,
++                                     size->extent.width, size->extent.height, 0, 0, 0);
++      result = sceVideoOutSubmitChangeBufferAttribute2(out->handle, (int32_t)i, attribute, NULL);
++      if (result != 0)
++         break;
 +   }
 +   mtx_unlock(&out->lock);
 +   fprintf(stderr, "wsi/videoout: framebuffers %s: 0x%08x\n", enable ? "HDR10" : "SDR", (unsigned)result);
@@ -85,6 +90,7 @@
 +vlcps5_wsi_videoout_dynamic_range(void)
 +{
 +   struct wsi_videoout_output *out = &videoout_output;
++   call_once(&videoout_once, videoout_output_init_once);
 +   mtx_lock(&out->lock);
 +   int result = -1;
 +   if (videoout_open_locked()) {
@@ -114,6 +120,7 @@
 +   int result = -1;
 +   if (period_us)
 +      *period_us = 0;
++   call_once(&videoout_once, videoout_output_init_once);
 +   mtx_lock(&out->lock);
 +   if (videoout_open_locked()) {
 +      const int supported = mode == (int)PS5_VIDEO_OUT_MODE_RESTORE
@@ -133,6 +140,7 @@
 +   mtx_unlock(&out->lock);
 +   return result;
 +}
++
 +
  static int64_t
  videoout_shown_argument_locked(void)
