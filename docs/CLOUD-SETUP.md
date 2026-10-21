@@ -1,7 +1,9 @@
 # Cloud setup state
 
-The working repository is /workspace/PlexStation. New source remains local and
-uncommitted; nothing has been pushed to GitHub. Dependency/source caches are
+The working repository is /workspace/PlexStation. The initial implementation
+and native build automation are committed and pushed to
+https://github.com/tattedbeardo89/PlexStation on
+`feature/plexstation-initial-implementation`. Dependency/source caches are
 under /workspace/deps, plus /workspace/upstream-vlc as the preserved import
 checkout. No unrelated existing project was changed.
 

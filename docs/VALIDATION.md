@@ -72,3 +72,19 @@ of missing/placeholder package output do not establish build success.
 The Windows PowerShell/WSL2 container entry point is supplied but has not been
 run on Windows. PS5 launch, firmware 13.40, kstuff Lite, ShadowMountPlus 1.7
 Beta 5 Fix 1 and playback/A-V sync remain awaiting physical device verification.
+
+### Hosted toolchain evidence
+
+Git push access works, and public Actions run pages can be inspected despite
+the API restriction. [Hosted run 39632232556](https://github.com/tattedbeardo89/PlexStation/actions/runs/39632232556)
+built the pinned Arch image, SDK, native converter and release RADV driver.
+The runtime was reproduced twice with the upstream byte-identity checks and
+recorded checksum. This establishes that those toolchain stages can execute
+on GitHub's Ubuntu runner inside the supported Arch container.
+
+That run failed while applying the existing VLC HDR patch to pinned Mesa.
+The patch was adapted to Mesa's per-size buffer sets, preserving HDR and
+refresh support. Its dry-run against the pinned source passed.
+[Run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498)
+is testing the corrected full build. This record does not yet claim a native
+application executable or installation artifact.
