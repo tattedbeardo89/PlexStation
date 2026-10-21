@@ -1,5 +1,11 @@
 # Plex TV account linking
 
+The owner has since confirmed that build cdfe733 completes account linking
+and discovers their PMS on the target PS5. This supersedes the earlier pending
+account-linking status below. QR-specific scanning and restart persistence were
+not separately confirmed. PMS selection then failed; see
+[the targeted connection fix and current build](SERVER-CONNECTIVITY.md).
+
 ## Download the authentication test build
 
 [Actions run 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013)

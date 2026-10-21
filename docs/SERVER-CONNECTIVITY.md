@@ -1,5 +1,23 @@
 # Plex Media Server connection diagnostics
 
+## Download this connection test build
+
+[Actions run 39652707008](https://github.com/tattedbeardo89/PlexStation/actions/runs/39652707008)
+succeeded in **2m 53s**, built commit
+`2458e45962407f70428ead9a71360008bab8c919`.
+Download **PlexStation-PPSA85301-2458e45962407f70428ead9a71360008bab8c919**
+(**37.3 MB**) from Artifacts while signed into GitHub. Extract the outer artifact
+ZIP and then its inner PlexStation-PPSA85301.zip, keeping the whole PPSA85301
+folder. The matching PlexStation-build-diagnostics artifact contains logs and
+validation.json. Installation/package and Unix ZIP mode gates all passed.
+
+The outer installation artifact SHA-256 listed by GitHub is
+`115442178758951e0dd3c2383fd815f24db0e550a8f0c7a19f7a750d58f890aa`.
+The included SHA256SUMS verifies the inner installation ZIP. Public job/step
+states and artifact metadata were checked; an authenticated artifact download
+was not independently performed in this cloud environment. Physical PMS
+connectivity and browsing remain pending owner confirmation.
+
 ## Device evidence and audited path
 
 The owner confirms that authentication build cdfe733 launches on PS5 13.40,
@@ -60,8 +78,8 @@ and the title add the pinned XML parser; no SDK/dependency version is changed.
 
 ## Controller interface
 
-**Triangle** opens **Server Connection Diagnostics** from non-playback screens
-outside the on-screen keyboard. A failed server selection opens it automatically.
+**Triangle** opens **Server Connection Diagnostics** from signed-in, post-linking non-playback
+screens outside the on-screen keyboard. A failed server selection opens it automatically.
 **Up/Down** chooses an attempted endpoint. **Circle** closes the panel without
 triggering the parent screen's Back action.
 

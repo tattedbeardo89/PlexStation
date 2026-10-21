@@ -4,7 +4,7 @@ Native PS5 homebrew Plex client under development, derived from
 [ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
-[TV-authentication test build 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013).
+[PMS-connectivity test build 39652707008](https://github.com/tattedbeardo89/PlexStation/actions/runs/39652707008).
 The owner confirms launch, Cross input, completed Plex linking and server
 discovery on build cdfe733. Connecting to that PMS failed; the targeted
 connectivity changes require device acceptance.

@@ -208,3 +208,30 @@ retry/deadline handling, framed-response completion, XML/JSON identity parsing,
 identity plus authenticated-sections validation with candidate fallback, a
 controller diagnostics panel, and tested-before-saving manual overrides.
 See SERVER-CONNECTIVITY.md for the audit, test methods and physical checklist.
+
+### Connection validation and native artifact — passed
+
+All existing suites and new connection suites passed: 64 core checks (the
+extra counted header assertion comes from authenticated sections probing),
+both 10-scenario transport suites including self-signed certificate rejection,
+PIN/auth lifecycle tests, UI auth/controller/manual connection assertions,
+PS5 pad backend fixtures, preference persistence across processes, package
+permission tests, strict native-source host syntax and independent QR decode.
+New production GnuTLS fixtures verified a test-CA plex.direct-shaped hostname
+and SNI, wrong-host and missing-CA rejection, handshake failure, deadline
+handling, fragmented keep-alive bodies, IPv6 loopback, and typed DNS/refusal
+failures. Deterministic DNS/TCP-timeout/readiness and short/EINTR/EAGAIN I/O
+are injected only by the host test linker. They are not production overrides
+or proof of access to real Plex-issued certificates, private PMS or relay.
+
+[Actions run 39652707008](https://github.com/tattedbeardo89/PlexStation/actions/runs/39652707008)
+succeeded in 2m 53s at `2458e45962407f70428ead9a71360008bab8c919`.
+Actual native compilation, complete-package checks, ZIP permissions and
+installation/diagnostic uploads passed. The complete artifact is
+`PlexStation-PPSA85301-2458e45962407f70428ead9a71360008bab8c919` (37.3 MB).
+Outer installation artifact digest:
+`115442178758951e0dd3c2383fd815f24db0e550a8f0c7a19f7a750d58f890aa`.
+This result was confirmed from public steps/artifact metadata, without an
+authenticated artifact download. Real PS5 authenticated PMS connection,
+movie/TV library loading, browsing, remote/relay access and actual Plex
+certificate acceptance remain pending owner verification.

@@ -1,5 +1,13 @@
 # Native PS5 builds on GitHub Actions and Windows 11
 
+## Latest server-connectivity test build
+
+Use [run 39652707008](https://github.com/tattedbeardo89/PlexStation/actions/runs/39652707008),
+artifact `PlexStation-PPSA85301-2458e45962407f70428ead9a71360008bab8c919` (37.3 MB).
+Native compilation, complete-package/ZIP permission checks and both uploads
+passed. See [connection diagnostics and device instructions](SERVER-CONNECTIVITY.md).
+Physical PMS library loading, browsing and remote/relay access remain pending.
+
 ## Latest authentication test build
 
 Use [run 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013),
