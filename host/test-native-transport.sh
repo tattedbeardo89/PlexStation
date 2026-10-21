@@ -9,4 +9,4 @@ g++ -std=c++17 -O2 -Wall -Wextra -Werror -I"$repo/src" -I"$repo/third_party" \
     "$repo/third_party/tinyxml2/tinyxml2.cpp" "$repo/src/plex/client.cc" "$repo/src/plex/transport_ps5.cc" \
     "$repo/tests/transport_probe.cc" $(pkg-config --cflags --libs gnutls) \
     -o "$repo/build/transport-gnutls-probe"
-python3 "$repo/tests/test_transport.py" transport-gnutls-probe
+PLEX_TEST_ASSET_DIR="$repo/assets" python3 "$repo/tests/test_transport.py" transport-gnutls-probe

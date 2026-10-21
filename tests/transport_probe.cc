@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "plex/client.h"
 #include <iostream>
+#include <cstdlib>
 using namespace plex;
 #ifdef TEST_PS5_TRANSPORT
 namespace plex {
 Transport ps5_transport();
 }
-extern "C" const char *plat_data_dir() { return "/workspace/PlexStation/assets"; }
+extern "C" const char *plat_data_dir() {
+    const char *directory=std::getenv("PLEX_TEST_ASSET_DIR");
+    return directory ? directory : "assets";
+}
 #define TRANSPORT ps5_transport
 #else
 #define TRANSPORT curl_transport
