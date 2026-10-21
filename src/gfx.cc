@@ -792,11 +792,20 @@ uint32_t gfx_memory_type(uint32_t type_bits, VkMemoryPropertyFlags flags)
 bool gfx_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags,
                 VkBuffer *buffer, VkDeviceMemory *memory, void **mapped)
 {
+    *buffer=VK_NULL_HANDLE; *memory=VK_NULL_HANDLE;
+    if(mapped) *mapped=nullptr;
+    auto failure=[&](const char *stage,VkResult result) {
+        fprintf(stderr,"gfx: buffer %s failed result=%d bytes=%llu\n",stage,result,(unsigned long long)size);
+        if(*buffer) vkDestroyBuffer(gfx.device,*buffer,nullptr);
+        if(*memory) vkFreeMemory(gfx.device,*memory,nullptr);
+        *buffer=VK_NULL_HANDLE; *memory=VK_NULL_HANDLE; return false;
+    };
+    VkResult result;
     VkBufferCreateInfo bi = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bi.size = size;
     bi.usage = usage;
     bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    CHECK(vkCreateBuffer(gfx.device, &bi, nullptr, buffer));
+    if((result=vkCreateBuffer(gfx.device,&bi,nullptr,buffer))!=VK_SUCCESS) return failure("create",result);
     VkMemoryRequirements req;
     vkGetBufferMemoryRequirements(gfx.device, *buffer, &req);
     VkMemoryAllocateInfo ai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
@@ -804,18 +813,26 @@ bool gfx_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFla
     ai.memoryTypeIndex = gfx_memory_type(req.memoryTypeBits, flags);
     if (ai.memoryTypeIndex == UINT32_MAX) {
         fprintf(stderr, "gfx: no memory type for a buffer\n");
-        return false;
+        return failure("memory type",VK_ERROR_FEATURE_NOT_PRESENT);
     }
-    CHECK(vkAllocateMemory(gfx.device, &ai, nullptr, memory));
-    CHECK(vkBindBufferMemory(gfx.device, *buffer, *memory, 0));
-    if (mapped)
-        CHECK(vkMapMemory(gfx.device, *memory, 0, VK_WHOLE_SIZE, 0, mapped));
+    if((result=vkAllocateMemory(gfx.device,&ai,nullptr,memory))!=VK_SUCCESS) return failure("allocation",result);
+    if((result=vkBindBufferMemory(gfx.device,*buffer,*memory,0))!=VK_SUCCESS) return failure("bind",result);
+    if(mapped && (result=vkMapMemory(gfx.device,*memory,0,VK_WHOLE_SIZE,0,mapped))!=VK_SUCCESS) return failure("map",result);
     return true;
 }
 
 bool gfx_image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage, VkImage *image,
                VkDeviceMemory *memory, VkImageView *view, uint32_t mips)
 {
+    *image=VK_NULL_HANDLE; *memory=VK_NULL_HANDLE; *view=VK_NULL_HANDLE;
+    auto failure=[&](const char *stage,VkResult result) {
+        fprintf(stderr,"gfx: image %s failed result=%d width=%u height=%u\n",stage,result,w,h);
+        if(*view) vkDestroyImageView(gfx.device,*view,nullptr);
+        if(*image) vkDestroyImage(gfx.device,*image,nullptr);
+        if(*memory) vkFreeMemory(gfx.device,*memory,nullptr);
+        *view=VK_NULL_HANDLE; *image=VK_NULL_HANDLE; *memory=VK_NULL_HANDLE; return false;
+    };
+    VkResult result;
     VkImageCreateInfo ii = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
     ii.imageType = VK_IMAGE_TYPE_2D;
     ii.format = format;
@@ -827,7 +844,7 @@ bool gfx_image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
     ii.usage = usage;
     ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    CHECK(vkCreateImage(gfx.device, &ii, nullptr, image));
+    if((result=vkCreateImage(gfx.device,&ii,nullptr,image))!=VK_SUCCESS) return failure("create",result);
     VkMemoryRequirements req;
     vkGetImageMemoryRequirements(gfx.device, *image, &req);
     VkMemoryAllocateInfo ai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
@@ -835,6 +852,7 @@ bool gfx_image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
     ai.memoryTypeIndex = gfx_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (ai.memoryTypeIndex == UINT32_MAX)
         ai.memoryTypeIndex = gfx_memory_type(req.memoryTypeBits, 0);
+    if(ai.memoryTypeIndex==UINT32_MAX) return failure("memory type",VK_ERROR_FEATURE_NOT_PRESENT);
     VkResult r = vkAllocateMemory(gfx.device, &ai, nullptr, memory);
     /* The video memory full (a 4K HDR film's decoder holds 840 MiB of it):
      * any other kind the image can live in. Failing, a 4K video stayed
@@ -855,13 +873,13 @@ bool gfx_image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
         *image = VK_NULL_HANDLE;
         return false;
     }
-    CHECK(vkBindImageMemory(gfx.device, *image, *memory, 0));
+    if((result=vkBindImageMemory(gfx.device,*image,*memory,0))!=VK_SUCCESS) return failure("bind",result);
     VkImageViewCreateInfo vi = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     vi.image = *image;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
     vi.format = format;
     vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, mips, 0, 1 };
-    CHECK(vkCreateImageView(gfx.device, &vi, nullptr, view));
+    if((result=vkCreateImageView(gfx.device,&vi,nullptr,view))!=VK_SUCCESS) return failure("view",result);
     return true;
 }
 

@@ -65,6 +65,7 @@ jobs:
               exit 1
             fi
           done
+          python3 tests/test_symbolization.py | tee artifacts/logs/symbolization-tests.log
 
       - name: Restore exact native dependency cache
         id: dependencies
@@ -92,6 +93,10 @@ jobs:
             -v "$GITHUB_WORKSPACE/.ci-cache:/build" \
             plexstation-ps5:locked \
             2>&1 | tee artifacts/logs/container-run.log
+
+      - name: Preserve matching native debug files
+        shell: bash
+        run: python3 ci/collect-debug.py
 
       - name: Verify installation ZIP executable permissions
         shell: bash
@@ -131,7 +136,7 @@ jobs:
           python3 ci/report-result.py
 
       - name: Preserve native build checkpoints
-        if: always() && steps.dependencies.outputs.cache-hit != 'true'
+        if: always() && steps.dependencies.outcome == 'success' && steps.dependencies.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .ci-cache
@@ -150,8 +155,17 @@ jobs:
             artifacts/source-SHA256SUMS.txt
             artifacts/radv-provenance.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
           compression-level: 0
+
+      - name: Upload matching native debug artifact
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: PlexStation-native-debug-${{ github.sha }}
+          path: artifacts/debug/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload logs and validation report (including failed builds)
         if: always()

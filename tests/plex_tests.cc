@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "plex/client.h"
+#include "plex/diagnostics.h"
 #include <cstdlib>
 #include <iostream>
 #include <sys/stat.h>
@@ -31,6 +32,15 @@ int main() {
     CHECK(items(Json{{"MediaContainer",{{"Metadata",Json::array({nullptr,7,"invalid",Json::array()})}}}}).empty());
     CHECK(number(Json{{"n",UINT64_MAX}},"n",-1)==-1);
     CHECK(number(Json{{"n","9999999999999999999999999"}},"n",-1)==-1);
+    Json huge=Json{{"MediaContainer",{{"Metadata",Json::array()}}}};
+    for(int n=0;n<5000;++n) huge["MediaContainer"]["Metadata"].push_back({{"ratingKey",std::to_string(n)},{"type","movie"}});
+    CHECK(items(huge).size()==200);
+    diagnostic_flags=TenItems; CHECK(items(huge).size()==10); diagnostic_flags=0;
+    CHECK(items(Json{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey",""}},{{"ratingKey","../bad"}},{{"ratingKey","good"}}})}}}}).size()==1);
+    CHECK(items(huge).front().title=="Untitled");
+    std::string deep(60,'[');deep+="0";deep+=std::string(60,']');
+    Client nested([&](const Request &){return Reply{200,deep,""};},"fixture");
+    CHECK(!nested.call("GET","https://fixture.invalid","/library/test"));
     auto playback = direct_play("https://server", "a&b", media[0]);
     CHECK(playback.mode == Mode::DirectPlay);
     CHECK(playback.url == "https://server/library/parts/7/file.mkv?X-Plex-Token=a%26b");

@@ -5,6 +5,7 @@
 #include "player.h"
 #include "plex/artwork.h"
 #include "plex/client.h"
+#include "plex/diagnostics.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -17,6 +18,9 @@
 #include <future>
 #include <memory>
 #include <unistd.h>
+#ifndef PLEX_BUILD_COMMIT
+#define PLEX_BUILD_COMMIT "host-or-unversioned"
+#endif
 #ifdef VLCPS5_HOST
 #define PLEX_TRANSPORT plex::curl_transport
 #else
@@ -48,6 +52,8 @@ std::string account_error, account_id;
 bool force_picker=false, reconnect_screen=false, discard_connection=false, change_after_connection=false;
 bool controller_overlay=false;
 int settings_page=0;
+uint64_t screen_generation=0, pending_generation=0;
+bool grid_checkpoint=false;
 std::string account_key(const std::string &name) { return name + "." + encode(account_id); }
 std::string account_pref(const std::string &name, const char *fallback="") {
     return account_id.empty() ? fallback : pref_str(account_key(name).c_str(),fallback);
@@ -81,7 +87,8 @@ enum Job {
     Watch
 };
 Job job = None;
-std::string next_base, request_path;
+std::string next_base, request_path, request_title;
+int request_start=0; bool request_push=false;
 Server selected_server, connection_target;
 std::vector<ConnectionAttempt> connection_attempts, next_attempts;
 bool connection_diagnostics=false, manual_confirm_http=false, manual_tested=false;
@@ -107,20 +114,17 @@ const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watchin
 void submit(Job kind, std::function<Result()> work) {
     if (job != None)
         return;
-    job = kind;
+    job = kind; pending_generation=screen_generation;
     pending = std::async(std::launch::async, std::move(work));
 }
 void load(const std::string &path, const std::string &title, bool push = true, int start = 0) {
     if (job != None)
         return;
-    if (push)
-        history.push_back({page_path, page_title, listing, focus, page_start, page_total});
+    checkpoint(2,"request preparation");
+    grid_checkpoint=false;
     fprintf(stderr,"browse: begin start=%d history=%zu\n",start,history.size());
     request_path = path;
-    page_title = title;
-    page_path = path;
-    focus = 0;
-    page_start = start;
+    request_title=title; request_start=start; request_push=push;
     auto b = base, t = server_token;
     submit(Browse, [b, t, path, start] { return client->browse(b, t, path, start); });
 }
@@ -191,6 +195,7 @@ void finish_job() {
     Result result = pending.get();
     Job done = job;
     job = None;
+    if((done==Browse || done==Sections || done==Details) && pending_generation!=screen_generation) return;
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
     if (cancel_bootstrap && (done == ValidateAccount || done == Resources)) {
@@ -300,9 +305,15 @@ void finish_job() {
     } else if (done == Select) {
         connected(result.data);
     } else if (done == Sections || done == Browse) {
+        if(done==Browse) {
+            if(request_push) history.push_back({page_path,page_title,listing,focus,page_start,page_total});
+            page_path=request_path; page_title=request_title; page_start=request_start;
+        }
         fprintf(stderr,"browse: response parse begin\n");
         listing = items(result.data);
         fprintf(stderr,"browse: parsed items=%zu\n",listing.size());
+        checkpoint(10,"ui state replaced",listing.size());
+        grid_checkpoint=false;
         focus = 0;
         in_detail = false;
         auto c = result.data.find("MediaContainer");
@@ -337,9 +348,10 @@ void open_item() {
     if (job != None || listing.empty() || focus<0 || focus>=static_cast<int>(listing.size()))
         return;
     Item item = listing[focus];
-    if (page_path == "/library/sections")
+    if (page_path == "/library/sections") {
+        diagnostic_lines=0; checkpoint(1,"library selection");
         load("/library/sections/" + encode(item.id) + "/all", item.title);
-    else if (item.type == "show" || item.type == "season")
+    } else if (item.type == "show" || item.type == "season")
         load("/library/metadata/" + encode(item.id) + "/children", item.title);
     else if (item.type == "movie" || item.type == "episode") {
         auto b = base, t = server_token, path = "/library/metadata/" + encode(item.id);
@@ -405,7 +417,7 @@ struct InputDiagnostic {
             editor ? "keyboard" : account.empty() ? "sign-in" : sidebar ? "sidebar" :
             settings ? "settings" : in_detail ? "detail" : !available.empty() ? "servers" : "library";
         int selected = video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
-        bool valid = selected >= 0 && (sidebar ? nav < 7 : settings ? focus < (settings_page ? 1 : 8) :
+        bool valid = selected >= 0 && (sidebar ? nav < 7 : settings ? focus < (settings_page==2 ? 10 : settings_page ? 1 : 8) :
             in_detail ? focus < 3 : editor ? edit_focus < static_cast<int>(alphabet.size()) :
             account.empty() || video || (available.empty() ? focus < static_cast<int>(listing.size()) :
             focus < static_cast<int>(available.size())));
@@ -537,7 +549,9 @@ bool ui_init() {
     artwork = std::make_unique<Artwork>(PLEX_TRANSPORT());
     global_delay = std::clamp(pref_int("plex_audio_delay", 0), -500, 500);
     allow_http = pref_int("plex_allow_http", 0) != 0;
-    controller_overlay = pref_int("plex_controller_overlay",0)!=0;
+    // A new schema starts hidden even if an older diagnostic build opted in.
+    controller_overlay = pref_int("plex_controller_overlay_v2",0)!=0;
+    diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & 63u;
     account_id.clear();
     auto &io = ImGui::GetIO();
     auto font = std::string(plat_data_dir()) + "/fonts/Inter-Regular.ttf";
@@ -759,7 +773,7 @@ void ui_frame(const PadState &pad, float dt) {
         return;
     }
     bool grid = !listing.empty() && page_path != "/library/sections" && !settings && !in_detail &&
-                available.empty();
+                available.empty() && !plex::diagnostic(TextOnly);
     if (hit & PAD_LEFT) {
         if (!sidebar && grid && focus % 5 > 0)
             --focus;
@@ -773,19 +787,21 @@ void ui_frame(const PadState &pad, float dt) {
             sidebar = false;
     }
     if (hit & PAD_OPTIONS) {
-        settings = !settings; settings_page=0;
+        ++screen_generation; settings = !settings; settings_page=0;
         sidebar = false;
         focus = 0;
     }
     if (hit & (PAD_L1 | PAD_R1)) {
+        if(job==Browse || job==Sections || job==Details) ++screen_generation;
         nav = (nav + ((hit & PAD_R1) ? 1 : 6)) % 7;
         sidebar = true;
         hit |= PAD_CROSS; // Same section activation as the sidebar.
     }
     if (hit & PAD_CIRCLE) {
+        ++screen_generation;
         if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
         else if (in_detail) { in_detail = false; sidebar = false; }
-        else if (!history.empty() && job == None) {
+        else if (!history.empty() && (job==None || job==Browse || job==Sections || job==Details)) {
             auto p = history.back(); history.pop_back();
             page_title = p.title; page_path = p.path; listing = std::move(p.items);
             focus = std::clamp(p.focus,0,std::max(0,static_cast<int>(listing.size())-1)); page_start = p.start; page_total = p.total; sidebar = false;
@@ -818,12 +834,27 @@ void ui_frame(const PadState &pad, float dt) {
                 message = "Watchlist integration is not implemented yet";
         }
     } else if (settings) {
-        if(settings_page) {
-            row(0,0,210,settings_page==1 ? "Change Server" : std::string("Controller diagnostic overlay: ")+(controller_overlay ? "On" : "Off"));
-            if((hit & PAD_CROSS) && job==None) {
-                if(settings_page==1) {force_picker=true; refresh();}
-                else {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay",controller_overlay ? 1 : 0);}
+        if(settings_page==2) {
+            const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information"};
+            if(hit & PAD_UP) focus=std::max(0,focus-1);
+            if(hit & PAD_DOWN) focus=std::min(9,focus+1);
+            int first=std::max(0,focus-6);
+            for(int i=first;i<10 && i<first+7;++i) {
+                bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : false;
+                row(i,focus,190+(i-first)*90,std::string(labels[i])+(i<=6 ? (enabled ? ": On" : ": Off") : ""));
             }
+            if((hit & PAD_CROSS) && job==None) {
+                if(focus==0) {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay_v2",controller_overlay?1:0);}
+                else if(focus<=6) {diagnostic_flags.fetch_xor(1u<<(focus-1));pref_set("plex_developer_flags_v1",static_cast<int>(diagnostic_flags.load()));artwork->clear();diagnostic_lines=0;}
+                else if(focus==7) {connection_diagnostics=true;diagnostic_focus=0;}
+                else if(focus==8) message="Library tracing uses numbered CP01-CP15; retrieve plexstation.log and vlc-crash.txt over FTP.";
+                else message=std::string("PlexStation ")+PLEX_BUILD_COMMIT+"; PPSA85301; native VLC; hardware verification pending";
+            }
+            return;
+        }
+        if(settings_page==1) {
+            row(0,0,210,"Change Server");
+            if((hit & PAD_CROSS) && job==None) {force_picker=true; refresh();}
             return;
         }
         if (hit & PAD_UP)
@@ -865,7 +896,7 @@ void ui_frame(const PadState &pad, float dt) {
         row(4, focus, 550, "Sign out");
         row(5, focus, 635, "Manual server address");
         row(6,focus,720,"Server");
-        row(7,focus,805,"Diagnostics");
+        row(7,focus,805,"Developer Options");
         draw_text(
             390, 900, 23,
             "kstuff Lite + ShadowMountPlus 1.7 Beta 5 Fix 1: awaiting PS5 13.40 verification");
@@ -913,6 +944,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (!sidebar && (hit & PAD_DOWN) && !listing.empty())
             focus = std::min(static_cast<int>(listing.size()) - 1, focus + (grid ? 5 : 1));
         if (grid) {
+            if(!grid_checkpoint) {checkpoint(15,"first movie grid",listing.size());grid_checkpoint=true;}
             int first = std::max(0, (focus / 5 - 1) * 5);
             for (int i = first; i < static_cast<int>(listing.size()) && i < first + 10; ++i) {
                 float x = 390 + (i - first) % 5 * 285, y = 210 + (i - first) / 5 * 350;

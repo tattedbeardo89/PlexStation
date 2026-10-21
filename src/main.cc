@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string>
 #include <stdlib.h>
+#include <exception>
 
 #include "backends/imgui_impl_vulkan.h"
 #include "gfx.h"
@@ -59,6 +60,7 @@ static bool imgui_init()
 int main(void)
 {
     plat_init();
+    std::set_terminate([] {fprintf(stderr,"fatal: C++ terminate; inspect the last library checkpoint (no exception contents logged)\n");fflush(stderr);abort();});
     /* "start:" lines: if a run stops, the last one says how far it got. */
     fprintf(stderr, "start: PlexStation starting\n");
     if (!gfx_init()) {

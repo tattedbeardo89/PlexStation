@@ -279,3 +279,33 @@ Logs/report artifact:
 metadata; an authenticated artifact download was not available. Account-scoped
 startup/retry/switching, overlay persistence and resolution of the owner's
 movie-library abort remain pending physical PS5 acceptance.
+
+## Checkpoint A — native stability investigation
+
+New owner evidence confirms authentication, PMS connection and retrieval of
+library directories; entering a Movies library aborts before posters/playback.
+The photographed SIGABRT and ShadowMountPlus target SIGSYS(12), PID242 at
+15:03:20, are separate evidence tracks. Build/timing correlation is pending.
+Neither the unconditional legacy `eboot+` subtraction nor the supplied high
+RIP/backtrace can reliably identify an application symbol. See
+CRASH-DIAGNOSTICS.md for the audit, uncertainties, evidence needed and matching
+ELF symbolization procedure. No unsupported syscall or physical root cause
+has been confirmed.
+
+Implemented numbered bounded/flushable CP01–CP15 checkpoints, text-only and
+independent artwork download/decode/upload switches, ten-item requests,
+detailed tracing, hidden-by-default upgraded overlay and build information.
+Added stale-screen response invalidation and atomic accepted page replacement,
+bounded metadata extraction and nesting, invalid identifier filtering, GPU
+resource failure cleanup and initialized descriptor-allocation failure returns.
+Playback engine and pinned dependencies remain unchanged.
+
+Host core (72 checks), auth, controller/pad, real artwork, both ten-scenario
+transport suites, connection policy/fallback, settings and permission tests
+passed. Core/artwork/UI ran with AddressSanitizer/UndefinedBehaviorSanitizer
+and leak detection. Modified graphics source also passed host syntax checking.
+Symbolization helper rejects out-of-module addresses and wrong ELF checksums.
+Native workflow now retains matching unstripped application/debug information,
+converted ELF, linker map, symbols, build IDs and executable hashes separately
+from the signed production installation. Dependency cache fingerprint is
+unchanged. Native Checkpoint A result will be recorded when it completes.

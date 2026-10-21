@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "artwork.h"
+#include "diagnostics.h"
 #include "library.h"
 #include "stb_image.h"
 #include <algorithm>
@@ -15,10 +16,9 @@ void Artwork::update() {
     if (image.generation != generation)
         return;
     ImTextureID texture = 0;
-    if (!image.rgba.empty()) {
-        fprintf(stderr,"art: upload begin width=%d height=%d cached=%zu\n",image.width,image.height,entries.size());
+    if (!diagnostic(NoUpload) && !diagnostic(TextOnly) && !image.rgba.empty()) {
+        checkpoint(14,"gpu texture create",image.rgba.size());
         texture = library_upload_rgba(image.rgba.data(), image.width, image.height);
-        fprintf(stderr,"art: upload completed ok=%d\n",texture!=0);
     }
     if (entries.size() >= 12) {
         auto old = std::min_element(entries.begin(), entries.end(),
@@ -30,6 +30,7 @@ void Artwork::update() {
 }
 ImTextureID Artwork::get(const std::string &base, const std::string &token,
                          const std::string &thumb) {
+    if(diagnostic(TextOnly) || diagnostic(NoDownloads)) return 0;
     if (thumb.empty() || thumb.front() != '/' || thumb.rfind("//", 0) == 0 ||
         !valid_base(base, true))
         return 0;
@@ -43,7 +44,9 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
         return 0;
     auto network = transport;
     auto epoch = generation;
-    pending = std::async(std::launch::async, [network, base, token, thumb, key, epoch] {
+    bool decode=!diagnostic(NoDecode);
+    checkpoint(11,"artwork schedule");
+    pending = std::async(std::launch::async, [network, base, token, thumb, key, epoch, decode] {
         Decoded out;
         out.key = key;
         out.generation = epoch;
@@ -53,15 +56,17 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
                   {{"X-Plex-Token", token}},
                   ""};
         auto reply = network(q);
+        checkpoint(12,"artwork downloaded",reply.body.size());
+        if(!decode) return out;
         if (reply.status != 200 || !reply.error.empty() || reply.body.empty() ||
             reply.body.size() > 4 * 1024 * 1024)
             return out;
-        fprintf(stderr,"art: response bytes=%zu decode begin\n",reply.body.size());
         const auto *bytes = reinterpret_cast<const unsigned char *>(reply.body.data());
         int w, h, c;
         if (!stbi_info_from_memory(bytes, reply.body.size(), &w, &h, &c) || w <= 0 || h <= 0 ||
             w > 640 || h > 960)
             return out;
+        checkpoint(13,"image decode");
         unsigned char *decoded = stbi_load_from_memory(bytes, reply.body.size(), &w, &h, &c, 4);
         if (decoded && w>0 && h>0 && w<=640 && h<=960) {
             out.width = w;
@@ -69,7 +74,6 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
             out.rgba.assign(decoded, decoded + static_cast<size_t>(w) * h * 4);
         }
         stbi_image_free(decoded);
-        fprintf(stderr,"art: decode completed ok=%d width=%d height=%d\n",!out.rgba.empty(),out.width,out.height);
         return out;
     });
     return 0;

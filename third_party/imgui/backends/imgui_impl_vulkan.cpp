@@ -1448,7 +1448,7 @@ VkDescriptorSet ImGui_ImplVulkan_AddTexture(VkImageView image_view, VkImageLayou
     VkDescriptorPool pool = bd->DescriptorPool ? bd->DescriptorPool : v->DescriptorPool;
 
     // Create Descriptor Set:
-    VkDescriptorSet descriptor_set;
+    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
     {
         VkDescriptorSetAllocateInfo alloc_info = {};
         alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1457,6 +1457,7 @@ VkDescriptorSet ImGui_ImplVulkan_AddTexture(VkImageView image_view, VkImageLayou
         alloc_info.pSetLayouts = &bd->DescriptorSetLayoutTexture;
         VkResult err = vkAllocateDescriptorSets(v->Device, &alloc_info, &descriptor_set);
         check_vk_result(err);
+        if (err != VK_SUCCESS) return VK_NULL_HANDLE;
     }
 
     // Update the Descriptor Set:

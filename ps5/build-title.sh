@@ -44,7 +44,8 @@ TARGET=ps5 NM="$sdk/bin/prospero-nm" APP_MODULES="vlc_entry__ps5http vlc_entry__
 # 2. Our objects, in an archive so --exclude-libs=ALL keeps them out of the
 #    title's exports (the converter refuses application exports).
 bash "$here/compile-shaders.sh"
-cflags=(-O2 -march=znver2 -Wall -Wno-unused-result -Wno-unused-function
+build_commit=$(git -C "$repo" rev-parse HEAD)
+cflags=(-g -fno-omit-frame-pointer "-DPLEX_BUILD_COMMIT=\"$build_commit\"" -O2 -march=znver2 -Wall -Wno-unused-result -Wno-unused-function
     -DVK_NO_PROTOTYPES -DIMGUI_IMPL_VULKAN_USE_VOLK
     -I"$repo/third_party" -I"$repo/src" -I"$repo/third_party/imgui" -I"$repo/third_party/volk" -I"$repo/third_party/stb"
     -I"$vk/.deps/native/radv-release/include" -I"$vlc_src/include" -I"$prefix/include")
@@ -147,7 +148,7 @@ fi
 # (src/modules/bank.c), and a weak reference pulls nothing out of an archive:
 # without it the title links with no plugins at all.
 if ! "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --error-limit=0 \
-    --eh-frame-hdr --no-dynamic-linker -z nodynamic-undefined-weak "${radv_link_flags[@]}" \
+    --build-id=sha1 -Map="$work/plexstation.map" --eh-frame-hdr --no-dynamic-linker -z nodynamic-undefined-weak "${radv_link_flags[@]}" \
     --version-script "$native/app-symbols.map" --exclude-libs=ALL \
     -e _start -o "$work/llvm-pie.elf" \
     -u vlc_static_modules \
@@ -161,6 +162,8 @@ if ! "$sdk/bin/prospero-lld" "${radv_linker_script[@]}" --error-limit=0 \
     exit 1
 fi
 [[ -s $work/llvm-pie.elf ]] || { echo "linker produced no ELF" >&2; exit 1; }
+"${LLVM_READELF:-llvm-readelf}" -h -l -n "$work/llvm-pie.elf" > "$work/elf-layout.txt"
+"${LLVM_NM:-llvm-nm}" -n -C "$work/llvm-pie.elf" > "$work/symbols.txt"
 # Guard: the plugins really are in (vmem's description is a string only it has).
 grep -aq "Video memory output" "$work/llvm-pie.elf" ||
     { echo "no VLC plugins in the title: vlc_static_modules wasn't linked" >&2; exit 1; }

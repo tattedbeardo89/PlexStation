@@ -1,5 +1,6 @@
 // Production decoding/cache lifecycle with fake transport and GPU upload only.
 #include "plex/artwork.h"
+#include "plex/diagnostics.h"
 #include "library.h"
 #define STB_IMAGE_IMPLEMENTATION
 #pragma GCC diagnostic push
@@ -35,5 +36,9 @@ int main() {
     image.assign(18,'\0'); image[2]=2; image[12]=image[14]=1; image[16]=24; image.append(3,'\x7f');
     for(int i=0;i<14;++i) {art.get("https://fixture.invalid","fixture","/"+std::to_string(i));settle(art);}
     assert(uploaded==15 && freed==3); art.clear(); assert(freed==uploaded);
+    plex::diagnostic_flags=plex::NoDownloads; assert(!art.get("https://fixture.invalid","fixture","/no-download")); settle(art); assert(uploaded==15);
+    plex::diagnostic_flags=plex::NoDecode; art.get("https://fixture.invalid","fixture","/no-decode");settle(art);assert(uploaded==15);
+    plex::diagnostic_flags=plex::NoUpload; art.get("https://fixture.invalid","fixture","/no-upload");settle(art);assert(uploaded==15);
+    plex::diagnostic_flags=0; art.clear();
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

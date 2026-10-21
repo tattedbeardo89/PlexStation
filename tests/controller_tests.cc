@@ -106,7 +106,8 @@ int main() {
     std::promise<Result> response; pending=response.get_future(); job=Browse;
     settings=true; sidebar=false; focus=0; frame(); press(PAD_DOWN); assert(focus==1);
     press(PAD_CIRCLE); assert(!settings && sidebar);
-    response.set_value(Result{}); frame();
+    auto before_cancel=listing.size();
+    response.set_value(Result{}); frame(); assert(listing.size()==before_cancel);
     ControllerInput disconnected; PadState pad{}; pad.buttons=PAD_CROSS;
     assert(disconnected.update(pad,.016f)==0);
     pad.connected=true; assert(disconnected.update(pad,.016f)&PAD_CROSS);
@@ -118,7 +119,7 @@ int main() {
     device="fixture-device"; account.clear(); account_loading=false; settings=false;
     auto complete = [&](Job kind, Result result) {
         assert(job==None);
-        std::promise<Result> ready; pending=ready.get_future(); job=kind;
+        std::promise<Result> ready; pending=ready.get_future(); job=kind; pending_generation=screen_generation;
         ready.set_value(std::move(result)); finish_job();
     };
     auto pin_reply = Result{Json{{"id",55},{"code","A7BZ"},{"authToken",nullptr},{"expiresIn",300}},"",201};
@@ -213,7 +214,7 @@ int main() {
     // Real controller settings paths, default hidden overlay, persisted opt-in.
     assert(!controller_overlay); settings=true; sidebar=false; settings_page=0; focus=7;
     press(PAD_CROSS); assert(settings_page==2 && focus==0);
-    press(PAD_CROSS); assert(controller_overlay && pref_int("plex_controller_overlay",0)==1);
+    press(PAD_CROSS); assert(controller_overlay && pref_int("plex_controller_overlay_v2",0)==1);
     press(PAD_CIRCLE); assert(settings_page==0 && focus==7);
     focus=6; press(PAD_CROSS); assert(settings_page==1);
     press(PAD_CROSS); assert(job==Resources && force_picker);

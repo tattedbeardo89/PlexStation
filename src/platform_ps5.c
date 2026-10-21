@@ -22,6 +22,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef PLEX_BUILD_COMMIT
+#define PLEX_BUILD_COMMIT "unknown-build"
+#endif
 #define APP_DIR "/app0"
 #define LOG_PATH APP_DIR "/plexstation.log"
 /* Where the eboot is loaded, and a bound on its code for backtraces. */
@@ -91,29 +94,27 @@ static void crash_handler(int sig, siginfo_t *info, void *context)
     char crash_path[300];
     snprintf(crash_path, sizeof(crash_path), "%s/vlc-crash.txt", app_dir);
     crash_file_fd = open(crash_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    write_str("*** build " PLEX_BUILD_COMMIT " title PPSA85301; context offsets require device validation\n");
     const uint64_t *ctx = (const uint64_t *)context;
     uint64_t rip = ctx[0xe0 / 8], rsp = ctx[0xf8 / 8];
+    bool executable_rip = rip>=EBOOT_BASE && rip<EBOOT_END;
     snprintf(buf, sizeof(buf),
-             "\n*** VLC-PS5 crashed: signal %d, fault address %p, thread %p\n"
-             "*** rip %#lx (eboot+%#lx) rsp %#lx\n",
+             "\n*** PlexStation crashed: signal %d, fault address %p, thread %p\n"
+             "*** raw rip %#lx (fixed-base subtraction %#lx; not a validated module offset) rsp %#lx\n",
              sig, info->si_addr, (void *)pthread_self(), (unsigned long)rip,
              (unsigned long)(rip - EBOOT_BASE), (unsigned long)rsp);
     write_str(buf);
+    snprintf(buf,sizeof(buf),"*** signal code %d (no syscall identification inferred)\n",info ? info->si_code : 0);
+    write_str(buf);
     char toast[128];
-    snprintf(toast, sizeof(toast), "VLC-PS5 crashed: signal %d at eboot+%#lx", sig,
-             (unsigned long)(rip - EBOOT_BASE));
+    if(executable_rip)
+        snprintf(toast,sizeof(toast),"PlexStation crashed: signal %d, candidate eboot+%#lx",sig,(unsigned long)(rip-EBOOT_BASE));
+    else
+        snprintf(toast,sizeof(toast),"PlexStation crashed: signal %d outside assumed eboot range; see crash log",sig);
+    write_str(executable_rip ? "*** RIP is in assumed eboot range; confirm load base before symbolizing\n" : "*** RIP is OUTSIDE assumed eboot range; do not symbolize subtraction as eboot\n");
     plat_notify(toast);
-    if (rsp >= 0x100000 && (rsp & 7) == 0) {
-        const uint64_t *sp = (const uint64_t *)rsp;
-        for (int i = 0, found = 0; i < 256 && found < 24; i++) {
-            if (sp[i] >= EBOOT_BASE && sp[i] < EBOOT_END) {
-                snprintf(buf, sizeof(buf), "***   stack[%d] eboot+%#lx\n", i,
-                         (unsigned long)(sp[i] - EBOOT_BASE));
-                write_str(buf);
-                found++;
-            }
-        }
-    }
+    // Raw stack scanning can recursively fault; preserve register/phase evidence
+    // instead of dereferencing an unvalidated stack address in a signal handler.
     /* The log lines still in the buffer (the last 200 ms), after the report:
      * the report is already safe if this blocks (a crash inside stdio). */
     write_str("*** log lines still buffered at the crash:\n");
@@ -503,6 +504,7 @@ void plat_init(void)
     } else {
         plat_notify("VLC-PS5: can't write /app0/plexstation.log");
     }
+    fprintf(stderr,"start: build " PLEX_BUILD_COMMIT " title=PPSA85301 runtime=locked-PS5_Vulkan; SIGSYS/SIGABRT tracked separately\n");
     fprintf(stderr, "VLC-PS5: load address marker plat_init=%p\n", (void *)plat_init);
     crash_fd = open(LOG_PATH, O_WRONLY | O_APPEND);
 
@@ -514,7 +516,7 @@ void plat_init(void)
     sa.sa_sigaction = crash_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    static const int sigs[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT };
+    static const int sigs[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGSYS };
     for (size_t i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
         sigaction(sigs[i], &sa, NULL);
     /* A dropped network connection must not end the app. */

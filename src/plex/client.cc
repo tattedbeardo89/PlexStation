@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "client.h"
+#include "diagnostics.h"
 #include "tinyxml2/tinyxml2.h"
 #include <algorithm>
 #include <charconv>
@@ -51,18 +52,26 @@ static const Json &container(const Json &j) {
 }
 std::vector<Item> items(const Json &j) {
     std::vector<Item> out;
+    checkpoint(7,"container");
     const auto &c = container(j);
     const char *key = c.contains("Metadata") ? "Metadata" : "Directory";
     auto it = c.find(key);
     if (it == c.end() || !it->is_array())
         return out;
+    const size_t limit=diagnostic(TenItems) ? 10 : 200;
+    checkpoint(9,"listing reserve",std::min(it->size(),limit));
+    out.reserve(std::min(it->size(),limit));
     for (const auto &v : *it) {
+        if(out.size()>=limit) break;
         if(!v.is_object()) continue;
         Item x;
         x.id = text(v, "ratingKey", text(v, "key"));
+        if(x.id.rfind("/library/metadata/",0)==0) x.id=x.id.substr(18);
+        if(x.id.empty() || x.id.size()>128 || x.id.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-")!=std::string::npos) continue;
         x.key = text(v, "key");
         x.type = text(v, "type");
-        x.title = text(v, "title");
+        x.title = text(v, "title", "Untitled");
+        if(x.title.empty()) x.title="Untitled";
         x.summary = text(v, "summary");
         x.thumb = text(v, "thumb");
         x.art = text(v, "art");
@@ -76,6 +85,7 @@ std::vector<Item> items(const Json &j) {
             x.media = v["Media"];
         out.push_back(std::move(x));
     }
+    checkpoint(8,"metadata extracted",out.size());
     return out;
 }
 std::vector<Server> servers(const Json &j) {
@@ -139,7 +149,10 @@ Result Client::call(const std::string &method, const std::string &base, const st
         q.headers["X-Plex-Token"] = token;
     if (!body.empty())
         q.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    bool library_request=path.rfind("/library/",0)==0;
+    if(library_request) checkpoint(3,"http start");
     Reply r = transport(q);
+    if(library_request) checkpoint(4,"http response",r.body.size());
     // Do not include response bodies, addresses, tokens or transport diagnostics in errors.
     if (r.failure != Failure::None)
         return {{}, failure_message(r.failure), r.status, r.failure, r.tcp_connected, r.tls_verified};
@@ -156,6 +169,7 @@ Result Client::call(const std::string &method, const std::string &base, const st
         return {{}, "Access denied: sign in again or check server sharing", r.status, Failure::HttpStatus};
     if (r.status < 200 || r.status >= 300)
         return {{}, "Server returned HTTP " + std::to_string(r.status), r.status, Failure::HttpStatus};
+    if(library_request) checkpoint(5,"http validated");
     auto body_start=r.body.find_first_not_of(" \t\r\n",r.body.compare(0,3,"\xEF\xBB\xBF")==0 ? 3:0);
     if (path == "/identity" && body_start != std::string::npos && r.body[body_start] == '<') {
         tinyxml2::XMLDocument document;
@@ -170,7 +184,12 @@ Result Client::call(const std::string &method, const std::string &base, const st
     }
     if (r.body.empty())
         return {Json::object(), "", r.status};
-    auto j = Json::parse(r.body, nullptr, false);
+    if(library_request) checkpoint(6,"json parse start");
+    bool too_deep=false;
+    auto j = Json::parse(r.body,[&](int depth,Json::parse_event_t,Json &) {
+        if(depth>48) {too_deep=true; return false;} return true;
+    }, false);
+    if(too_deep) return {{},"Server metadata nesting exceeds the safe limit",r.status};
     if (j.is_discarded())
         return {{}, path=="/identity" ? failure_message(Failure::IdentityMalformed) : "Server returned invalid JSON",
                 r.status, path=="/identity" ? Failure::IdentityMalformed : Failure::None};
@@ -265,6 +284,7 @@ Result Client::sections(const std::string &b, const std::string &t) {
 }
 Result Client::browse(const std::string &b, const std::string &t, const std::string &path,
                       int start, int size) {
+    if(diagnostic(TenItems)) size=std::min(size,10);
     if (start < 0 || size < 1 || size > 200)
         return {{}, "Invalid page range", 0};
     return call("GET", b,
