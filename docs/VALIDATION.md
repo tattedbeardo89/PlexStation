@@ -109,3 +109,14 @@ build details.
 The application source and existing tests were preserved. Subsequent CI changes
 only refine dependency checkpoint caching. Native build success does not close
 any live Plex, display/controller, firmware, decoder or A/V-sync acceptance item.
+
+### Cached native rebuild — passed
+
+[Run 39634054358](https://github.com/tattedbeardo89/PlexStation/actions/runs/39634054358)
+at `f4a9666fa071572e808c6d5ab1ed43d29362e05d` also passed every native
+compilation/validation and artifact upload step. The actual job took 2m 44s
+after its queue wait, exercising the exact-fingerprint dependency checkpoint
+restore and per-run save. GitHub lists the complete installation artifact
+(37.2 MB) and diagnostics. The outer installation artifact digest is
+`b5a4586d63658659d29883e24f1ecc04cc72eb6056370b9bcc488f89701e27d9`.
+No application or test source changed between the two successful runs.

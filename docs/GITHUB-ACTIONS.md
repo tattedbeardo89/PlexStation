@@ -66,6 +66,15 @@ successful job/step states and artifact listing. Downloading artifacts requires
 GitHub sign-in, so the artifact was not independently downloaded in the cloud
 environment. No hardware launch or playback test has been performed.
 
+A second successful [run 39634054358](https://github.com/tattedbeardo89/PlexStation/actions/runs/39634054358)
+at `f4a9666fa071572e808c6d5ab1ed43d29362e05d` exercised the refined cache.
+Its job took **2m 44s** (the run's longer total includes time queued).
+Its complete installation artifact is
+`PlexStation-PPSA85301-f4a9666fa071572e808c6d5ab1ed43d29362e05d` (37.2 MB),
+with outer artifact SHA-256
+`b5a4586d63658659d29883e24f1ecc04cc72eb6056370b9bcc488f89701e27d9`.
+This is the newer validated artifact; the application source is identical.
+
 ## Trigger and download — Windows browser
 
 1. Open <https://github.com/tattedbeardo89/PlexStation/actions>.
