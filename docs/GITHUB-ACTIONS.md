@@ -83,7 +83,9 @@ runs never upload the success-only installation artifact.
 
 The dependency cache is keyed by the full content hash of the image, lock,
 build orchestration, cross-build recipes, compatibility code and patches.
-There are no broad fallback keys. Caches also retain interrupted build checkpoints under the exact fingerprint.
+Restoration is restricted to the exact dependency fingerprint. A per-run
+checkpoint suffix lets later successful builds replace partial checkpoints
+without attempting to overwrite an immutable GitHub cache. Caches also retain interrupted build checkpoints under the exact fingerprint.
 An unfinished media prefix is rebuilt because its completion stamp is absent;
 the upstream SDK and RADV scripts verify their own pinned provenance before reuse. PlexStation's own title is rebuilt on every run,
 and a previous dist/PPSA85301 is deleted before compilation. Source caches
