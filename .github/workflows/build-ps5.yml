@@ -84,6 +84,7 @@ jobs:
           PY
           fi
           cat artifacts/validation.json >> "$GITHUB_STEP_SUMMARY"
+          python3 ci/report-result.py
 
       - name: Upload complete installation folder ZIP
         if: success()
