@@ -1,5 +1,23 @@
 # DualSense investigation and device test
 
+## Download this test build
+
+[Actions run 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464)
+passed native compilation, package checks, ZIP mode verification and both
+artifact uploads. Built commit: `26c5116044c2936364ce76cf94ab6054eb83e87f`.
+Download **PlexStation-PPSA85301-26c5116044c2936364ce76cf94ab6054eb83e87f**
+(37.2 MB) from Artifacts while signed into GitHub. Extract the outer artifact
+ZIP and its inner `PlexStation-PPSA85301.zip`, yielding the complete PPSA85301
+folder. The matching `PlexStation-build-diagnostics-26c5116044c2936364ce76cf94ab6054eb83e87f`
+artifact contains build logs and validation.json.
+
+GitHub's outer installation artifact SHA-256 is
+`6ee9231ff775ed90fed4c02e6aa25e21b421d882e7294e7ef0eaaede5a91de58`.
+Use the included SHA256SUMS for the inner installation ZIP. The job/artifact
+listing was checked publicly; downloading artifacts requires account sign-in
+and was not independently performed in this cloud environment.
+**Physical controller navigation and corrected permissions remain untested.**
+
 ## Evidence and code path
 
 The owner reports that build f4a9666, Actions run 39634054358, launches and

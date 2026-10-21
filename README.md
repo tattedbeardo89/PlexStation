@@ -4,9 +4,10 @@ Native PS5 homebrew Plex client under development, derived from
 [ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
-[successful GitHub Actions run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498).
-The owner confirmed launch and UI rendering on the target PS5; DualSense
-navigation failed in that build. Controller fixes now require device retesting.
+[controller-fix build 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464).
+The owner confirmed launch/UI rendering of the earlier run 39634054358,
+where DualSense navigation failed. The new controller build requires device
+retesting.
 Media playback remains unverified.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.

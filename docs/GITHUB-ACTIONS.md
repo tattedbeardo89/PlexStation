@@ -1,5 +1,13 @@
 # Native PS5 builds on GitHub Actions and Windows 11
 
+## Latest controller test build
+
+Use [run 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464),
+artifact `PlexStation-PPSA85301-26c5116044c2936364ce76cf94ab6054eb83e87f`.
+Native compilation, package validation, Unix ZIP permissions and uploads passed.
+See [DualSense testing and Windows FTP instructions](CONTROLLER-TESTING.md).
+Device navigation and the new permission deployment require hardware testing.
+
 ## Host choice and exact build
 
 PS5_Vulkan's pinned README explicitly supports **Arch/CachyOS**. Its existing

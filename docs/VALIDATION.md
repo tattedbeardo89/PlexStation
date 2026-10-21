@@ -136,3 +136,21 @@ fake platform/network/player boundaries, the PS5 polling backend with mocked
 service calls, and exact workflow ZIP permission preservation/rejection.
 Device navigation and corrected 755/644 deployment remain pending hardware
 verification. See [investigation and test instructions](CONTROLLER-TESTING.md).
+
+### Controller native build artifacts — passed
+
+- [Run 39644508127](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644508127),
+  commit 7019ec298fb2df8d744962315144b14da0c500a4: succeeded in 2m 37s.
+- Final [run 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464),
+  commit 26c5116044c2936364ce76cf94ab6054eb83e87f: succeeded; the reported
+  total duration, including any queue wait, was 3m 27s.
+
+Both runs passed actual native compilation, packaging, the new ZIP executable
+permission check and installation/diagnostics uploads. The final complete
+installation artifact is
+`PlexStation-PPSA85301-26c5116044c2936364ce76cf94ab6054eb83e87f` (37.2 MB).
+Outer artifact SHA-256:
+`6ee9231ff775ed90fed4c02e6aa25e21b421d882e7294e7ef0eaaede5a91de58`.
+Public job states and artifact listings were inspected; artifact downloads
+require GitHub sign-in and were not independently performed here.
+No claim of fixed device navigation or 755/644 launch acceptance is made.
