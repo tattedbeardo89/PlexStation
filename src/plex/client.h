@@ -42,7 +42,7 @@ struct Item {
 struct Pin {
     int64_t id = 0;
     std::string code, token;
-    int expires = 0;
+    int64_t expires = 0;
 };
 std::string encode(const std::string &);
 std::string text(const Json &, const char *, const std::string &fallback = "");
@@ -58,7 +58,8 @@ class Client {
     explicit Client(Transport transport, std::string client_id);
     Result call(const std::string &method, const std::string &base, const std::string &path,
                 const std::string &token = "", const std::string &body = "");
-    Result create_pin();
+    Result create_pin(bool strong = false);
+    Result validate_account(const std::string &account_token);
     Result poll_pin(int64_t id, const std::string &code);
     Result resources(const std::string &account_token);
     Result select(const Server &, bool allow_http, std::string &selected);
@@ -70,6 +71,7 @@ class Client {
     Result watched(const std::string &base, const std::string &token, const Item &, bool watched);
 };
 Pin pin(const Json &);
+std::string authorization_url(const std::string &client_id, const std::string &code);
 enum class Mode { DirectPlay, Unsupported };
 struct Playback {
     Mode mode = Mode::Unsupported;

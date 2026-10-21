@@ -154,3 +154,25 @@ Outer artifact SHA-256:
 Public job states and artifact listings were inspected; artifact downloads
 require GitHub sign-in and were not independently performed here.
 No claim of fixed device navigation or 755/644 launch acceptance is made.
+
+## TV authentication follow-up
+
+The owner confirms Cross starts authentication on the physical PS5. The old
+flow returned a long code and an unusable manually entered URL, and waited
+for authorization. This confirms a request reached Plex from the PS5, not
+completed account authorization or full controller/playback acceptance.
+
+The TV flow now requests strong=false and uses plex.tv/link instructions with
+the exact returned short code, plus a locally generated active-session QR
+using app.plex.tv/auth. Host auth fixtures, actual UI completion/persistence
+transitions, existing controller/PS5-reader tests, 63 core assertions and both
+10-scenario transport suites passed, along with strict native-source host
+syntax validation. The generated fixture QR was independently decoded with
+zxing-cpp and matched the complete expected URL.
+
+Direct official documentation/auth-host access returned HTTP 403; a live
+unauthenticated PIN probe failed at the environment network layer (URLError).
+Accessible official Plex Kodi source and community API references were
+inspected; details and limitations are in AUTHENTICATION.md. No live account
+authorization was performed. PS5 linking, QR scanning, restart restoration,
+server browsing and playback remain pending owner acceptance.

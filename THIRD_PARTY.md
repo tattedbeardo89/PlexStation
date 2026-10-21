@@ -34,3 +34,9 @@ patched VLC, FFmpeg, other linked libraries and platform runtime, and the
 scripts needed to rebuild them, with their notices. The application-only
 source archive helper is not by itself a complete source release for a
 statically linked title.
+
+QR generation uses Project Nayuki's MIT-licensed C QR Code generator, pinned
+to `3c6d0b3cefb4e049dc337e82237c9644399716a8` from
+https://github.com/nayuki/QR-Code-generator. Unmodified C source/header and
+license are in third_party/qrcodegen. The native installation includes
+licenses/qrcodegen-MIT.txt. No external QR-image service is used.

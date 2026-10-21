@@ -51,6 +51,7 @@ for f in imgui imgui_draw imgui_tables imgui_widgets; do
 done
 compile "$repo/third_party/imgui/backends/imgui_impl_vulkan.cpp" g++ -std=c++17
 compile "$repo/third_party/volk/volk.c" gcc -std=c11
+compile "$repo/third_party/qrcodegen/qrcodegen.c" gcc -std=c11
 compile "$repo/src/platform_host.c" gcc -std=gnu11
 compile "$repo/src/plex/client.cc" g++ -std=c++17
 compile "$repo/src/plex/artwork.cc" g++ -std=c++17

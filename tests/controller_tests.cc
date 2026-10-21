@@ -5,14 +5,16 @@
 #include <thread>
 Gfx gfx{};
 static double clock_now;
+static std::string test_data_dir = "/tmp";
 static bool paused;
 static int64_t position = 20000;
 extern "C" double plat_time() { return clock_now; }
-extern "C" const char *plat_data_dir() { return "/tmp"; }
+extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
 int pref_int(const char *, int v) { return v; }
 void pref_set(const char *, int) {}
 namespace plex {
-Transport ps5_transport() { return [](const Request &) { return Reply{}; }; }
+Transport transport_override;
+Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
 void Artwork::clear() {}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
@@ -107,6 +109,60 @@ int main() {
     pad.connected=true; assert(disconnected.update(pad,.016f)&PAD_CROSS);
     pad.connected=false; assert(disconnected.update(pad,.016f)==0);
     pad.connected=true; assert(disconnected.update(pad,.016f)&PAD_CROSS);
+    // Authentication UI lifecycle uses production completion/cancellation code.
+    char temp[]="/tmp/plexstation-ui-auth-XXXXXX"; assert(mkdtemp(temp));
+    test_data_dir=temp; credential_file=test_data_dir+"/plexstation-account.json";
+    device="fixture-device"; account.clear(); account_loading=false; settings=false;
+    auto complete = [&](Job kind, Result result) {
+        assert(job==None);
+        std::promise<Result> ready; pending=ready.get_future(); job=kind;
+        ready.set_value(std::move(result)); finish_job();
+    };
+    auto pin_reply = Result{Json{{"id",55},{"code","A7BZ"},{"authToken",nullptr},{"expiresIn",300}},"",201};
+    auth.begin(clock_now); auth_request_generation=auth.generation;
+    auth.cancel(); complete(PinStart,pin_reply);
+    assert(account.empty() && auth.state==AuthState::Cancelled);
+    auth.begin(clock_now); auth_request_generation=auth.generation;
+    complete(PinStart,pin_reply); assert(auth.state==AuthState::Waiting && have_qr);
+    auth.cancel(); pin_reply.data["authToken"]="cancelled-fixture-token";
+    complete(PinPoll,pin_reply); assert(account.empty());
+    auto fixture_transport = [](const Request &q) {
+        if(q.url=="https://plex.tv/api/v2/user")
+            return Reply{200,R"({"id":42,"username":"fixture"})",""};
+        assert(q.url.find("/api/v2/resources?")!=std::string::npos);
+        assert(q.headers.at("X-Plex-Token")=="fixture-account-token");
+        return Reply{200,R"([{"name":"Fixture server","provides":"server","clientIdentifier":"server","accessToken":"fixture-scoped-token","connections":[]}])",""};
+    };
+    transport_override=fixture_transport;
+    client=std::make_unique<Client>(fixture_transport,device);
+    pin_reply.data["authToken"]=nullptr;
+    auth.begin(clock_now); auth_request_generation=auth.generation;
+    complete(PinStart,pin_reply);
+    pin_reply.data["authToken"]="fixture-account-token";
+    complete(PinPoll,pin_reply);
+    assert(account=="fixture-account-token" && account_loading && job==Resources);
+    pending.wait(); finish_job();
+    assert(!account_loading && available.size()==1 && !sidebar && focus==0);
+    std::string restored_id,restored_token;
+    assert(load_credentials(credential_file,restored_id,restored_token));
+    assert(restored_id==device && restored_token==account);
+    // Simulate process startup using the real ui_init and saved private file.
+    account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
+    pending.wait(); finish_job(); assert(job==Resources);
+    pending.wait(); finish_job(); assert(!account_loading && available.size()==1);
+    // Temporary network failures preserve the saved account for a retry.
+    account_loading=true;
+    complete(ValidateAccount,Result{{},"Network or TLS request failed",0});
+    assert(!account.empty() && !account_error.empty());
+    assert(load_credentials(credential_file,restored_id,restored_token) && !restored_token.empty());
+    // Rejected saved tokens are removed; sign-out persists no account token.
+    complete(ValidateAccount,Result{{},"Access denied",401});
+    assert(account.empty() && !account_loading && auth.state==AuthState::Failed);
+    assert(load_credentials(credential_file,restored_id,restored_token) && restored_token.empty());
+    account="fixture-account-token"; signout();
+    assert(account.empty() && load_credentials(credential_file,restored_id,restored_token) && restored_token.empty());
+    unlink(credential_file.c_str()); rmdir(temp);
+    puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ImGui::DestroyContext();
     puts("Controller UI scenarios passed: focus, D-pad, Cross, Back, repeat, analog, tabs, playback return, async responsiveness");
 }

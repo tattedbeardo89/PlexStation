@@ -51,6 +51,7 @@ cflags=(-O2 -march=znver2 -Wall -Wno-unused-result -Wno-unused-function
 cxxflags=(-std=c++17 -fno-exceptions -fno-rtti -Wno-missing-field-initializers)
 cc "${cflags[@]}" -c "$static/static_modules.c" -o "$work/obj/static_modules.o"
 cc "${cflags[@]}" -std=c11 -c "$repo/third_party/volk/volk.c" -o "$work/obj/volk.o"
+cc "${cflags[@]}" -std=c11 -c "$repo/third_party/qrcodegen/qrcodegen.c" -o "$work/obj/qrcodegen.o"
 cc "${cflags[@]}" -std=gnu11 -c "$repo/src/platform_ps5.c" -o "$work/obj/platform_ps5.o"
 cc "${cflags[@]}" -std=gnu11 -c "$here/modules/ps5http.c" -o "$work/obj/ps5http.o"
 cc "${cflags[@]}" -std=gnu11 -c "$here/modules/ps5vdec.c" -o "$work/obj/ps5vdec.o"
@@ -197,6 +198,8 @@ mkdir -p "$app/assets"
 cp "$repo/assets/plexstation.svg" "$app/assets/"
 cp "$repo/LICENSE" "$app/"
 cp "$repo/THIRD_PARTY.md" "$app/"
+mkdir -p "$app/licenses"
+cp "$repo/third_party/qrcodegen/LICENSE" "$app/licenses/qrcodegen-MIT.txt"
 # The interface languages (src/lang.cc)
 mkdir -p "$app/assets/lang"
 cp "$repo/assets/lang/"*.txt "$app/assets/lang/"

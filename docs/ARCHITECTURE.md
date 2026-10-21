@@ -30,8 +30,8 @@ own /app0, with /data/plexstation as its optional media folder.
 - `plex/transport_curl.cc`: Linux transport, proxy-aware libcurl, verified TLS,
   no automatic redirects, 5 s connect / 15 s whole-request timeout, 8 MiB limit.
 - `plex/transport_ps5.cc`: GnuTLS/socket transport, verified app CA store and
-  hostname, bounded connect/record waits and response size. Compiled on Linux
-  for syntax only, not yet compiled with the PS5 cross-toolchain. DNS resolution
+  hostname, bounded connect/record waits and response size. Compiled and linked
+  in successful native PS5 builds; runtime authentication still needs acceptance. DNS resolution
   runs on a worker but OS resolver duration remains platform-dependent.
 - `plex/artwork.*`: single asynchronous poster request/decode, server-sized
   images, max 640x960 decode, max 12 cached GPU textures, LRU eviction. GPU
@@ -66,8 +66,9 @@ It is a requested mode, not proof of active decoding or working playback.
 Direct Stream, transcoding decisions, bandwidth adaptation, external subtitle
 retrieval and subtitle appearance UI are not implemented. Existing libVLC
 embedded track controls are exposed. No JWT flow is claimed: device PIN
-requests still need comparison with current official docs and a real account.
-The docs site was blocked by the environment proxy during this implementation.
+requests now use non-strong TV PINs, corrected browser-auth QR URLs and a tested
+asynchronous lifecycle. See AUTHENTICATION.md for accessible references and
+official-site access limits; live account acceptance is still pending.
 
 The UI is an initial functional interface, not the requested finished Plex TV
 experience. Full home carousels, genres/filters, watchlist, cast presentation,

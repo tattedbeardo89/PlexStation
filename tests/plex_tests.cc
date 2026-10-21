@@ -68,7 +68,7 @@ int main() {
     Client auth(
         [](const Request &q) {
             CHECK(q.method == "POST");
-            CHECK(q.body == "strong=true");
+            CHECK(q.body == "strong=false");
             CHECK(!q.headers.count("X-Plex-Token"));
             return Reply{201, R"({"id":12,"code":"LINK","expiresIn":60})", ""};
         },

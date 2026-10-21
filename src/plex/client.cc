@@ -127,9 +127,11 @@ Result Client::call(const std::string &method, const std::string &base, const st
               base + path,
               {{"Accept", "application/json"},
                {"X-Plex-Product", "PlexStation"},
-               {"X-Plex-Version", "0.1.0"},
+               {"X-Plex-Version", "0.5.0"},
                {"X-Plex-Client-Identifier", client_id},
-               {"X-Plex-Platform", "PlexStation"}},
+               {"X-Plex-Platform", "PlayStation 5"},
+               {"X-Plex-Device", "PS5"},
+               {"X-Plex-Device-Name", "PlexStation"}},
               body};
     if (!token.empty())
         q.headers["X-Plex-Token"] = token;
@@ -137,8 +139,15 @@ Result Client::call(const std::string &method, const std::string &base, const st
         q.headers["Content-Type"] = "application/x-www-form-urlencoded";
     Reply r = transport(q);
     // Do not include response bodies, addresses, tokens or transport diagnostics in errors.
-    if (!r.error.empty())
-        return {{}, "Network or TLS request failed", r.status};
+    if (!r.error.empty()) {
+        std::string safe = "Network or TLS request failed";
+        if (r.error == "DNS failed") safe = "Could not resolve Plex. Check DNS and Internet access.";
+        else if (r.error == "Connect failed") safe = "Could not connect to Plex. Check Internet access and retry.";
+        else if (r.error == "CA store unavailable") safe = "TLS certificate store unavailable. Reinstall the complete certs folder.";
+        else if (r.error == "TLS verification or handshake failed")
+            safe = "TLS verification failed. Check the PS5 clock and certificate store.";
+        return {{}, safe, r.status};
+    }
     if (r.status == 401 || r.status == 403)
         return {{}, "Access denied: sign in again or check server sharing", r.status};
     if (r.status < 200 || r.status >= 300)
@@ -150,12 +159,30 @@ Result Client::call(const std::string &method, const std::string &base, const st
         return {{}, "Server returned invalid JSON", r.status};
     return {std::move(j), "", r.status};
 }
-Result Client::create_pin() {
-    return call("POST", "https://plex.tv", "/api/v2/pins", "", "strong=true");
+Result Client::create_pin(bool strong) {
+    auto result = call("POST", "https://plex.tv", "/api/v2/pins", "", strong ? "strong=true" : "strong=false");
+    if (result && text(result.data, "clientIdentifier", client_id) != client_id)
+        result.error = "Plex returned a PIN for another client.";
+    return result;
+}
+Result Client::validate_account(const std::string &token) {
+    auto result = call("GET", "https://plex.tv", "/api/v2/user", token);
+    if (result && (!result.data.is_object() || number(result.data, "id") <= 0))
+        result.error = "Invalid Plex account response";
+    return result;
+}
+std::string authorization_url(const std::string &client_id, const std::string &code) {
+    if (client_id.empty() || code.empty()) return "";
+    return "https://app.plex.tv/auth#?clientID=" + encode(client_id) + "&code=" + encode(code) +
+           "&context%5Bdevice%5D%5Bproduct%5D=PlexStation";
 }
 Result Client::poll_pin(int64_t id, const std::string &code) {
-    return call("GET", "https://plex.tv",
+    if (id <= 0 || code.empty()) return {{}, "Invalid activation session", 0};
+    auto result = call("GET", "https://plex.tv",
                 "/api/v2/pins/" + std::to_string(id) + "?code=" + encode(code));
+    if (result && text(result.data, "clientIdentifier", client_id) != client_id)
+        result.error = "Plex returned a PIN for another client.";
+    return result;
 }
 Result Client::resources(const std::string &token) {
     return call("GET", "https://plex.tv", "/api/v2/resources?includeHttps=1&includeRelay=1", token);
@@ -207,7 +234,7 @@ Result Client::watched(const std::string &b, const std::string &t, const Item &i
 }
 Pin pin(const Json &j) {
     return {number(j, "id"), text(j, "code"), text(j, "authToken"),
-            static_cast<int>(number(j, "expiresIn"))};
+            number(j, "expiresIn", -1)};
 }
 Playback direct_play(const std::string &base, const std::string &token, const Item &i,
                      size_t version) {

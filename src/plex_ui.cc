@@ -5,6 +5,8 @@
 #include "player.h"
 #include "plex/artwork.h"
 #include "plex/client.h"
+#include "plex/auth.h"
+#include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
 #include "ui.h"
 #include "controller.h"
@@ -39,8 +41,12 @@ struct Page {
 std::vector<Page> history;
 std::string page_path, page_title = "Home";
 Item detail, playing;
-Pin active_pin;
-double expires_at = 0, poll_at = 0, overlay_until = 0;
+AuthSession auth;
+uint64_t auth_request_generation = 0;
+bool account_loading = false, cancel_bootstrap = false, credentials_saved = true, have_qr = false;
+std::string account_error;
+uint8_t qr[qrcodegen_BUFFER_LEN_MAX];
+double overlay_until = 0;
 int focus = 0, nav = 0, track_focus = 0, global_delay = 0, page_start = 0, page_total = 0,
     version = 0;
 int editor = 0, edit_focus = 0;
@@ -54,6 +60,7 @@ enum Job {
     None,
     PinStart,
     PinPoll,
+    ValidateAccount,
     Resources,
     Select,
     Manual,
@@ -68,7 +75,7 @@ std::string next_base, request_path;
 
 std::string progress_state;
 int64_t progress_time = 0;
-bool progress_pending = false, cancel_pin = false;
+bool progress_pending = false;
 Progress progress;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
                             "Watchlist", "Search", "Settings"};
@@ -109,13 +116,21 @@ void signout() {
     available.clear();
     listing.clear();
     history.clear();
-    active_pin = {};
+    auth.cancel();
+    auth.state = AuthState::Idle;
+    have_qr = false;
+    account_loading = false;
+    account_error.clear();
     in_detail = false;
     settings = false;
     focus = 0;
     sidebar = true;
-    if (!save_credentials(credential_file, device, ""))
+    if (!save_credentials(credential_file, device, "")) {
+        // Revocation must not leave an old token to be restored after restart.
+        if (unlink(credential_file.c_str()) != 0)
+            auth.fail("Sign-out could not remove saved credentials. Check storage permissions.");
         message = "Sign-out persistence failed; check storage permissions";
+    }
     else
         message = "Signed out. Cross to sign in";
 }
@@ -130,14 +145,51 @@ void finish_job() {
     Result result = pending.get();
     Job done = job;
     job = None;
-    if (cancel_pin && (done == PinStart || done == PinPoll)) {
-        cancel_pin = false;
+    if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
+        return; // A cancelled request must never authorize a later session.
+    if (cancel_bootstrap && (done == ValidateAccount || done == Resources)) {
+        cancel_bootstrap = false; signout(); return;
+    }
+    if (done == PinStart || done == PinPoll) {
+        if (done == PinStart) {
+            auth.created(result, plat_time());
+            have_qr = false;
+            if (auth.state == AuthState::Waiting) {
+                uint8_t scratch[qrcodegen_BUFFER_LEN_MAX];
+                auto url = authorization_url(device, auth.current.code);
+                have_qr = qrcodegen_encodeText(url.c_str(), scratch, qr, qrcodegen_Ecc_MEDIUM,
+                    qrcodegen_VERSION_MIN, 15, qrcodegen_Mask_AUTO, true);
+                if (!have_qr && !auth.short_code())
+                    auth.fail("Could not prepare browser sign-in. Press Cross for a new code.");
+            }
+        } else auth.polled(result, plat_time());
+        if (auth.state == AuthState::Authorized) {
+            account = std::move(auth.current.token);
+            auth.current.token.clear(); have_qr = false;
+            credentials_saved = save_credentials(credential_file, device, account);
+            account_loading = true; account_error.clear();
+            refresh();
+        }
+        return;
+    }
+    if (done == ValidateAccount) {
+        if (result) { account_error.clear(); refresh(); }
+        else if (result.status == 401 || result.status == 403) {
+            signout();
+            if (auth.state != AuthState::Failed)
+                auth.fail("Saved sign-in is no longer valid. Press Cross to sign in again.");
+        } else account_error = result.error;
+        return;
+    }
+    if (done == Resources && !result && (result.status == 401 || result.status == 403)) {
+        signout();
+        if (auth.state != AuthState::Failed)
+            auth.fail("Plex sign-in is no longer valid. Press Cross to sign in again.");
         return;
     }
     if (!result) {
         message = result.error;
-        if (done == PinPoll)
-            active_pin = {};
+        if (done == Resources && account_loading) account_error = result.error;
         if (done == Timeline) {
             progress_pending = false;
             message = "Progress could not be saved; playback remains available";
@@ -145,26 +197,15 @@ void finish_job() {
         return;
     }
     message.clear();
-    if (done == PinStart) {
-        active_pin = pin(result.data);
-        if (!active_pin.id || active_pin.code.empty() || active_pin.expires <= 0) {
-            active_pin = {};
-            message = "Invalid device-link response";
+    if (done == Resources) {
+        if (!result.data.is_array()) {
+            account_error = "Plex returned an invalid server list. Press Cross to retry.";
+            message = account_error;
             return;
         }
-        expires_at = plat_time() + active_pin.expires;
-        poll_at = plat_time() + 2;
-    } else if (done == PinPoll) {
-        auto p = pin(result.data);
-        if (!p.token.empty()) {
-            account = p.token;
-            active_pin = {};
-            if (!save_credentials(credential_file, device, account))
-                message = "Signed in, but credentials could not be saved";
-            refresh();
-        } else
-            poll_at = plat_time() + 2;
-    } else if (done == Resources) {
+        account_loading = false; account_error.clear();
+        if (!credentials_saved)
+            message = "Signed in for this session; saving failed. Check account storage permissions.";
         available = servers(result.data);
         listing.clear();
         focus = 0;
@@ -173,7 +214,8 @@ void finish_job() {
         settings = false;
         in_detail = false;
         if (available.empty())
-            message = "No accessible Plex Media Servers";
+            message = credentials_saved ? "No accessible Plex Media Servers" :
+                "No servers found. Sign-in could not be saved; check storage permissions.";
     } else if (done == Select || done == Manual) {
         base = next_base;
         available.clear();
@@ -311,6 +353,82 @@ struct InputDiagnostic {
         draw->AddText(ImGui::GetFont(), 19*scale, {390*scale, 10*scale}, IM_COL32(235,220,150,255), line);
     }
 };
+void centered(float y, float size, const std::string &text, float center = 960) {
+    float width = ImGui::GetFont()->CalcTextSizeA(size, 10000, 0, text.c_str()).x;
+    draw_text(center - width / 2, y, size, text);
+}
+void login_screen(uint32_t hit, double now) {
+    rect(0, 0, 1920, 1080, IM_COL32(12,13,17,255));
+    draw_text(80, 75, 38, "PlexStation", IM_COL32(235,171,54,255));
+    centered(170, 52, "Sign in to Plex");
+    rect(220, 265, 1480, 625, IM_COL32(24,26,32,255));
+    if (account_loading) {
+        centered(365, 38, job == ValidateAccount ? "Connecting to Plex" : "Authorization successful");
+        centered(460, 30, account_error.empty() ? "Loading Plex servers..." : "Connection failed");
+        if (!account_error.empty()) centered(545, 25, account_error);
+        if (!credentials_saved) centered(610, 25, "Sign-in could not be saved. Check storage permissions.");
+        if (!account_error.empty() && job == None) {
+            row(0,0,710,"Retry connection (Cross)");
+            if (hit & PAD_CROSS) {
+                account_error.clear(); auto token = account;
+                submit(ValidateAccount, [token] { return client->validate_account(token); });
+            }
+        }
+        if (hit & PAD_CIRCLE) {
+            if (job == None) signout();
+            else {
+                cancel_bootstrap = true; account_error = "Cancelling connection...";
+                if (!save_credentials(credential_file, device, "")) unlink(credential_file.c_str());
+            }
+        }
+    } else if (auth.state == AuthState::Waiting) {
+        if (auth.short_code()) {
+            centered(325, 30, "1. Open https://plex.tv/link on your phone or computer", 790);
+            centered(390, 29, "2. Enter this activation code", 790);
+            centered(465, 110, auth.current.code, 790);
+        } else {
+            centered(365, 34, "Scan the QR code to authorize PlexStation", 790);
+            centered(440, 27, "Browser sign-in: app.plex.tv/auth", 790);
+            centered(500, 25, "Use the QR code to open this exact sign-in session", 790);
+        }
+        if (have_qr) {
+            int n = qrcodegen_getSize(qr);
+            // Integral display pixels and four-module quiet zone at 1080p/4K.
+            float scale = gfx.height / 1080.f;
+            int cell = std::max(1, static_cast<int>(350 * scale / (n + 8)));
+            float x = 1350 * scale, y = 340 * scale;
+            auto *draw = ImGui::GetBackgroundDrawList();
+            draw->AddRectFilled({x,y},{x+(n+8)*cell,y+(n+8)*cell},IM_COL32(255,255,255,255));
+            for (int row = 0; row < n; ++row) for (int col = 0; col < n; ++col)
+                if (qrcodegen_getModule(qr,col,row))
+                    draw->AddRectFilled({x+(col+4)*cell,y+(row+4)*cell},
+                        {x+(col+5)*cell,y+(row+5)*cell},IM_COL32(0,0,0,255));
+        }
+        centered(660, 31, "Waiting for authorization");
+        centered(720, 26, "Expires in " + std::to_string(auth.remaining(now)) + " seconds");
+        centered(775, 24, "PlexStation will continue automatically after approval");
+        if (hit & PAD_CIRCLE) { auth.cancel(); have_qr=false; }
+    } else {
+        bool busy = job == PinStart || job == PinPoll;
+        const char *status = auth.state == AuthState::Generating ? "Connecting to Plex / Generating activation code" :
+            auth.state == AuthState::Expired ? "Authentication expired" :
+            auth.state == AuthState::Failed ? "Connection or authentication failed" :
+            auth.state == AuthState::Cancelled ? "Linking cancelled" : "Your media, on your television.";
+        centered(380, 36, status);
+        if (!auth.error.empty()) centered(475, 25, auth.error);
+        if (busy) centered(560, 26, "Waiting for the current request to finish...");
+        else {
+            row(0,0,640, auth.state == AuthState::Idle ? "Sign in with Plex (Cross)" : "Retry / Get a new activation code (Cross)");
+            if (hit & PAD_CROSS) {
+                auth.begin(now); have_qr=false;
+                auth_request_generation=auth.generation;
+                submit(PinStart, [] { return client->create_pin(); });
+            }
+        }
+        if (hit & PAD_CIRCLE) { auth.cancel(); have_qr=false; }
+    }
+    centered(950, 25, "Cross: Sign in / Retry     Circle: Cancel / Back");
+}
 } // namespace
 bool ui_init() {
     credential_file = std::string(plat_data_dir()) + "/plexstation-account.json";
@@ -345,8 +463,11 @@ bool ui_init() {
         io.Fonts->AddFontFromFileTTF(font.c_str(), 28);
     else
         io.Fonts->AddFontDefault();
-    if (!account.empty())
-        refresh();
+    if (!account.empty()) {
+        account_loading = true;
+        auto token = account;
+        submit(ValidateAccount, [token] { return client->validate_account(token); });
+    }
     return true;
 }
 void ui_frame(const PadState &pad, float dt) {
@@ -355,14 +476,11 @@ void ui_frame(const PadState &pad, float dt) {
     uint32_t hit = controller.update(pad, dt);
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
-    if (active_pin.id && job == None) {
-        if (now >= expires_at) {
-            active_pin = {};
-            message = "Device link expired. Press Cross to retry";
-        } else if (now >= poll_at) {
-            auto p = active_pin;
-            submit(PinPoll, [p] { return client->poll_pin(p.id, p.code); });
-        }
+    auth.tick(now);
+    if (auth.poll_due(now) && job == None) {
+        auto p = auth.current;
+        auth_request_generation = auth.generation;
+        submit(PinPoll, [p] { return client->poll_pin(p.id, p.code); });
     }
     bool was_video = video;
     if (video) {
@@ -448,6 +566,7 @@ void ui_frame(const PadState &pad, float dt) {
         return;
     if (was_video) hit = 0; // The stop/back press must not also leave details.
     artwork->update();
+    if (account.empty() || account_loading) { login_screen(hit, now); return; }
     rect(0, 0, 1920, 1080, IM_COL32(12, 13, 17, 255));
     rect(0, 0, 330, 1080, IM_COL32(20, 21, 26, 255));
     draw_text(45, 55, 38, "PlexStation", IM_COL32(235, 171, 54, 255));
@@ -461,30 +580,6 @@ void ui_frame(const PadState &pad, float dt) {
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())
         draw_text(390, 950, 25, message, IM_COL32(240, 185, 90, 255));
-    if (account.empty()) {
-        draw_text(390, 240, 38, "Your media, on your television.");
-        if (active_pin.id) {
-            draw_text(390, 340, 34, "Link code: " + active_pin.code);
-            draw_text(390, 420, 23, "Open this address on your phone or PC:");
-            draw_text(390, 470, 18,
-                      "https://plex.tv/auth#?clientID=" + encode(device) +
-                          "&code=" + encode(active_pin.code));
-            draw_text(390, 530, 26,
-                      "Waiting for authorization… " +
-                          std::to_string(static_cast<int>(expires_at - now)) +
-                          " seconds remaining");
-        } else {
-            row(0, 0, 340, "Sign in with Plex (Cross)");
-            if (hit & PAD_CROSS)
-                submit(PinStart, [] { return client->create_pin(); });
-        }
-        if (hit & PAD_CIRCLE) {
-            active_pin = {}; // In-flight PIN completion is discarded below.
-            if (job == PinStart || job == PinPoll) cancel_pin = true;
-            message = "Device linking cancelled. Cross to retry";
-        }
-        return;
-    }
     if (editor) {
         draw_text(390, 180, 30,
                   editor == 1 ? "Search your server"

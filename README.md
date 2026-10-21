@@ -5,9 +5,9 @@ Native PS5 homebrew Plex client under development, derived from
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
 [controller-fix build 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464).
-The owner confirmed launch/UI rendering of the earlier run 39634054358,
-where DualSense navigation failed. The new controller build requires device
-retesting.
+The owner confirms launch/UI rendering and Cross initiating authentication
+on the controller-fix build. Full navigation and the new account-linking flow
+require device acceptance.
 Media playback remains unverified.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
@@ -59,8 +59,8 @@ require physical acceptance.
 Transcoding/Direct Stream negotiation, automatic bandwidth quality, watchlist,
 full Plex-style home carousels and filtering, external subtitles, next episode,
 per-item offsets, completion thresholds, offline progress retries and final
-visual polish remain incomplete. The current PIN flow also needs verification
-against accessible current official documentation and a real Plex account.
+visual polish remain incomplete. The revised TV PIN/QR flow has host coverage; live Plex account authorization
+and PS5 restart persistence still need verification.
 
 ## Documentation
 
@@ -69,6 +69,7 @@ against accessible current official documentation and a real Plex account.
 - [Architecture and limits](docs/ARCHITECTURE.md)
 - [Build, configuration and ShadowMountPlus deployment](docs/BUILD-AND-DEPLOY.md)
 - [DualSense investigation, diagnostics and Windows FTP deployment](docs/CONTROLLER-TESTING.md)
+- [TV linking implementation, references and account test procedure](docs/AUTHENTICATION.md)
 - [Actual validation results and device checklist](docs/VALIDATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Licensing and attribution](THIRD_PARTY.md)
