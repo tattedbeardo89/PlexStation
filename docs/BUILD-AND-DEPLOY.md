@@ -56,7 +56,9 @@ archive verified against the hash in its setup script. A current SDK checkout
 alone is not the installed toolchain. Follow PS5_Vulkan's own dependency,
 LLVM/Clang, platform-library and release RADV build instructions, including
 its AGENTS.md when modifying that dependency. Do not disable checksum checks.
-The cloud currently lacks that installed SDK/RADV toolchain.
+The local cloud checkout lacks that installed SDK/RADV toolchain. The pinned
+Arch container successfully builds it on GitHub Actions; see
+[hosted build instructions and artifact](GITHUB-ACTIONS.md).
 
 The shader compiler was built locally from glslang 15.2.0 commit
 99ee11b0106b48f06fb9e2a324ba928b8316cc33. Vulkan headers are pinned at
@@ -84,7 +86,9 @@ WITH_DEMO=0 bash ps5/build-title.sh
 python3 tools/check-package.py dist/PPSA85301
 ```
 
-These full recipes are documented, not reported as successfully executed.
+The complete PS5 sequence, including these dependency recipes, succeeded in
+[Actions run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498).
+The full host UI build has not succeeded locally.
 Upstream dependency downloads have no complete checksum manifest: create and
 verify an authoritative source/signature manifest before publishing binaries.
 Do not treat a successful source download as a reproducible verified release.

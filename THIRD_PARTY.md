@@ -27,7 +27,8 @@ any intended distribution; no claim of Sony or Plex endorsement is made.
 PS5_Vulkan (GPL-3.0) and its pinned PS5 payload SDK fork are separate build
 dependencies, not proprietary SDK components bundled into this repository.
 
-No PS5 binary release has been produced. Before distributing one, supply the
+A native PS5 binary is available as a build artifact; no tagged release has
+been published. For binary distribution, supply the
 complete corresponding source for that exact build: this application,
 patched VLC, FFmpeg, other linked libraries and platform runtime, and the
 scripts needed to rebuild them, with their notices. The application-only

@@ -1,6 +1,7 @@
 # Validation record
 
-Observed in the Linux cloud environment on 2026-10-20.
+Host observations in the Linux cloud environment on 2026-10-20 are preserved
+below. Successful hosted native build evidence from 2026-10-21 follows.
 
 | Check | Result | Scope |
 | --- | --- | --- |
@@ -10,7 +11,7 @@ Observed in the Linux cloud environment on 2026-10-20.
 | New native source with `-Werror -fno-exceptions -fno-rtti` | Passed host syntax validation | New UI, artwork, client and PS5 transport, using Linux headers; not a cross-build or link |
 | glslang 15.2.0 build | Passed | Built with GCC, 4 jobs; upstream compiler warnings occurred |
 | Shader generation / full host app attempt | Shader generation succeeded; full app blocked | Static VLC plugin libraries are missing; no runnable player binary |
-| PS5 title build attempt | Blocked | Missing PS5 release RADV archive, installed SDK/toolchain and static VLC/dependencies |
+| Initial local PS5 title build attempt (2026-10-20) | Blocked locally; superseded by hosted success below | Missing local PS5 release RADV archive, installed SDK/toolchain and static VLC/dependencies |
 | Official API docs and VLC source URL | HTTP 403 / proxy denied | Network draft additions saved; runtime access has not been established |
 | Real Plex login, server browsing and video | Unrun | No live account/server acceptance performed |
 | Native UI appearance/controller behavior | Unrun | Syntax passes do not verify focus, rendering or playback |
@@ -86,5 +87,25 @@ That run failed while applying the existing VLC HDR patch to pinned Mesa.
 The patch was adapted to Mesa's per-size buffer sets, preserving HDR and
 refresh support. Its dry-run against the pinned source passed.
 [Run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498)
-is testing the corrected full build. This record does not yet claim a native
-application executable or installation artifact.
+completed successfully in **28m 14s** at commit
+`dcf18ddaf5d98b0e941ee0106977cf9b1e833b03`.
+
+### Native application build — passed, 2026-10-21
+
+The job reported success for the actual PS5 compilation and validation step,
+complete installation ZIP upload, and diagnostics upload. This includes the
+static media dependencies and libVLC, PlexStation native compilation/linking,
+SELF conversion, independent PPSA85301 package validation, ELF/SELF format and
+size checks, linked video-output plugin and runtime-import checks.
+
+GitHub lists `PlexStation-PPSA85301-dcf18ddaf5d98b0e941ee0106977cf9b1e833b03`
+(37.2 MB) and the matching diagnostics artifact (224 KB). The outer installation
+artifact SHA-256 is `139826a6202163f2c7661849e62cb1c83c0c806b9b95795cbeb7bb98652ad5f5`.
+This evidence comes from the successful job/step states and artifact listing;
+artifact downloads require GitHub sign-in and were not independently inspected
+in this cloud environment. The included validation.json and logs record the
+build details.
+
+The application source and existing tests were preserved. Subsequent CI changes
+only refine dependency checkpoint caching. Native build success does not close
+any live Plex, display/controller, firmware, decoder or A/V-sync acceptance item.

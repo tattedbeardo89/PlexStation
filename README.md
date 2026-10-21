@@ -3,7 +3,9 @@
 Native PS5 homebrew Plex client under development, derived from
 [ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
 and native UI code, but **is not yet a complete or verified PS5 application**.
-No deployable PS5 binary has been produced.
+A real native PS5 build and complete installation artifact are available from
+[successful GitHub Actions run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498).
+Console launch and playback remain untested.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
 This exact runtime combination is awaiting hardware verification. PlexStation
@@ -14,8 +16,8 @@ preserved. No replacement jailbreak or browser runtime is introduced.
 
 Windows users can trigger **Build PlexStation PS5** in the repository Actions tab.
 See [exact workflow, artifact and Windows/WSL2 instructions](docs/GITHUB-ACTIONS.md).
-The workflow targets the actual native title; successful native output has not yet
-been verified. Prior host-test results remain separate.
+The workflow compiled and validated the actual native title on 2026-10-21.
+Prior host-test results remain separate from native build and device acceptance.
 
 ## Start development
 
@@ -26,8 +28,8 @@ bash host/build-core.sh
 
 This builds the C++17 Plex client tests and `build/plexctl`, then exercises the
 real libcurl transport against a local HTTP fixture. It does not test native
-video playback. The full static VLC host and PS5 builds remain blocked by
-missing dependencies and network access; see the build guide.
+video playback. Local full-build downloads remain proxy-blocked; the native
+PS5 build succeeds on GitHub Actions. See the build guide.
 
 ## Current implementation
 
@@ -44,8 +46,9 @@ missing dependencies and network access; see the build guide.
 - Coalesced timeline requests and manual watched/unwatched requests.
 - Original PlexStation icon/loading assets and independent title metadata.
 
-These are implemented source paths. Live Plex integration, full native linking,
-PS5 launch, codec support and audio sync have **not** been verified.
+These are implemented source paths. Native compilation, linking and package
+checks passed in Actions. Live Plex integration, PS5 launch, codec support
+and audio sync have **not** been verified.
 
 ## Incomplete features
 

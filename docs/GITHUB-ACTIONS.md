@@ -50,6 +50,22 @@ found no warnings. Native scripts use the installed LLVM utility names rather
 than assuming Ubuntu's `-18` suffix. Application code and prior test results
 are unchanged by this build task.
 
+## First successful native artifact
+
+[Run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498)
+completed successfully in **28m 14s** on 2026-10-21 at commit
+`dcf18ddaf5d98b0e941ee0106977cf9b1e833b03`. Both installation and diagnostic
+uploads succeeded. Its installation artifact is
+`PlexStation-PPSA85301-dcf18ddaf5d98b0e941ee0106977cf9b1e833b03` (**37.2 MB**).
+The GitHub outer artifact digest is
+`139826a6202163f2c7661849e62cb1c83c0c806b9b95795cbeb7bb98652ad5f5`;
+use the included SHA256SUMS for the inner installation ZIP.
+
+The workflow's native gates passed; this result was confirmed from GitHub's
+successful job/step states and artifact listing. Downloading artifacts requires
+GitHub sign-in, so the artifact was not independently downloaded in the cloud
+environment. No hardware launch or playback test has been performed.
+
 ## Trigger and download — Windows browser
 
 1. Open <https://github.com/tattedbeardo89/PlexStation/actions>.
@@ -57,8 +73,8 @@ are unchanged by this build task.
 3. Click **Run workflow**, select the branch containing the workflow (currently
    `feature/plexstation-initial-implementation`), then **Run workflow**.
 4. Open the run and inspect **Native PS5 title (Arch container)**. A clean build
-   may be lengthy; the configured job limit is 330 minutes. Actual hosted
-   duration/resource feasibility is not yet established.
+   may be lengthy; the configured job limit is 330 minutes. The first successful
+   cold build completed in 28m 14s on 2026-10-21.
 5. Only after the job succeeds, under **Artifacts**, download
    `PlexStation-PPSA85301-<commit SHA>`. GitHub requires sign-in to download.
 6. Extract the GitHub artifact ZIP, then extract the contained
