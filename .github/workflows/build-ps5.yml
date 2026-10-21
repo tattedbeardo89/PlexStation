@@ -54,7 +54,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y g++ pkg-config libcurl4-openssl-dev libgnutls28-dev libvulkan-dev
           for suite in build-core test-auth test-artwork test-controller test-connections test-native-transport check-native-source; do
-            bash "host/$suite.sh" 2>&1 | tee "artifacts/logs/host-$suite.log"
+            if ! bash "host/$suite.sh" 2>&1 | tee "artifacts/logs/host-$suite.log"; then
+              python3 - "$suite" <<'PYFAIL'
+          import pathlib, sys
+          suite = sys.argv[1]
+          excerpt = '\n'.join(pathlib.Path(f'artifacts/logs/host-{suite}.log').read_text(errors='replace').splitlines()[-40:])
+          excerpt = excerpt.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Host regression failed ({suite})::{excerpt}')
+          PYFAIL
+              exit 1
+            fi
           done
 
       - name: Restore exact native dependency cache
