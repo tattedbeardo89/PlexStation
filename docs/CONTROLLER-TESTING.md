@@ -70,7 +70,9 @@ Stick movement can generate an action with raw buttons zero.
 - `input:main`: frame count and polling result, state forwarded to UI.
 - `input:ui`: received buttons accumulated since last log, generated action,
   screen, selected index, valid focus, busy state and ImGui flags.
-- `install`: effective uid/gid, app0 ownership/mode/write access and eboot mode.
+- `install`: kernel effective uid/gid, resolved app directory ownership/mode
+  and eboot mode. Mesa wraps the ordinary effective-ID functions, so these
+  diagnostics explicitly use the kernel IDs. Newly created caches use 755.
 
 Periodic lines are emitted every five seconds, plus limited UI event lines.
 No Plex credentials, server names or playback addresses are added by this

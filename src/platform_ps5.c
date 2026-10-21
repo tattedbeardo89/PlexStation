@@ -351,6 +351,7 @@ static void find_app_dir(void)
  * ShadowMountPlus title already sees it from inside its sandbox (console run
  * 9: /data visible, euid 1, and drives plugged in later stayed invisible). */
 uid_t __real_geteuid(void); /* the kernel's (geteuid itself is wrapped: ps5/compat/libc_stubs.c) */
+gid_t __real_getegid(void);
 
 static bool lifted(void)
 {
@@ -440,18 +441,18 @@ static void use_app_dir(void)
     char path[300];
     setenv("HOME", app_dir, 1);
     snprintf(path, sizeof(path), "%s/cache", app_dir);
-    mkdir(path, 0777);
+    mkdir(path, 0755);
     setenv("TMPDIR", path, 1);
     snprintf(path, sizeof(path), "%s/cache/shaders", app_dir);
-    mkdir(path, 0777);
+    mkdir(path, 0755);
     setenv("PS5VK_SHADER_CACHE_DIR", path, 1);
     snprintf(path, sizeof(path), "%s/cache/mesa", app_dir);
-    mkdir(path, 0777);
+    mkdir(path, 0755);
     setenv("MESA_SHADER_CACHE_DIR", path, 1);
     /* libbluray keeps its cache in $HOME/.cache/bluray and makes only the
      * last folder ("Error creating directory" in every disc's log) */
     snprintf(path, sizeof(path), "%s/.cache", app_dir);
-    mkdir(path, 0777);
+    mkdir(path, 0755);
     fprintf(stderr, "VLC-PS5: shader caches in %s/cache\n", app_dir);
 }
 
@@ -537,14 +538,17 @@ void plat_init(void)
         vlc_ps5_vdec_probe("after full access");
     use_app_dir();
     struct stat permissions;
-    if (stat(APP_DIR, &permissions) == 0)
-        fprintf(stderr, "install: euid=%u egid=%u app0 owner=%u:%u mode=%03o writable=%d\n",
-                (unsigned)geteuid(), (unsigned)getegid(), (unsigned)permissions.st_uid,
-                (unsigned)permissions.st_gid, (unsigned)(permissions.st_mode & 0777),
-                access(APP_DIR, W_OK) == 0);
-    if (stat(APP_DIR "/eboot.bin", &permissions) == 0)
-        fprintf(stderr, "install: eboot mode=%03o executable=%d\n",
-                (unsigned)(permissions.st_mode & 0777), access(APP_DIR "/eboot.bin", X_OK) == 0);
+    // Use the resolved installation directory after sandbox lifting, and the
+    // kernel IDs: Mesa's compatibility wrappers intentionally return real IDs.
+    if (stat(app_dir, &permissions) == 0)
+        fprintf(stderr, "install: euid=%u egid=%u app owner=%u:%u mode=%03o\n",
+                (unsigned)__real_geteuid(), (unsigned)__real_getegid(),
+                (unsigned)permissions.st_uid, (unsigned)permissions.st_gid,
+                (unsigned)(permissions.st_mode & 0777));
+    char executable_path[300];
+    snprintf(executable_path, sizeof executable_path, "%s/eboot.bin", app_dir);
+    if (stat(executable_path, &permissions) == 0)
+        fprintf(stderr, "install: eboot mode=%03o\n", (unsigned)(permissions.st_mode & 0777));
 }
 
 const char *plat_data_dir(void)
