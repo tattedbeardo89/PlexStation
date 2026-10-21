@@ -176,3 +176,21 @@ Accessible official Plex Kodi source and community API references were
 inspected; details and limitations are in AUTHENTICATION.md. No live account
 authorization was performed. PS5 linking, QR scanning, restart restoration,
 server browsing and playback remain pending owner acceptance.
+
+### Authentication native artifact — passed
+
+[Actions run 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013)
+completed successfully in 2m 41s at
+`cdfe73356568c5a91c90a83e17d6d1c1b3a252f5` (job 2m 36s). Native
+compilation, complete installation validation, ZIP permission verification,
+cache save and both artifact uploads passed. The complete 37.2 MB installation
+artifact is `PlexStation-PPSA85301-cdfe73356568c5a91c90a83e17d6d1c1b3a252f5`;
+matching build diagnostics are 181 KB. Outer artifact SHA-256:
+`f48ba0085f4d66c42b4041fff789c87a3092fe229e1c9cb0268a0d074a360697`.
+The public job states/artifact listing were inspected; no authenticated
+artifact download or physical account authorization was performed here.
+
+The first regression pass caught a changed generic error string expected by
+the existing transport probes. The generic string was preserved while keeping
+safe DNS/CA/TLS explanations. Both full transport suites passed on rerun.
+No test result from that initial failed pass is presented as passing.

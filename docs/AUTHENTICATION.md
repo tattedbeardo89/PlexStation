@@ -1,5 +1,26 @@
 # Plex TV account linking
 
+## Download the authentication test build
+
+[Actions run 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013)
+succeeded in **2m 41s** at commit
+`cdfe73356568c5a91c90a83e17d6d1c1b3a252f5`.
+Native compilation, complete-package checks, Unix ZIP permissions and both
+artifact uploads passed. Download
+**PlexStation-PPSA85301-cdfe73356568c5a91c90a83e17d6d1c1b3a252f5**
+(37.2 MB) from Artifacts while signed into GitHub. Extract the outer ZIP and
+its inner PlexStation-PPSA85301.zip to obtain the complete PPSA85301 folder.
+The matching PlexStation-build-diagnostics artifact (181 KB) includes build
+logs and validation.json. Artifacts expire according to the workflow's 14-day
+retention, so rerun the workflow if necessary.
+
+GitHub's outer installation artifact digest is
+`f48ba0085f4d66c42b4041fff789c87a3092fe229e1c9cb0268a0d074a360697`.
+The included SHA256SUMS covers the inner installation ZIP. This result was
+confirmed through public job states and artifact metadata; the artifact was
+not independently downloaded because downloads require GitHub sign-in.
+Live account authorization and physical PS5 checks are still pending.
+
 ## Audit and references
 
 The owner confirms that the controller-fix build launches on PS5 and Cross

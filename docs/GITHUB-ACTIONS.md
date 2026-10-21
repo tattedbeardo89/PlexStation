@@ -1,5 +1,13 @@
 # Native PS5 builds on GitHub Actions and Windows 11
 
+## Latest authentication test build
+
+Use [run 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013),
+artifact `PlexStation-PPSA85301-cdfe73356568c5a91c90a83e17d6d1c1b3a252f5`.
+It passed native compilation, complete-package and ZIP permission checks and
+both uploads. See [TV linking references and device test steps](AUTHENTICATION.md).
+Live authorization and physical PS5 restart persistence remain pending.
+
 ## Latest controller test build
 
 Use [run 39644828464](https://github.com/tattedbeardo89/PlexStation/actions/runs/39644828464),
