@@ -78,3 +78,7 @@ and PS5 restart persistence still need verification.
 
 GPL-3.0-or-later for new code; imported components retain their own notices.
 See LICENSE and THIRD_PARTY.md. Not affiliated with Plex, Sony or VideoLAN.
+
+Account-scoped automatic PMS reconnection, Change Server and optional controller
+overlay settings are documented in [server reconnection](docs/SERVER-RECONNECTION.md),
+including the movie-library crash investigation and physical acceptance checklist.

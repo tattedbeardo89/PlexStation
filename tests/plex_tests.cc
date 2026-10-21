@@ -28,6 +28,9 @@ int main() {
     CHECK(media[0].offset == 25000);
     CHECK(media[0].thumb.empty());
     CHECK(items(Json{{"MediaContainer", {{"Metadata", nullptr}}}}).empty());
+    CHECK(items(Json{{"MediaContainer",{{"Metadata",Json::array({nullptr,7,"invalid",Json::array()})}}}}).empty());
+    CHECK(number(Json{{"n",UINT64_MAX}},"n",-1)==-1);
+    CHECK(number(Json{{"n","9999999999999999999999999"}},"n",-1)==-1);
     auto playback = direct_play("https://server", "a&b", media[0]);
     CHECK(playback.mode == Mode::DirectPlay);
     CHECK(playback.url == "https://server/library/parts/7/file.mkv?X-Plex-Token=a%26b");

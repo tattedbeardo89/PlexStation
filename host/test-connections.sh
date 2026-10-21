@@ -18,7 +18,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -Werror -I src -I third_party/volk -I "$headers
 python3 - <<'PYTEST'
 import tempfile, subprocess
 with tempfile.TemporaryDirectory(prefix='plex-prefs-connection-') as directory:
-    for action in ('write','read'):
+    for action in ('write','read','read'):
         subprocess.run(['build/prefs-connection-probe',directory,action],check=True)
 print('Manual endpoint and server identity preferences persisted across separate processes; no credentials stored')
 PYTEST

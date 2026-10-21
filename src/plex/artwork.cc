@@ -4,6 +4,7 @@
 #include "stb_image.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 namespace plex {
 void Artwork::update() {
     ++frame;
@@ -14,8 +15,11 @@ void Artwork::update() {
     if (image.generation != generation)
         return;
     ImTextureID texture = 0;
-    if (!image.rgba.empty())
+    if (!image.rgba.empty()) {
+        fprintf(stderr,"art: upload begin width=%d height=%d cached=%zu\n",image.width,image.height,entries.size());
         texture = library_upload_rgba(image.rgba.data(), image.width, image.height);
+        fprintf(stderr,"art: upload completed ok=%d\n",texture!=0);
+    }
     if (entries.size() >= 12) {
         auto old = std::min_element(entries.begin(), entries.end(),
                                     [](const Entry &a, const Entry &b) { return a.used < b.used; });
@@ -52,18 +56,20 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
         if (reply.status != 200 || !reply.error.empty() || reply.body.empty() ||
             reply.body.size() > 4 * 1024 * 1024)
             return out;
+        fprintf(stderr,"art: response bytes=%zu decode begin\n",reply.body.size());
         const auto *bytes = reinterpret_cast<const unsigned char *>(reply.body.data());
         int w, h, c;
         if (!stbi_info_from_memory(bytes, reply.body.size(), &w, &h, &c) || w <= 0 || h <= 0 ||
             w > 640 || h > 960)
             return out;
         unsigned char *decoded = stbi_load_from_memory(bytes, reply.body.size(), &w, &h, &c, 4);
-        if (decoded) {
+        if (decoded && w>0 && h>0 && w<=640 && h<=960) {
             out.width = w;
             out.height = h;
             out.rgba.assign(decoded, decoded + static_cast<size_t>(w) * h * 4);
-            stbi_image_free(decoded);
         }
+        stbi_image_free(decoded);
+        fprintf(stderr,"art: decode completed ok=%d width=%d height=%d\n",!out.rgba.empty(),out.width,out.height);
         return out;
     });
     return 0;

@@ -10,9 +10,9 @@ static bool paused;
 static int64_t position = 20000;
 extern "C" double plat_time() { return clock_now; }
 extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
-int pref_int(const char *, int v) { return v; }
-void pref_set(const char *, int) {}
 static std::map<std::string,std::string> test_prefs;
+int pref_int(const char *key, int v) {auto it=test_prefs.find(key); return it==test_prefs.end() ? v : std::stoi(it->second);}
+void pref_set(const char *key, int v) {test_prefs[key]=std::to_string(v);}
 std::string pref_str(const char *key,const char *fallback) {auto it=test_prefs.find(key); return it==test_prefs.end() ? fallback:it->second;}
 void pref_set(const char *key,const std::string &value) {test_prefs[key]=value;}
 namespace plex {
@@ -132,6 +132,8 @@ int main() {
     auto fixture_transport = [](const Request &q) {
         if(q.url=="https://plex.tv/api/v2/user")
             return Reply{200,R"({"id":42,"username":"fixture"})",""};
+        if(q.url.find("/identity")!=std::string::npos) return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
+        if(q.url.find("/library/sections")!=std::string::npos) return Reply{200,R"({"MediaContainer":{"Directory":[]}})",""};
         assert(q.url.find("/api/v2/resources?")!=std::string::npos);
         assert(q.headers.at("X-Plex-Token")=="fixture-account-token");
         return Reply{200,R"([{"name":"Fixture server","provides":"server","clientIdentifier":"server","accessToken":"fixture-scoped-token","connections":[]}])",""};
@@ -143,7 +145,8 @@ int main() {
     complete(PinStart,pin_reply);
     pin_reply.data["authToken"]="fixture-account-token";
     complete(PinPoll,pin_reply);
-    assert(account=="fixture-account-token" && account_loading && job==Resources);
+    assert(account=="fixture-account-token" && account_loading && job==ValidateAccount);
+    pending.wait(); finish_job(); assert(account_id=="id:42" && job==Resources);
     pending.wait(); finish_job();
     assert(!account_loading && available.size()==1 && !sidebar && focus==0);
     std::string restored_id,restored_token;
@@ -170,12 +173,52 @@ int main() {
     assert(!test_prefs.count("plex_manual_uri")); // test alone does not save
     press(PAD_CROSS);
     assert(!connection_diagnostics && !manual_tested && editor==0);
-    assert(test_prefs["plex_manual_uri"]=="http://127.0.0.1:32400" && test_prefs["plex_manual_server_id"]=="server");
+    assert(test_prefs[account_key("plex_manual_uri")]=="http://127.0.0.1:32400" && test_prefs[account_key("plex_manual_server_id")]=="server");
     assert(base=="http://127.0.0.1:32400" && selected_server.id=="server");
     // Simulate process startup using the real ui_init and saved private file.
     account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
+    io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     pending.wait(); finish_job(); assert(job==Resources);
-    pending.wait(); finish_job(); assert(!account_loading && available.size()==1);
+    pending.wait(); finish_job(); assert(!account_loading && job==Select && reconnect_screen);
+    pending.wait(); finish_job(); assert(!reconnect_screen && available.empty() && selected_server.id=="server");
+    assert(account_pref("plex_preferred_server")=="server");
+    // A short movie response cannot retain an index from the previous long list.
+    listing.resize(12); focus=11;
+    complete(Browse,Result{Json{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","movie"},{"type","movie"}}})}}}},"",200});
+    assert(listing.size()==1 && focus==0);
+    focus=11; open_item(); assert(job==None); focus=-1; open_item(); assert(job==None);
+    focus=0;
+    // Account scope survives sign-out but cannot leak to another Plex identity.
+    account_id="id:84"; assert(account_pref("plex_preferred_server").empty());
+    save_account_pref("plex_preferred_server","other-server");
+    account_id="id:42"; assert(account_pref("plex_preferred_server")=="server");
+    // Offline preferred PMS retains its preference and supports retry/cancellation.
+    reconnect_screen=true; connection_target=selected_server;
+    complete(Select,Result{{},"Server temporarily offline",0});
+    assert(reconnect_screen && account_pref("plex_preferred_server")=="server");
+    std::promise<Result> slow_connection; pending=slow_connection.get_future(); job=Select;
+    press(PAD_CIRCLE); assert(discard_connection && job==Select);
+    slow_connection.set_value(Result{Json{{"MediaContainer",{{"Directory",Json::array()}}}},"",200});
+    finish_job(); assert(!reconnect_screen && account_pref("plex_preferred_server")=="server");
+    // Missing preferred server shows picker without silently choosing an alternate.
+    complete(Resources,Result{Json::array({{{"name","Other"},{"provides","server"},{"clientIdentifier","other"},{"accessToken","scoped"}}}),"",200});
+    assert(job==None && available.size()==1 && account_pref("plex_preferred_server")=="server");
+    // Explicit switch skips auto-connect even when the preferred server is available.
+    force_picker=true;
+    complete(Resources,Result{Json::array({{{"name","Saved"},{"provides","server"},{"clientIdentifier","server"},{"accessToken","scoped"}},{{"name","Other"},{"provides","server"},{"clientIdentifier","other"},{"accessToken","scoped"}}}),"",200});
+    assert(job==None && available.size()==2);
+    connection_target=available[1]; next_base="https://other.invalid";
+    complete(Select,Result{Json{{"MediaContainer",{{"Directory",Json::array()}}}},"",200});
+    assert(account_pref("plex_preferred_server")=="other" && !reconnect_screen);
+    // Real controller settings paths, default hidden overlay, persisted opt-in.
+    assert(!controller_overlay); settings=true; sidebar=false; settings_page=0; focus=7;
+    press(PAD_CROSS); assert(settings_page==2 && focus==0);
+    press(PAD_CROSS); assert(controller_overlay && pref_int("plex_controller_overlay",0)==1);
+    press(PAD_CIRCLE); assert(settings_page==0 && focus==7);
+    focus=6; press(PAD_CROSS); assert(settings_page==1);
+    press(PAD_CROSS); assert(job==Resources && force_picker);
+    pending.wait(); finish_job(); assert(job==None && !settings && available.size()==1);
+
     // Temporary network failures preserve the saved account for a retry.
     account_loading=true;
     complete(ValidateAccount,Result{{},"Network or TLS request failed",0});

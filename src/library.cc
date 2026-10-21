@@ -943,6 +943,11 @@ std::vector<uint8_t> half_size(const std::vector<uint8_t> &src, uint32_t w, uint
  * Big photos are drawn near their size and keep one level. */
 ImTextureID make_texture(const Finished &t)
 {
+    if(!t.w || !t.h || t.w>16384 || t.h>16384 ||
+       t.bgra.size()!=static_cast<size_t>(t.w)*t.h*4) {
+        fprintf(stderr,"library: invalid texture dimensions or byte count\n");
+        return 0;
+    }
     if (!thumb_sampler) {
         VkSamplerCreateInfo si = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
         si.magFilter = si.minFilter = VK_FILTER_LINEAR;
@@ -977,7 +982,7 @@ ImTextureID make_texture(const Finished &t)
             total += made.back().size();
         }
     }
-    Texture tex;
+    Texture tex{};
     if (!gfx_image(t.w, t.h, VK_FORMAT_B8G8R8A8_UNORM,
                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &tex.image,
                    &tex.memory, &tex.view, (uint32_t)regions.size()))
@@ -987,8 +992,13 @@ ImTextureID make_texture(const Finished &t)
     void *mapped;
     if (!gfx_buffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                    &staging, &staging_mem, &mapped))
+                    &staging, &staging_mem, &mapped)) {
+        vkDestroyImageView(gfx.device,tex.view,nullptr);
+        vkDestroyImage(gfx.device,tex.image,nullptr);
+        vkFreeMemory(gfx.device,tex.memory,nullptr);
+        fprintf(stderr,"library: texture staging allocation failed\n");
         return 0;
+    }
     memcpy(mapped, t.bgra.data(), t.bgra.size());
     for (size_t i = 0; i < made.size(); i++)
         memcpy((uint8_t *)mapped + regions[i + 1].bufferOffset, made[i].data(), made[i].size());
@@ -1006,6 +1016,13 @@ ImTextureID make_texture(const Finished &t)
     vkDestroyBuffer(gfx.device, staging, nullptr);
     vkFreeMemory(gfx.device, staging_mem, nullptr);
     tex.set = ImGui_ImplVulkan_AddTexture(thumb_sampler, tex.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if(!tex.set) {
+        vkDestroyImageView(gfx.device,tex.view,nullptr);
+        vkDestroyImage(gfx.device,tex.image,nullptr);
+        vkFreeMemory(gfx.device,tex.memory,nullptr);
+        fprintf(stderr,"library: texture descriptor allocation failed\n");
+        return 0;
+    }
     textures.push_back(tex);
     return (ImTextureID)tex.set;
 }

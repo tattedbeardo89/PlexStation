@@ -24,6 +24,12 @@
 #include "network.h"
 #include "web.h"
 
+static void imgui_vk_result(VkResult result)
+{
+    if (result != VK_SUCCESS)
+        fprintf(stderr,"gfx: ImGui Vulkan result=%d frame=%llu\n",result,(unsigned long long)gfx.frame_number);
+}
+
 static bool imgui_init()
 {
     IMGUI_CHECKVERSION();
@@ -34,6 +40,7 @@ static bool imgui_init()
     io.DisplaySize = ImVec2((float)gfx.width, (float)gfx.height);
     io.MouseDrawCursor = false;
     ImGui_ImplVulkan_InitInfo init = {};
+    init.CheckVkResultFn = imgui_vk_result;
     init.ApiVersion = VK_API_VERSION_1_1;
     init.Instance = gfx.instance;
     init.PhysicalDevice = gfx.gpu;

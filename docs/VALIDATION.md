@@ -235,3 +235,30 @@ This result was confirmed from public steps/artifact metadata, without an
 authenticated artifact download. Real PS5 authenticated PMS connection,
 movie/TV library loading, browsing, remote/relay access and actual Plex
 certificate acceptance remain pending owner verification.
+
+## Remembered server, controller overlay and movie-library safety — 2026-10-21
+
+Validated Plex account IDs now scope the preferred machineIdentifier and manual
+endpoint settings. Both new and restored sign-ins validate the account before
+resource discovery; asynchronous automatic selection uses the existing identity
+and authenticated-library endpoint fallback. Failed/missing servers retain their
+preferences. Explicit switching bypasses auto-selection; cancellation discards
+late connection results. Settings adds Server → Change Server and Diagnostics →
+Controller diagnostic overlay (persistent, default Off).
+
+The owner reports CE-108255-1 / SIGABRT entering the Movies library on 2458e45,
+before selecting a movie or playback. There is no stack trace. A concrete
+out-of-range focus path is fixed and regression-tested; metadata parsing rejects
+non-object rows and out-of-range unsigned numbers. Decoded image bounds are
+rechecked, texture allocation failure cleanup improved, and redacted browse,
+artwork and Vulkan result logs identify the failing phase. These changes are
+not proof of the cause or resolution of the physical abort.
+
+See SERVER-RECONNECTION.md for update preservation and device verification.
+Host validation passed: 67 core checks, 10 libcurl and 10 native GnuTLS
+transport scenarios, authentication, production UI controller/reconnection
+transitions, PS5 pad backend fixtures, separate-process preference persistence,
+secure connection/identity/fallback fixtures, real artwork decode/cache tests,
+package permission regressions and strict native-source host syntax. Actions
+now reruns the host suites and retains their logs before the real cross-build.
+Native build result will be recorded after Actions completes.

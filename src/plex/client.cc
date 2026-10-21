@@ -3,6 +3,7 @@
 #include "tinyxml2/tinyxml2.h"
 #include <algorithm>
 #include <charconv>
+#include <limits>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -30,6 +31,8 @@ int64_t number(const Json &j, const char *k, int64_t fallback) {
     auto i = j.find(k);
     if (i == j.end())
         return fallback;
+    if (i->is_number_unsigned() && i->get<uint64_t>() > static_cast<uint64_t>(INT64_MAX))
+        return fallback;
     if (i->is_number_integer())
         return i->get<int64_t>();
     if (i->is_string()) {
@@ -54,6 +57,7 @@ std::vector<Item> items(const Json &j) {
     if (it == c.end() || !it->is_array())
         return out;
     for (const auto &v : *it) {
+        if(!v.is_object()) continue;
         Item x;
         x.id = text(v, "ratingKey", text(v, "key"));
         x.key = text(v, "key");
