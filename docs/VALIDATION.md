@@ -120,3 +120,19 @@ restore and per-run save. GitHub lists the complete installation artifact
 (37.2 MB) and diagnostics. The outer installation artifact digest is
 `b5a4586d63658659d29883e24f1ecc04cc72eb6056370b9bcc488f89701e27d9`.
 No application or test source changed between the two successful runs.
+
+## DualSense and launch follow-up
+
+The owner confirmed physical launch and UI rendering of build f4a9666
+(run 39634054358) on PS5 13.40 / kstuff Lite / ShadowMountPlus 1.7 Beta 5 Fix 1.
+Initial CE-107750-0 was resolved by setting installation permissions to 777.
+Controller navigation failed. This supersedes the earlier untested launch
+status, but establishes neither input nor media playback acceptance.
+
+The controller follow-up passed the existing 63 core checks, 10 libcurl
+transport scenarios, 10 Linux GnuTLS/socket scenarios and strict host syntax
+checks. New host harnesses exercise actual UI/input code with real ImGui and
+fake platform/network/player boundaries, the PS5 polling backend with mocked
+service calls, and exact workflow ZIP permission preservation/rejection.
+Device navigation and corrected 755/644 deployment remain pending hardware
+verification. See [investigation and test instructions](CONTROLLER-TESTING.md).

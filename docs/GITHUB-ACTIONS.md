@@ -161,4 +161,7 @@ unused `/data/homebrew/PPSA85301` via your existing ShadowMountPlus method.
 Do not overwrite VLC PPSA85300 or replace kstuff Lite. Target: firmware 13.40,
 kstuff Lite, ShadowMountPlus 1.7 Beta 5 Fix 1. Successful compilation and package
 inspection do not establish launch, decoder, A/V-sync or firmware compatibility.
-All physical PS5 checks remain awaiting verification.
+The owner has confirmed launch/UI rendering of run 39634054358 after a 777
+permission workaround; controller input failed. See
+[controller and Windows FTP permission instructions](CONTROLLER-TESTING.md) for
+the corrected packaging and pending navigation/playback checks.

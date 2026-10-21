@@ -120,3 +120,12 @@ Await device verification before labeling a package compatible. Validate launch,
 controller input, TLS, authentication persistence, real libraries, movie and
 episode playback, seek/pause/resume, tracks, progress synchronization, return
 to details, and audio offset behavior. Keep VLC installed separately.
+
+## Windows FTP modes and controller follow-up
+
+Use [the exact FTP permission and DualSense test procedure](CONTROLLER-TESTING.md).
+The package now supplies 755 directories/executables and 644 read-only files,
+with ZIP metadata checked in Actions. Windows extraction/FTP may discard Unix
+modes; set and verify them remotely. Keep account files 600 and ensure app data
+ownership allows runtime writes. The confirmed 777 launch workaround is not
+the permanent deployment procedure.

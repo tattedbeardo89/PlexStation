@@ -230,3 +230,7 @@ cp "$work/llvm-pie.elf" "$repo/builds/llvm-pie-$sha.elf"
 ls -t "$repo"/builds/llvm-pie-*.elf | tail -n +4 | xargs -r rm -f --
 printf '==> %s: %s (eboot.bin %s bytes, %s; %s imports)\n' "$title_id" "$app" \
     "$(stat -c %s "$app/eboot.bin")" "$sha" "$(wc -l < "$app/imports.txt")"
+
+# A Windows extraction/FTP client can drop these modes; the ZIP and deployment
+# guide preserve/reapply the intended 755/644 permissions.
+python3 "$repo/tools/package-title.py" "$app"

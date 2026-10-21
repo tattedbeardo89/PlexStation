@@ -13,6 +13,7 @@ on:
       - 'assets/**'
       - 'third_party/**'
       - 'tools/check-package.py'
+      - 'tools/package-title.py'
 
 permissions:
   contents: read
@@ -68,6 +69,24 @@ jobs:
             -v "$GITHUB_WORKSPACE/.ci-cache:/build" \
             plexstation-ps5:locked \
             2>&1 | tee artifacts/logs/container-run.log
+
+      - name: Verify installation ZIP executable permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 tools/package-title.py --verify-only dist/PPSA85301 artifacts/PlexStation-PPSA85301.zip \
+              2>&1 | tee artifacts/logs/package-permissions.log; then
+            exit 0
+          fi
+          sudo python3 - <<'PYREPORT'
+          import json, pathlib
+          path = pathlib.Path('artifacts/validation.json')
+          report = json.loads(path.read_text())
+          report.update(success=False, last_stage='zip-permissions',
+                        reason='Installation ZIP Unix mode validation failed')
+          path.write_text(json.dumps(report, indent=2)+'\n')
+          PYREPORT
+          exit 1
 
       - name: Ensure diagnostics remain accessible
         if: always()

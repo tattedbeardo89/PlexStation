@@ -7,6 +7,8 @@
 #include "plex/client.h"
 #include "prefs.h"
 #include "ui.h"
+#include "controller.h"
+#include <cstdio>
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -46,8 +48,7 @@ std::string edit_text;
 const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .:-_/";
 bool sidebar = true, in_detail = false, settings = false, tracks = false, video = false,
      allow_http = false;
-uint32_t previous = 0;
-float repeat_at = 0;
+ControllerInput controller;
 std::future<Result> pending;
 enum Job {
     None,
@@ -67,7 +68,7 @@ std::string next_base, request_path;
 
 std::string progress_state;
 int64_t progress_time = 0;
-bool progress_pending = false;
+bool progress_pending = false, cancel_pin = false;
 Progress progress;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
                             "Watchlist", "Search", "Settings"};
@@ -129,6 +130,10 @@ void finish_job() {
     Result result = pending.get();
     Job done = job;
     job = None;
+    if (cancel_pin && (done == PinStart || done == PinPoll)) {
+        cancel_pin = false;
+        return;
+    }
     if (!result) {
         message = result.error;
         if (done == PinPoll)
@@ -250,6 +255,8 @@ void stop() {
     video = false;
     tracks = false;
     in_detail = true;
+    sidebar = false;
+    focus = 0; // Resume/Play owns focus after leaving playback.
 }
 void draw_text(float x, float y, float size, const std::string &value,
                ImU32 color = IM_COL32(236, 236, 239, 255)) {
@@ -267,28 +274,43 @@ void row(int index, int selected, float y, const std::string &label, bool enable
          index == selected && enabled ? IM_COL32(168, 108, 16, 255) : IM_COL32(27, 28, 33, 255));
     draw_text(420, y + 16, 29, label);
 }
-uint32_t input(const PadState &pad, float dt) {
-    uint32_t buttons = pad.buttons;
-    if (pad.lx > .55f)
-        buttons |= PAD_RIGHT;
-    if (pad.lx < -.55f)
-        buttons |= PAD_LEFT;
-    if (pad.ly > .55f)
-        buttons |= PAD_DOWN;
-    if (pad.ly < -.55f)
-        buttons |= PAD_UP;
-    uint32_t hit = buttons & ~previous;
-    if (buttons == previous) {
-        repeat_at -= dt;
-        if (repeat_at <= 0) {
-            hit |= buttons & (PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT);
-            repeat_at = .16f;
+// Runs even on early returns (sign-in, keyboard, playback). Custom focus is
+// deliberately reported separately from ImGui's widget navigation focus.
+struct InputDiagnostic {
+    const PadState &pad;
+    uint32_t hit;
+    ~InputDiagnostic() {
+        const char *screen = video ? (tracks ? "tracks" : "playback") :
+            editor ? "keyboard" : account.empty() ? "sign-in" : sidebar ? "sidebar" :
+            settings ? "settings" : in_detail ? "detail" : !available.empty() ? "servers" : "library";
+        int selected = video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
+        bool valid = selected >= 0 && (sidebar ? nav < 7 : settings ? focus < 6 :
+            in_detail ? focus < 3 : editor ? edit_focus < static_cast<int>(alphabet.size()) :
+            account.empty() || video || (available.empty() ? focus < static_cast<int>(listing.size()) :
+            focus < static_cast<int>(available.size())));
+        static double log_at, event_log_at;
+        static uint32_t received_since_log;
+        received_since_log |= pad.buttons;
+        double now = plat_time();
+        auto &io = ImGui::GetIO();
+        if (now >= log_at || (hit && now >= event_log_at)) {
+            fprintf(stderr, "input:ui connected=%d received=%08x actions=%08x screen=%s focus=%d valid=%d busy=%d imgui_gamepad=%d imgui_nav=%d\n",
+                    pad.connected, received_since_log, hit, screen, selected, valid, job != None,
+                    !!(io.BackendFlags & ImGuiBackendFlags_HasGamepad), io.NavActive);
+            received_since_log = 0;
+            log_at = now + 5;
+            event_log_at = now + .25;
         }
-    } else
-        repeat_at = .4f;
-    previous = buttons;
-    return hit;
-}
+        char line[240];
+        snprintf(line, sizeof line, "Pad:%s raw:%08x action:%08x  %s focus:%d %s  ImGui:%s",
+                 pad.connected ? "OK" : "NO INPUT", pad.buttons, hit, screen, selected,
+                 valid ? "OK" : "EMPTY/INVALID", io.NavActive ? "active" : "draw-list focus");
+        float scale = gfx.height / 1080.f;
+        auto *draw = ImGui::GetForegroundDrawList();
+        draw->AddRectFilled({380*scale, 5*scale}, {1900*scale, 39*scale}, IM_COL32(0,0,0,210));
+        draw->AddText(ImGui::GetFont(), 19*scale, {390*scale, 10*scale}, IM_COL32(235,220,150,255), line);
+    }
+};
 } // namespace
 bool ui_init() {
     credential_file = std::string(plat_data_dir()) + "/plexstation-account.json";
@@ -330,7 +352,8 @@ bool ui_init() {
 void ui_frame(const PadState &pad, float dt) {
     player_tick();
     finish_job();
-    uint32_t hit = input(pad, dt);
+    uint32_t hit = controller.update(pad, dt);
+    InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
     if (active_pin.id && job == None) {
         if (now >= expires_at) {
@@ -341,17 +364,20 @@ void ui_frame(const PadState &pad, float dt) {
             submit(PinPoll, [p] { return client->poll_pin(p.id, p.code); });
         }
     }
+    bool was_video = video;
     if (video) {
         if (hit)
             overlay_until = now + 5;
-        if (hit & PAD_CROSS)
+        if ((hit & PAD_CROSS) && !tracks)
             player_toggle_pause();
-        if (hit & PAD_LEFT)
+        if ((hit & PAD_LEFT) && !tracks)
             player_seek(std::max<int64_t>(0, player_time() - 10000));
-        if (hit & PAD_RIGHT)
+        if ((hit & PAD_RIGHT) && !tracks)
             player_seek(player_time() + 10000);
-        if (hit & PAD_CIRCLE)
-            stop();
+        if (hit & PAD_CIRCLE) {
+            if (tracks) tracks = false;
+            else stop();
+        }
         if (hit & PAD_OPTIONS)
             tracks = !tracks;
         if (hit & PAD_L1)
@@ -366,7 +392,7 @@ void ui_frame(const PadState &pad, float dt) {
                 track_focus = std::max(0, track_focus - 1);
             if (hit & PAD_DOWN)
                 track_focus = std::min(1, track_focus + 1);
-            if (hit & PAD_SQUARE) {
+            if (hit & (PAD_CROSS | PAD_SQUARE)) {
                 auto cycle = [](const std::vector<Track> &list, int id) {
                     for (size_t i = 0; i < list.size(); ++i)
                         if (list[i].id == id)
@@ -379,8 +405,8 @@ void ui_frame(const PadState &pad, float dt) {
                     player_set_subtitle_track(cycle(subs, player_subtitle_track()));
             }
             draw_text(100, 120, 32,
-                      track_focus == 0 ? "> Audio track (Square to cycle)"
-                                       : "> Subtitle track (Square to cycle)");
+                      track_focus == 0 ? "> Audio track (Cross to cycle)"
+                                       : "> Subtitle track (Cross to cycle)");
             std::string name = "None";
             auto list = track_focus == 0 ? audio : subs;
             int id = track_focus == 0 ? player_audio_track() : player_subtitle_track();
@@ -420,6 +446,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (video)
         return;
+    if (was_video) hit = 0; // The stop/back press must not also leave details.
     artwork->update();
     rect(0, 0, 1920, 1080, IM_COL32(12, 13, 17, 255));
     rect(0, 0, 330, 1080, IM_COL32(20, 21, 26, 255));
@@ -447,9 +474,14 @@ void ui_frame(const PadState &pad, float dt) {
                           std::to_string(static_cast<int>(expires_at - now)) +
                           " seconds remaining");
         } else {
-            draw_text(390, 350, 32, "Cross: Sign in with Plex");
+            row(0, 0, 340, "Sign in with Plex (Cross)");
             if (hit & PAD_CROSS)
                 submit(PinStart, [] { return client->create_pin(); });
+        }
+        if (hit & PAD_CIRCLE) {
+            active_pin = {}; // In-flight PIN completion is discarded below.
+            if (job == PinStart || job == PinPoll) cancel_pin = true;
+            message = "Device linking cancelled. Cross to retry";
         }
         return;
     }
@@ -512,6 +544,21 @@ void ui_frame(const PadState &pad, float dt) {
         settings = !settings;
         sidebar = false;
         focus = 0;
+    }
+    if (hit & (PAD_L1 | PAD_R1)) {
+        nav = (nav + ((hit & PAD_R1) ? 1 : 6)) % 7;
+        sidebar = true;
+        hit |= PAD_CROSS; // Same section activation as the sidebar.
+    }
+    if (hit & PAD_CIRCLE) {
+        if (settings) { settings = false; sidebar = true; focus = 0; }
+        else if (in_detail) { in_detail = false; sidebar = false; }
+        else if (!history.empty() && job == None) {
+            auto p = history.back(); history.pop_back();
+            page_title = p.title; page_path = p.path; listing = std::move(p.items);
+            focus = p.focus; page_start = p.start; page_total = p.total; sidebar = false;
+        } else sidebar = true;
+        hit &= ~PAD_CIRCLE; // One back action per frame.
     }
     if (sidebar) {
         if (hit & PAD_UP)
@@ -602,7 +649,7 @@ void ui_frame(const PadState &pad, float dt) {
         row(1, focus, 725, detail.watched ? "Mark unwatched" : "Mark watched");
         row(2, focus, 810, "Playback version: " + std::to_string(version + 1) + " (Cross cycles)");
         if (hit & PAD_UP)
-            focus = 0;
+            focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
             focus = std::min(2, focus + 1);
         if ((hit & PAD_CROSS) && job == None) {
@@ -617,8 +664,6 @@ void ui_frame(const PadState &pad, float dt) {
                 submit(Watch, [b, t, i] { return client->watched(b, t, i, !i.watched); });
             }
         }
-        if (hit & PAD_CIRCLE)
-            in_detail = false;
     } else {
         if (!sidebar && (hit & PAD_UP))
             focus = std::max(0, focus - (grid ? 5 : 1));
@@ -650,32 +695,22 @@ void ui_frame(const PadState &pad, float dt) {
         }
         if (!sidebar && (hit & PAD_CROSS))
             open_item();
-        if ((hit & PAD_CIRCLE) && !history.empty() && job == None) {
-            auto p = history.back();
-            history.pop_back();
-            page_title = p.title;
-            page_path = p.path;
-            listing = std::move(p.items);
-            focus = p.focus;
-            page_start = p.start;
-            page_total = p.total;
-        }
+        // Preserve the existing sort command, freeing R1 for section navigation.
+        if ((hit & PAD_SQUARE) && !page_path.empty())
+            load(page_path + (page_path.find('?') == std::string::npos ? "?" : "&") +
+                     "sort=titleSort:asc", "Sorted by title");
         if ((hit & PAD_R2) && page_start + 60 < page_total)
             load(page_path, page_title, false, page_start + 60);
         if ((hit & PAD_L2) && page_start >= 60)
             load(page_path, page_title, false, page_start - 60);
         if (page_total > 60)
             draw_text(390, 920, 22,
-                      "L2/R2 Pages • " + std::to_string(page_start + 1) + "–" +
+                      "Square Sort • L2/R2 Pages • " + std::to_string(page_start + 1) + "–" +
                           std::to_string(page_start + listing.size()) + " of " +
                           std::to_string(page_total));
-        if ((hit & PAD_R1) && !page_path.empty())
-            load(page_path + (page_path.find('?') == std::string::npos ? "?" : "&") +
-                     "sort=titleSort:asc",
-                 "Sorted by title");
     }
     draw_text(390, 1020, 23,
-              "D-pad / Left stick Navigate • Cross Select • Circle Back • Options Settings");
+              "D-pad / Stick Navigate • Cross Select • Circle Back • L1/R1 Sections • Options Settings");
 }
 bool ui_video_rect(float *x, float *y, float *w, float *h) {
     if (!video)

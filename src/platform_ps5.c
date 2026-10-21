@@ -36,9 +36,12 @@ int scePadInit(void);
 int scePadOpen(int32_t user_id, int32_t port_type, int32_t index, const void *params);
 int scePadRead(int32_t handle, void *samples, int32_t capacity);
 int scePadClose(int32_t handle);
+int scePadGetHandle(int32_t user_id, int32_t port_type, int32_t index);
 
 int sceUserServiceInitialize(const void *params);
 int sceUserServiceGetInitialUser(int32_t *user_id);
+int sceUserServiceGetForegroundUser(int32_t *user_id);
+int sceUserServiceGetLoginUserIdList(int32_t *users);
 int sceAudioOutInit(void);
 int sceAudioOutOpen(int32_t user_id, int32_t type, int32_t index, uint32_t len, uint32_t freq,
                     uint32_t param);
@@ -533,6 +536,15 @@ void plat_init(void)
     else if (vdec_ready && vlc_ps5_vdec_probe && plat_full_access())
         vlc_ps5_vdec_probe("after full access");
     use_app_dir();
+    struct stat permissions;
+    if (stat(APP_DIR, &permissions) == 0)
+        fprintf(stderr, "install: euid=%u egid=%u app0 owner=%u:%u mode=%03o writable=%d\n",
+                (unsigned)geteuid(), (unsigned)getegid(), (unsigned)permissions.st_uid,
+                (unsigned)permissions.st_gid, (unsigned)(permissions.st_mode & 0777),
+                access(APP_DIR, W_OK) == 0);
+    if (stat(APP_DIR "/eboot.bin", &permissions) == 0)
+        fprintf(stderr, "install: eboot mode=%03o executable=%d\n",
+                (unsigned)(permissions.st_mode & 0777), access(APP_DIR "/eboot.bin", X_OK) == 0);
 }
 
 const char *plat_data_dir(void)
@@ -584,117 +596,7 @@ double plat_time(void)
 
 /* ---- DualSense ------------------------------------------------------------ */
 
-typedef struct {
-    uint32_t buttons;
-    uint8_t lx, ly, rx, ry, l2, r2;
-    uint8_t reserved_to_connected[66];
-    int32_t connected;
-    uint64_t timestamp_us;
-    uint8_t extension[16];
-    uint8_t connected_count;
-    uint8_t remaining[15];
-} PadSample;
-_Static_assert(sizeof(PadSample) == 120, "the console's pad samples are 120 bytes");
-_Static_assert(offsetof(PadSample, connected) == 0x4c, "connected at 0x4c");
-#define PAD_INTERCEPTED 0x80000000u
-
-static int32_t pad_handle = -1, pad_user = -1;
-static double pad_next_open;
-
-static float stick_axis(uint8_t v)
-{
-    return (v - 127.5f) / 127.5f;
-}
-
-static void stick(uint8_t bx, uint8_t by, float *x, float *y)
-{
-    float fx = stick_axis(bx), fy = stick_axis(by);
-    float len = sqrtf(fx * fx + fy * fy);
-    const float dead = 0.18f;
-    if (len < dead) {
-        *x = *y = 0;
-        return;
-    }
-    float scale = (len > 1 ? 1 : (len - dead) / (1 - dead)) / len;
-    *x = fx * scale;
-    *y = fy * scale;
-}
-
-/* The console doesn't give titles scePadSetVibration (run 10: unresolved);
- * no rumble until another way is found. */
-void plat_pad_rumble(float strength, int ms)
-{
-    (void)strength;
-    (void)ms;
-}
-
-bool plat_pad_read(PadState *state)
-{
-    static PadSample last;
-    static bool have_last;
-    memset(state, 0, sizeof(*state));
-    double now = plat_time();
-    if (pad_handle < 0 && now >= pad_next_open) {
-        static bool initialized;
-        pad_next_open = now + 1.0;
-        if (!initialized) {
-            fprintf(stderr, "VLC-PS5: user service %#x, pad %#x\n", sceUserServiceInitialize(NULL),
-                    scePadInit());
-            initialized = true;
-        }
-        if (pad_user >= 0 || sceUserServiceGetInitialUser(&pad_user) == 0) {
-            pad_handle = scePadOpen(pad_user, 0, 0, NULL);
-            fprintf(stderr, "VLC-PS5: pad user %d, handle %d\n", pad_user, pad_handle);
-        } else {
-            pad_user = -1;
-        }
-    }
-    if (pad_handle < 0)
-        return false;
-    PadSample samples[64];
-    int n = scePadRead(pad_handle, samples, 64);
-    if (n < 0 || n > 64) {
-        have_last = false;
-        if (n < 0) {
-            scePadClose(pad_handle);
-            pad_handle = -1;
-        }
-        return false;
-    }
-    const PadSample *best = NULL;
-    for (int i = 0; i < n; i++)
-        if (!best || samples[i].timestamp_us > best->timestamp_us)
-            best = &samples[i];
-    if (best) {
-        last = *best;
-        have_last = true;
-    }
-    /* The shell has the pad (home screen, a system dialog): nothing is held. */
-    if (!have_last || !last.connected || (last.buttons & PAD_INTERCEPTED))
-        return false;
-    state->connected = true;
-    state->buttons = last.buttons & 0x00ffffffu;
-    stick(last.lx, last.ly, &state->lx, &state->ly);
-    stick(last.rx, last.ry, &state->rx, &state->ry);
-    state->l2 = last.l2 / 255.0f;
-    state->r2 = last.r2 / 255.0f;
-    /* Touchpad (ScePadData's touch data at 0x34: count, then 8-byte points of
-     * x, y at 0x3c; the pad is 1920x1080). */
-    const uint8_t *raw = (const uint8_t *)&last;
-    state->touches = raw[0x34] > 2 ? 2 : raw[0x34];
-    if (state->touches) {
-        uint16_t x, y;
-        memcpy(&x, raw + 0x3c, 2);
-        memcpy(&y, raw + 0x3e, 2);
-        state->tx = x / 1919.0f;
-        state->ty = y / 1079.0f;
-    }
-    if (state->l2 > 0.5f)
-        state->buttons |= PAD_L2;
-    if (state->r2 > 0.5f)
-        state->buttons |= PAD_R2;
-    return true;
-}
+#include "pad_ps5.h"
 
 /* ---- the TV through VK_KHR_display (QUICK3's mode choice) ----------------- */
 

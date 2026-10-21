@@ -20,6 +20,7 @@
 #include "platform.h"
 #include "player.h"
 #include "ui.h"
+#include "controller.h"
 #include "network.h"
 #include "web.h"
 
@@ -87,7 +88,15 @@ int main(void)
         if (dt > 0.5f && gfx.frame_number > 10)
             fprintf(stderr, "ui: a frame took %.0f ms (the interface froze)\n", dt * 1000);
         PadState pad;
-        plat_pad_read(&pad);
+        bool pad_ok = plat_pad_read(&pad);
+        controller_imgui(pad); // Queue platform events BEFORE ImGui::NewFrame.
+        static double pad_log_at;
+        if (t >= pad_log_at) {
+            fprintf(stderr, "input:main frame=%llu poll=%d connected=%d buttons=%08x stick=%.2f,%.2f forwarded=1\n",
+                    (unsigned long long)gfx.frame_number, pad_ok, pad.connected,
+                    pad.buttons, pad.lx, pad.ly);
+            pad_log_at = t + 5;
+        }
         library_update();
         double t_lib = plat_time();
 

@@ -5,10 +5,12 @@ Native PS5 homebrew Plex client under development, derived from
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
 [successful GitHub Actions run 39633799498](https://github.com/tattedbeardo89/PlexStation/actions/runs/39633799498).
-Console launch and playback remain untested.
+The owner confirmed launch and UI rendering on the target PS5; DualSense
+navigation failed in that build. Controller fixes now require device retesting.
+Media playback remains unverified.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
-This exact runtime combination is awaiting hardware verification. PlexStation
+Launch/UI rendering is owner-confirmed; input and playback need verification. PlexStation
 uses independent development identity **PPSA85301**; VLC's **PPSA85300** is
 preserved. No replacement jailbreak or browser runtime is introduced.
 
@@ -47,8 +49,9 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 - Original PlexStation icon/loading assets and independent title metadata.
 
 These are implemented source paths. Native compilation, linking and package
-checks passed in Actions. Live Plex integration, PS5 launch, codec support
-and audio sync have **not** been verified.
+checks passed in Actions, and the owner confirmed PS5 launch/UI rendering.
+Live Plex integration, controller fixes, codec support and audio sync still
+require physical acceptance.
 
 ## Incomplete features
 
@@ -64,6 +67,7 @@ against accessible current official documentation and a real Plex account.
 - [Cloud setup state](docs/CLOUD-SETUP.md)
 - [Architecture and limits](docs/ARCHITECTURE.md)
 - [Build, configuration and ShadowMountPlus deployment](docs/BUILD-AND-DEPLOY.md)
+- [DualSense investigation, diagnostics and Windows FTP deployment](docs/CONTROLLER-TESTING.md)
 - [Actual validation results and device checklist](docs/VALIDATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Licensing and attribution](THIRD_PARTY.md)
