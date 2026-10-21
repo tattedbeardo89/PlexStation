@@ -50,13 +50,15 @@ int main() {
             CHECK(q.headers.at("X-Plex-Token") == "scoped");
             if (q.url == "https://local/identity")
                 return Reply{503, "", ""};
+            if (q.url == "https://remote/library/sections")
+                return Reply{200, R"({"MediaContainer":{"Directory":[]}})", ""};
             return Reply{200, R"({"MediaContainer":{"machineIdentifier":"abc"}})", ""};
         },
         "test-device");
     std::string selected;
     auto result = client.select(ss[0], false, selected);
     CHECK(bool(result));
-    CHECK(calls == 2);
+    CHECK(calls == 3);
     CHECK(selected == "https://remote");
     Client mismatch(
         [](const Request &) {

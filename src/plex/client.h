@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "nlohmann/json.hpp"
+#include "net.h"
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -12,16 +13,21 @@ struct Request {
     std::string method, url;
     std::map<std::string, std::string> headers;
     std::string body;
+    int connect_timeout_ms = 5000, timeout_ms = 20000;
 };
 struct Reply {
     int status = 0;
     std::string body, error;
+    Failure failure = Failure::None;
+    bool tcp_connected = false, tls_verified = false;
 };
 using Transport = std::function<Reply(const Request &)>;
 struct Result {
     Json data;
     std::string error;
     int status = 0;
+    Failure failure = Failure::None;
+    bool tcp_connected = false, tls_verified = false;
     explicit operator bool() const { return error.empty(); }
 };
 struct Connection {
@@ -31,6 +37,7 @@ struct Connection {
 struct Server {
     std::string id, name, token;
     std::vector<Connection> connections;
+    bool https_required = false;
 };
 struct Item {
     std::string id, key, type, title, summary, thumb, art;
@@ -50,6 +57,11 @@ int64_t number(const Json &, const char *, int64_t fallback = 0);
 std::vector<Item> items(const Json &);
 std::vector<Server> servers(const Json &);
 bool valid_base(const std::string &, bool allow_http);
+struct ConnectionAttempt {
+    std::string endpoint, route, protocol, tcp = "not attempted", tls = "not attempted",
+        identity = "not attempted", libraries = "not attempted", result;
+    unsigned port = 0;
+};
 class Client {
     Transport transport;
     std::string client_id;
@@ -62,7 +74,9 @@ class Client {
     Result validate_account(const std::string &account_token);
     Result poll_pin(int64_t id, const std::string &code);
     Result resources(const std::string &account_token);
-    Result select(const Server &, bool allow_http, std::string &selected);
+    Result select(const Server &, bool allow_http, std::string &selected,
+                  std::vector<ConnectionAttempt> *attempts = nullptr);
+    Result identity(const std::string &base, const std::string &token, const std::string &expected);
     Result sections(const std::string &base, const std::string &token);
     Result browse(const std::string &base, const std::string &token, const std::string &path,
                   int start = 0, int size = 60);

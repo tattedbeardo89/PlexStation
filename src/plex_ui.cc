@@ -51,7 +51,7 @@ int focus = 0, nav = 0, track_focus = 0, global_delay = 0, page_start = 0, page_
     version = 0;
 int editor = 0, edit_focus = 0;
 std::string edit_text;
-const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .:-_/";
+const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .:-_/[]";
 bool sidebar = true, in_detail = false, settings = false, tracks = false, video = false,
      allow_http = false;
 ControllerInput controller;
@@ -72,6 +72,21 @@ enum Job {
 };
 Job job = None;
 std::string next_base, request_path;
+Server selected_server, connection_target;
+std::vector<ConnectionAttempt> connection_attempts, next_attempts;
+bool connection_diagnostics=false, manual_confirm_http=false, manual_tested=false;
+int diagnostic_focus=0;
+Json manual_sections;
+std::string manual_candidate;
+void submit(Job kind, std::function<Result()> work);
+void test_manual() {
+    auto target=connection_target;
+    target.connections={{manual_candidate,true,false}};
+    manual_tested=false; next_attempts.clear(); next_base.clear();
+    bool http=allow_http;
+    submit(Manual,[target,http]{return client->select(target,http,next_base,&next_attempts);});
+}
+
 
 std::string progress_state;
 int64_t progress_time = 0;
@@ -114,6 +129,8 @@ void signout() {
     server_token.clear();
     base.clear();
     available.clear();
+    connection_attempts.clear(); selected_server={}; connection_target={};
+    connection_diagnostics=false; manual_tested=false; manual_confirm_http=false; editor=0;
     listing.clear();
     history.clear();
     auth.cancel();
@@ -187,6 +204,19 @@ void finish_job() {
             auth.fail("Plex sign-in is no longer valid. Press Cross to sign in again.");
         return;
     }
+    if (done==Select || done==Manual) {
+        connection_attempts=next_attempts; diagnostic_focus=0;
+        for(const auto &attempt:connection_attempts)
+            fprintf(stderr,"conn: %s route=%s protocol=%s port=%u TCP=%s TLS=%s identity=%s libraries=%s result=%s\n",
+                attempt.endpoint.c_str(),attempt.route.c_str(),attempt.protocol.c_str(),attempt.port,
+                attempt.tcp.c_str(),attempt.tls.c_str(),attempt.identity.c_str(),attempt.libraries.c_str(),attempt.result.c_str());
+        if(!result || done==Manual) connection_diagnostics=true;
+        if(done==Manual && result) {
+            manual_sections=result.data; manual_tested=true;
+            message="Manual endpoint verified. Cross saves and connects; Circle returns to editing.";
+            return;
+        }
+    }
     if (!result) {
         message = result.error;
         if (done == Resources && account_loading) account_error = result.error;
@@ -207,6 +237,10 @@ void finish_job() {
         if (!credentials_saved)
             message = "Signed in for this session; saving failed. Check account storage permissions.";
         available = servers(result.data);
+        auto saved_uri=pref_str("plex_manual_uri", ""), saved_id=pref_str("plex_manual_server_id", "");
+        if(valid_base(saved_uri,true))
+            for(auto &server:available) if(server.id==saved_id)
+                server.connections.insert(server.connections.begin(),{saved_uri,true,false});
         listing.clear();
         focus = 0;
         sidebar = false;
@@ -216,13 +250,12 @@ void finish_job() {
         if (available.empty())
             message = credentials_saved ? "No accessible Plex Media Servers" :
                 "No servers found. Sign-in could not be saved; check storage permissions.";
-    } else if (done == Select || done == Manual) {
-        base = next_base;
-        available.clear();
-        settings = false;
-        sidebar = true;
-        auto b = base, t = server_token;
-        submit(Sections, [b, t] { return client->sections(b, t); });
+    } else if (done == Select) {
+        base=next_base; selected_server=connection_target;
+        available.clear(); settings=false; in_detail=false; sidebar=false; focus=0;
+        listing=items(result.data); page_path="/library/sections"; page_title="Libraries";
+        page_start=0; page_total=listing.size();
+        if(listing.empty()) message="Connected; no accessible libraries were returned.";
     } else if (done == Sections || done == Browse) {
         listing = items(result.data);
         in_detail = false;
@@ -580,10 +613,54 @@ void ui_frame(const PadState &pad, float dt) {
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())
         draw_text(390, 950, 25, message, IM_COL32(240, 185, 90, 255));
+    if(manual_confirm_http) {
+        draw_text(390,230,34,"Approve unencrypted local HTTP?");
+        draw_text(390,310,26,"Traffic and credentials are not encrypted on this connection.");
+        draw_text(390,370,26,"HTTPS is recommended. No automatic downgrade is performed.");
+        draw_text(390,470,27,"Cross: approve and test   Circle: cancel");
+        if(hit & PAD_CIRCLE) manual_confirm_http=false;
+        else if((hit & PAD_CROSS) && job==None) {
+            allow_http=true; pref_set("plex_allow_http",1); manual_confirm_http=false; test_manual();
+        }
+        return;
+    }
+    if(connection_diagnostics) {
+        rect(360,50,1510,960,IM_COL32(12,13,17,255));
+        draw_text(390,70,38,"Server Connection Diagnostics");
+        if(hit & PAD_UP) diagnostic_focus=std::max(0,diagnostic_focus-1);
+        if(hit & PAD_DOWN) diagnostic_focus=std::min(std::max(0,static_cast<int>(connection_attempts.size())-1),diagnostic_focus+1);
+        if(!connection_attempts.empty()) {
+            const auto &d=connection_attempts[diagnostic_focus];
+            draw_text(390,175,28,std::to_string(diagnostic_focus+1)+" / "+std::to_string(connection_attempts.size())+"   "+d.endpoint);
+            draw_text(390,240,27,d.route+"   "+d.protocol+"   port "+std::to_string(d.port));
+            draw_text(390,325,25,"TCP: "+d.tcp);
+            draw_text(390,405,25,"TLS: "+d.tls);
+            draw_text(390,485,25,"Identity: "+d.identity);
+            draw_text(390,565,25,"Libraries: "+d.libraries);
+            draw_text(390,660,25,"Result: "+d.result);
+        } else draw_text(390,250,28,"No completed endpoint attempts yet.");
+        if(job==Select || job==Manual) draw_text(390,750,25,"Testing permitted endpoints on the network worker...");
+        draw_text(390,845,25,manual_tested ? "Cross: save verified endpoint and connect   Circle: back" : "Up/Down: endpoint attempts   Circle: back");
+        if(hit & PAD_CIRCLE) {connection_diagnostics=false; manual_tested=false;}
+        else if(manual_tested && (hit & PAD_CROSS) && job==None) {
+            pref_set("plex_manual_uri",next_base); pref_set("plex_manual_server_id",connection_target.id);
+            selected_server=connection_target; server_token=connection_target.token; base=next_base;
+            listing=items(manual_sections); page_path="/library/sections"; page_title="Libraries";
+            available.clear(); sidebar=false; focus=0; settings=false; in_detail=false; editor=0;
+            page_start=0; page_total=listing.size();
+            connection_diagnostics=false; manual_tested=false; message="Verified endpoint saved; libraries loaded.";
+        }
+        return;
+    }
+    if(!editor && (hit & PAD_TRIANGLE)) {connection_diagnostics=true; diagnostic_focus=0; return;}
+    if(!editor && !available.empty() && (hit & PAD_SQUARE) && job==None) {
+        connection_target=available[std::clamp(focus,0,static_cast<int>(available.size())-1)];
+        editor=2; edit_text=pref_str("plex_manual_uri","https://"); edit_focus=0; return;
+    }
     if (editor) {
         draw_text(390, 180, 30,
                   editor == 1 ? "Search your server"
-                              : "Manual server: scheme://host:port (no trailing slash)");
+                              : "Manual server: [http(s)://]host[:port] (default HTTPS / 32400)");
         draw_text(390, 245, 28, edit_text);
         if (hit & PAD_LEFT)
             edit_focus = std::max(0, edit_focus - 1);
@@ -603,21 +680,23 @@ void ui_frame(const PadState &pad, float dt) {
                  i == edit_focus ? IM_COL32(170, 115, 25, 255) : IM_COL32(35, 37, 43, 255));
             draw_text(x + 25, y + 10, 28, std::string(1, alphabet[i]));
         }
-        draw_text(390, 870, 24, "Cross: type • Square: erase • Triangle: submit • Circle: cancel");
+        draw_text(390, 870, 24, editor==1 ? "Cross: type • Square: erase • Triangle: submit • Circle: cancel" : "Cross: type • Square: erase • Triangle: test before saving • Circle: cancel");
         if (hit & PAD_CIRCLE)
             editor = 0;
         if ((hit & PAD_TRIANGLE) && job == None) {
             if (editor == 1) {
                 load("/search?query=" + encode(edit_text), "Search");
                 editor = 0;
-            } else if (valid_base(edit_text, allow_http)) {
-                next_base = edit_text;
-                server_token = account;
-                auto b = next_base, t = server_token;
-                submit(Manual, [b, t] { return client->call("GET", b, "/identity", t); });
-                editor = 0;
-            } else
-                message = "Use HTTPS, or explicitly enable HTTP in Settings";
+            } else {
+                manual_candidate=manual_endpoint(edit_text);
+                Endpoint parsed;
+                if(manual_candidate.empty() || !endpoint(manual_candidate,parsed))
+                    message="Enter a valid host/IP and port; bracket IPv6 addresses.";
+                else if(!parsed.tls && connection_target.https_required)
+                    message="This server requires HTTPS; HTTP is not permitted.";
+                else if(!parsed.tls) manual_confirm_http=true;
+                else test_manual();
+            }
         }
         return;
     }
@@ -702,8 +781,12 @@ void ui_frame(const PadState &pad, float dt) {
             if (focus == 4)
                 signout();
             if (focus == 5) {
+                if(job!=None) {message="Wait for the current connection request to finish."; return;}
+                if(!selected_server.id.empty()) connection_target=selected_server;
+                else if(available.size()==1) connection_target=available.front();
+                else {message="Choose a server and press Square to test its manual endpoint."; return;}
                 editor = 2;
-                edit_text = "https://";
+                edit_text = pref_str("plex_manual_uri","https://");
                 edit_focus = 0;
             }
             pref_set("plex_audio_delay", global_delay);
@@ -728,9 +811,10 @@ void ui_frame(const PadState &pad, float dt) {
             row(i, focus, 210 + (i - first) * 85, available[i].name);
         if ((hit & PAD_CROSS) && job == None) {
             auto s = available[focus];
+            connection_target=s; next_attempts.clear(); next_base.clear(); manual_tested=false;
             server_token = s.token;
             bool http = allow_http;
-            submit(Select, [s, http] { return client->select(s, http, next_base); });
+            submit(Select, [s, http] { return client->select(s, http, next_base, &next_attempts); });
         }
     } else if (in_detail) {
         draw_text(390, 220, 25,
@@ -804,6 +888,7 @@ void ui_frame(const PadState &pad, float dt) {
                           std::to_string(page_start + listing.size()) + " of " +
                           std::to_string(page_total));
     }
+    draw_text(390, 985, 21,"Triangle: connection diagnostics • Server picker Square: manual endpoint");
     draw_text(390, 1020, 23,
               "D-pad / Stick Navigate • Cross Select • Circle Back • L1/R1 Sections • Options Settings");
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "client.h"
+#include "tinyxml2/tinyxml2.h"
 #include <algorithm>
 #include <charconv>
 #include <fcntl.h>
@@ -84,6 +85,9 @@ std::vector<Server> servers(const Json &j) {
         s.id = text(v, "clientIdentifier");
         s.name = text(v, "name");
         s.token = text(v, "accessToken");
+        auto required=v.find("httpsRequired");
+        s.https_required=required!=v.end() && ((required->is_boolean() && required->get<bool>()) ||
+            (required->is_number_integer() && required->get<int>()!=0));
         auto it = v.find("connections");
         if (it != v.end() && it->is_array())
             for (const auto &c : *it) {
@@ -97,8 +101,7 @@ std::vector<Server> servers(const Json &j) {
         std::stable_sort(s.connections.begin(), s.connections.end(),
                          [](const Connection &a, const Connection &b) {
                              auto rank = [](const Connection &c) {
-                                 return (c.local ? 0 : 4) + (c.relay ? 2 : 0) +
-                                        (c.uri.rfind("https://", 0) == 0 ? 0 : 1);
+                                 return (c.uri.rfind("https://",0)==0 ? 0 : 10) + (c.relay ? 4 : c.local ? 0 : 2);
                              };
                              return rank(a) < rank(b);
                          });
@@ -107,13 +110,8 @@ std::vector<Server> servers(const Json &j) {
     return out;
 }
 bool valid_base(const std::string &base, bool allow_http) {
-    size_t start = base.rfind("https://", 0) == 0                ? 8
-                   : allow_http && base.rfind("http://", 0) == 0 ? 7
-                                                                 : 0;
-    if (!start || base.size() <= start ||
-        base.find_first_of("\r\n\t @?#\\", start) != std::string::npos)
-        return false;
-    return base.find('/', start) == std::string::npos;
+    Endpoint parsed;
+    return endpoint(base,parsed) && (parsed.tls || allow_http);
 }
 Client::Client(Transport t, std::string id) : transport(std::move(t)), client_id(std::move(id)) {}
 Result Client::call(const std::string &method, const std::string &base, const std::string &path,
@@ -139,6 +137,8 @@ Result Client::call(const std::string &method, const std::string &base, const st
         q.headers["Content-Type"] = "application/x-www-form-urlencoded";
     Reply r = transport(q);
     // Do not include response bodies, addresses, tokens or transport diagnostics in errors.
+    if (r.failure != Failure::None)
+        return {{}, failure_message(r.failure), r.status, r.failure, r.tcp_connected, r.tls_verified};
     if (!r.error.empty()) {
         std::string safe = "Network or TLS request failed";
         if (r.error == "DNS failed") safe = "Could not resolve Plex. Check DNS and Internet access.";
@@ -149,14 +149,27 @@ Result Client::call(const std::string &method, const std::string &base, const st
         return {{}, safe, r.status};
     }
     if (r.status == 401 || r.status == 403)
-        return {{}, "Access denied: sign in again or check server sharing", r.status};
+        return {{}, "Access denied: sign in again or check server sharing", r.status, Failure::HttpStatus};
     if (r.status < 200 || r.status >= 300)
-        return {{}, "Server returned HTTP " + std::to_string(r.status), r.status};
+        return {{}, "Server returned HTTP " + std::to_string(r.status), r.status, Failure::HttpStatus};
+    auto body_start=r.body.find_first_not_of(" \t\r\n",r.body.compare(0,3,"\xEF\xBB\xBF")==0 ? 3:0);
+    if (path == "/identity" && body_start != std::string::npos && r.body[body_start] == '<') {
+        tinyxml2::XMLDocument document;
+        if (r.body.find("<!DOCTYPE") != std::string::npos ||
+            document.Parse(r.body.data(),r.body.size()) != tinyxml2::XML_SUCCESS)
+            return {{},failure_message(Failure::IdentityMalformed),r.status,Failure::IdentityMalformed};
+        auto *root=document.RootElement();
+        if (!root || std::string(root->Name())!="MediaContainer" || root->NextSiblingElement() ||
+            !root->Attribute("machineIdentifier") || !*root->Attribute("machineIdentifier"))
+            return {{},failure_message(Failure::IdentityMalformed),r.status,Failure::IdentityMalformed};
+        return {Json{{"MediaContainer",{{"machineIdentifier",root->Attribute("machineIdentifier")}}}},"",r.status};
+    }
     if (r.body.empty())
         return {Json::object(), "", r.status};
     auto j = Json::parse(r.body, nullptr, false);
     if (j.is_discarded())
-        return {{}, "Server returned invalid JSON", r.status};
+        return {{}, path=="/identity" ? failure_message(Failure::IdentityMalformed) : "Server returned invalid JSON",
+                r.status, path=="/identity" ? Failure::IdentityMalformed : Failure::None};
     return {std::move(j), "", r.status};
 }
 Result Client::create_pin(bool strong) {
@@ -185,21 +198,61 @@ Result Client::poll_pin(int64_t id, const std::string &code) {
     return result;
 }
 Result Client::resources(const std::string &token) {
-    return call("GET", "https://plex.tv", "/api/v2/resources?includeHttps=1&includeRelay=1", token);
+    return call("GET", "https://plex.tv", "/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=1", token);
 }
-Result Client::select(const Server &s, bool allow_http, std::string &selected) {
-    selected.clear();
-    Result last{{}, "No permitted server connections", 0};
-    for (const auto &c : s.connections) {
-        if (!valid_base(c.uri, allow_http && c.local))
+Result Client::identity(const std::string &base, const std::string &token, const std::string &expected) {
+    auto result=call("GET",base,"/identity",token);
+    if (!result) return result;
+    auto id=text(container(result.data),"machineIdentifier");
+    if (id.empty() || expected.empty())
+        return {{},failure_message(Failure::IdentityMalformed),result.status,Failure::IdentityMalformed};
+    if (id!=expected)
+        return {{},failure_message(Failure::IdentityMismatch),result.status,Failure::IdentityMismatch};
+    return result;
+}
+Result Client::select(const Server &s, bool allow_http, std::string &selected,
+                      std::vector<ConnectionAttempt> *attempts) {
+    selected.clear(); if(attempts) attempts->clear();
+    Result last{{},"No permitted server connections",0,Failure::Policy};
+    // Also sort callers' manually constructed candidates, not just resource JSON.
+    auto connections=s.connections;
+    std::stable_sort(connections.begin(),connections.end(),[](const Connection &a,const Connection &b){
+        auto rank=[](const Connection &c){return (c.uri.rfind("https://",0)==0 ? 0:10)+(c.relay ? 4:c.local ? 0:2);};
+        return rank(a)<rank(b);
+    });
+    unsigned index=0;
+    for(const auto &c:connections) {
+        ConnectionAttempt report; Endpoint parsed;
+        report.endpoint="endpoint "+std::to_string(++index);
+        report.route=c.relay ? "relay" : c.local ? "local" : "remote";
+        bool valid=endpoint(c.uri,parsed);
+        report.protocol=parsed.tls ? "HTTPS" : "HTTP"; report.port=parsed.port;
+        if(valid) report.endpoint+=parsed.host.size()>=12 && parsed.host.compare(parsed.host.size()-12,12,".plex.direct")==0 ? " [plex.direct]" : parsed.numeric ? " [IP redacted]" : " [host redacted]";
+        if(!valid || (!parsed.tls && (!allow_http || !c.local || s.https_required))) {
+            report.result=failure_message(valid ? Failure::Policy:Failure::Address);
+            if(attempts) attempts->push_back(report);
             continue;
-        last = call("GET", c.uri, "/identity", s.token);
-        if (last && text(container(last.data), "machineIdentifier") == s.id) {
-            selected = c.uri;
-            return last;
         }
-        if (last)
-            last.error = "Server identity did not match selected resource";
+        last=identity(c.uri,s.token,s.id);
+        report.tcp=(last.tcp_connected || last.status>0) ? "connected" : last.error;
+        report.tls=!parsed.tls ? "not encrypted (approved)" :
+            (last.tls_verified || last.status>0) ? "verified" : last.tcp_connected ? last.error : "not attempted";
+        report.identity=last ? "matched" : last.status>0 ? last.error : "not attempted";
+        if(last) {
+            last=sections(c.uri,s.token);
+            report.libraries=last ? "authenticated" : last.error;
+            if(parsed.tls && !last && last.status==0) report.tls=last.tls_verified ? "verified" : last.error;
+            // A successful identity alone is insufficient; try later candidates
+            // if authenticated sections or its response shape cannot be loaded.
+            if(last && (!last.data.contains("MediaContainer") || !last.data["MediaContainer"].is_object() ||
+                (last.data["MediaContainer"].contains("Directory") && !last.data["MediaContainer"]["Directory"].is_array())))
+                last={{},"Malformed library sections response",last.status,Failure::HttpMalformed};
+            report.libraries=last ? "authenticated" : last.error;
+            if(last) selected=c.uri;
+        }
+        report.result=last ? "Connected; libraries loaded" : last.error;
+        if(attempts) attempts->push_back(report);
+        if(last) return last;
     }
     return last;
 }

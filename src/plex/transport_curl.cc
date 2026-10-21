@@ -37,8 +37,8 @@ Transport curl_transport() {
         curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 0L); // never forward tokens across redirects
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L);
-        curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 5L);
-        curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(q.connect_timeout_ms));
+        curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, static_cast<long>(q.timeout_ms));
         curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, receive);
         curl_easy_setopt(c, CURLOPT_WRITEDATA, &body);
@@ -50,9 +50,14 @@ Transport curl_transport() {
         long status = 0;
         curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
         r.status = status;
-        if (code != CURLE_OK)
-            r.error = "Network or TLS error";
-        else
+        if (code != CURLE_OK) {
+            r.failure=code==CURLE_COULDNT_RESOLVE_HOST ? Failure::Dns :
+                code==CURLE_COULDNT_CONNECT ? Failure::Tcp : code==CURLE_OPERATION_TIMEDOUT ? Failure::Timeout :
+                code==CURLE_PEER_FAILED_VERIFICATION ? Failure::Certificate :
+                code==CURLE_SSL_CACERT_BADFILE ? Failure::CaMissing : code==CURLE_SSL_CONNECT_ERROR ? Failure::TlsHandshake :
+                code==CURLE_WRITE_ERROR ? Failure::TooLarge : code==CURLE_PARTIAL_FILE ? Failure::HttpMalformed : Failure::Receive;
+            r.error=failure_message(r.failure);
+        } else
             r.body = std::move(body.data);
         curl_slist_free_all(headers);
         curl_easy_cleanup(c);

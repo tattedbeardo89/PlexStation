@@ -12,6 +12,9 @@ extern "C" double plat_time() { return clock_now; }
 extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
 int pref_int(const char *, int v) { return v; }
 void pref_set(const char *, int) {}
+static std::map<std::string,std::string> test_prefs;
+std::string pref_str(const char *key,const char *fallback) {auto it=test_prefs.find(key); return it==test_prefs.end() ? fallback:it->second;}
+void pref_set(const char *key,const std::string &value) {test_prefs[key]=value;}
 namespace plex {
 Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
@@ -146,6 +149,29 @@ int main() {
     std::string restored_id,restored_token;
     assert(load_credentials(credential_file,restored_id,restored_token));
     assert(restored_id==device && restored_token==account);
+    // Controller diagnostics and manual test-before-save, including HTTP consent.
+    frame(); press(PAD_TRIANGLE); assert(connection_diagnostics);
+    press(PAD_CIRCLE); assert(!connection_diagnostics);
+    connection_target=available.front();
+    auto manual_transport=[](const Request &q) {
+        assert(q.headers.at("X-Plex-Token")=="fixture-scoped-token");
+        if(q.url.find("/identity")!=std::string::npos)
+            return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
+        assert(q.url=="http://127.0.0.1:32400/library/sections");
+        return Reply{200,R"({"MediaContainer":{"Directory":[]}})",""};
+    };
+    client=std::make_unique<Client>(manual_transport,device);
+    editor=2; edit_text="http://127.0.0.1"; edit_focus=0; allow_http=false;
+    press(PAD_TRIANGLE); assert(manual_confirm_http && !allow_http);
+    press(PAD_CIRCLE); assert(!manual_confirm_http && !allow_http && editor==2);
+    press(PAD_TRIANGLE); press(PAD_CROSS);
+    if(job==Manual) {pending.wait(); finish_job();}
+    assert(allow_http && manual_tested && connection_diagnostics);
+    assert(!test_prefs.count("plex_manual_uri")); // test alone does not save
+    press(PAD_CROSS);
+    assert(!connection_diagnostics && !manual_tested && editor==0);
+    assert(test_prefs["plex_manual_uri"]=="http://127.0.0.1:32400" && test_prefs["plex_manual_server_id"]=="server");
+    assert(base=="http://127.0.0.1:32400" && selected_server.id=="server");
     // Simulate process startup using the real ui_init and saved private file.
     account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
     pending.wait(); finish_job(); assert(job==Resources);

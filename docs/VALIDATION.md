@@ -194,3 +194,17 @@ The first regression pass caught a changed generic error string expected by
 the existing transport probes. The generic string was preserved while keeping
 safe DNS/CA/TLS explanations. Both full transport suites passed on rerun.
 No test result from that initial failed pass is presented as passing.
+
+## PMS connectivity follow-up
+
+The owner confirmed successful physical account linking and server discovery
+on authentication build cdfe733. Selecting the PMS failed with the generic
+network/TLS message, before libraries loaded. Linking and discovery are now
+confirmed; restart persistence, PMS connection, browsing and playback remain
+separate acceptance items.
+
+The targeted changes introduce typed native failure diagnostics, nonblocking
+retry/deadline handling, framed-response completion, XML/JSON identity parsing,
+identity plus authenticated-sections validation with candidate fallback, a
+controller diagnostics panel, and tested-before-saving manual overrides.
+See SERVER-CONNECTIVITY.md for the audit, test methods and physical checklist.

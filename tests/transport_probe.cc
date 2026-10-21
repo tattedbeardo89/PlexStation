@@ -29,13 +29,13 @@ int main(int argc, char **argv) {
     if (redirect || redirect.status != 302)
         return 1;
     auto huge = c.call("GET", base, "/huge");
-    if (huge || huge.error != "Network or TLS request failed")
+    if (huge || huge.failure != Failure::TooLarge)
         return 1;
     auto tls = c.call("GET", base.substr(0, 4) + "s" + base.substr(4), "/ok");
     if (tls)
         return 1;
     auto self_signed = c.call("GET", argv[2], "/ok", "test-only-token");
-    if (self_signed)
+    if (self_signed || self_signed.failure != Failure::Certificate)
         return 1;
     auto chunked = c.call("GET", base, "/chunked");
     if (!chunked || text(chunked.data, "status") != "ok")

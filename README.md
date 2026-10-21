@@ -5,9 +5,9 @@ Native PS5 homebrew Plex client under development, derived from
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
 [TV-authentication test build 39648185013](https://github.com/tattedbeardo89/PlexStation/actions/runs/39648185013).
-The owner confirms launch/UI rendering and Cross initiating authentication
-on the controller-fix build. Full navigation and the new account-linking flow
-require device acceptance.
+The owner confirms launch, Cross input, completed Plex linking and server
+discovery on build cdfe733. Connecting to that PMS failed; the targeted
+connectivity changes require device acceptance.
 Media playback remains unverified.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
@@ -51,8 +51,8 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 
 These are implemented source paths. Native compilation, linking and package
 checks passed in Actions, and the owner confirmed PS5 launch/UI rendering.
-Live Plex integration, controller fixes, codec support and audio sync still
-require physical acceptance.
+Plex linking/server discovery are owner-confirmed. PMS connectivity, full
+controller navigation, codec support and audio sync still require acceptance.
 
 ## Incomplete features
 
@@ -70,6 +70,7 @@ and PS5 restart persistence still need verification.
 - [Build, configuration and ShadowMountPlus deployment](docs/BUILD-AND-DEPLOY.md)
 - [DualSense investigation, diagnostics and Windows FTP deployment](docs/CONTROLLER-TESTING.md)
 - [TV linking implementation, references and account test procedure](docs/AUTHENTICATION.md)
+- [Server connection diagnostics, manual endpoints and PS5 testing](docs/SERVER-CONNECTIVITY.md)
 - [Actual validation results and device checklist](docs/VALIDATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Licensing and attribution](THIRD_PARTY.md)

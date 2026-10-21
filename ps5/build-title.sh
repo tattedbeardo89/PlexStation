@@ -60,6 +60,7 @@ for f in imgui imgui_draw imgui_tables imgui_widgets; do
 done
 cc "${cflags[@]}" "${cxxflags[@]}" -c "$repo/third_party/imgui/backends/imgui_impl_vulkan.cpp" \
     -o "$work/obj/imgui_impl_vulkan.o"
+cc "${cflags[@]}" "${cxxflags[@]}" -c "$repo/third_party/tinyxml2/tinyxml2.cpp" -o "$work/obj/tinyxml2.o"
 cc "${cflags[@]}" "${cxxflags[@]}" -c "$repo/src/plex/client.cc" -o "$work/obj/plex_client.o"
 cc "${cflags[@]}" "${cxxflags[@]}" -c "$repo/src/plex/transport_ps5.cc" -o "$work/obj/plex_transport.o"
 cc "${cflags[@]}" "${cxxflags[@]}" -c "$repo/src/plex/artwork.cc" -o "$work/obj/plex_artwork.o"
@@ -199,6 +200,7 @@ cp "$repo/assets/plexstation.svg" "$app/assets/"
 cp "$repo/LICENSE" "$app/"
 cp "$repo/THIRD_PARTY.md" "$app/"
 mkdir -p "$app/licenses"
+cp "$repo/third_party/tinyxml2/LICENSE.txt" "$app/licenses/tinyxml2.txt"
 cp "$repo/third_party/qrcodegen/LICENSE" "$app/licenses/qrcodegen-MIT.txt"
 # The interface languages (src/lang.cc)
 mkdir -p "$app/assets/lang"

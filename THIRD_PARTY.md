@@ -40,3 +40,9 @@ to `3c6d0b3cefb4e049dc337e82237c9644399716a8` from
 https://github.com/nayuki/QR-Code-generator. Unmodified C source/header and
 license are in third_party/qrcodegen. The native installation includes
 licenses/qrcodegen-MIT.txt. No external QR-image service is used.
+
+PMS identity XML parsing uses TinyXML-2, pinned to
+`8224e427b655b83dae5e2298f1e6919523a78737` from
+https://github.com/leethomason/tinyxml2, under its zlib license. Unmodified
+source/header and license are in third_party/tinyxml2; the native installation
+includes licenses/tinyxml2.txt. Only memory parsing is used; DTDs are rejected.
