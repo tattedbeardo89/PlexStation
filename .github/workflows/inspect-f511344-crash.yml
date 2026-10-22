@@ -1,0 +1,56 @@
+name: Inspect exact f511344 SIGILL artifacts
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-f511344-crash.yml'
+      - 'tools/inspect-f511344-crash.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: inspect-plexstation-f511344
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39797264696
+          name: PlexStation-native-debug-f511344616040a64054f1b45584bdab9a5cc67c7
+          path: evidence/debug
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39797264696
+          name: PlexStation-PPSA85301-f511344616040a64054f1b45584bdab9a5cc67c7
+          path: evidence/installation
+      - name: Inspect matching instruction and mappings
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
+          python3 tools/inspect-f511344-crash.py evidence
+          cat evidence/fault-report.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish public fault evidence summary
+        if: always()
+        run: |
+          if [[ -f evidence/fault-report.txt ]]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          text=Path('evidence/fault-report.txt').read_text()[-14000:]
+          text=text.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+          print('::notice title=Matching f511344 SIGILL evidence::'+text)
+          PY
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: PlexStation-f511344-SIGILL-analysis
+          path: evidence/fault-report.txt
+          if-no-files-found: error
+          retention-days: 30
