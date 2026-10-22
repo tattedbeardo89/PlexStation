@@ -77,3 +77,58 @@ The actual audio callback requests 48 kHz signed 16-bit PCM, stereo by default
 (optional existing surround output). Lossless **source** Direct Play avoids PMS
 encoding but does not imply original sample-rate/bit-depth output or bit-perfect
 playback. Decoder/channel/rate observations still require real files on PS5.
+
+### Checkpoint A native result
+
+[Run 39705677578](https://github.com/tattedbeardo89/PlexStation/actions/runs/39705677578)
+passed all host/ASan/UBSan gates, real native compilation, debug collection,
+complete packaging and ZIP modes at `b3cc83265d63c84590e8030b268eeb904daa037a`.
+Artifacts: `PlexStation-PPSA85301-b3cc83265d63c84590e8030b268eeb904daa037a`
+(37.4 MB), `PlexStation-native-debug-b3cc83265d63c84590e8030b268eeb904daa037a`
+(86.7 MB), `PlexStation-build-diagnostics-b3cc83265d63c84590e8030b268eeb904daa037a`.
+Public run/artifact metadata was inspected; no authenticated artifact download
+or physical playback test was available. Later checkpoints fix a transition
+ordering issue found in review (stop old audio before opening new audio).
+
+## Checkpoint B implementation — Audiobooks
+
+Settings → Audio / Audiobook Libraries designates an accessible music section
+for this profile/PMS only. No server metadata is rewritten or first-class Plex
+"audiobook" type invented. Audiobooks uses actual author/album/track/playlist/
+collection organization; author biography is parent metadata where available.
+Optional narrator/series metadata has no guaranteed PMS schema and is not
+invented. Dedicated normalized narrator/series browsing remains incomplete.
+
+Now Playing adds 0.75/1/1.10/1.25/1.5/1.75/2x requested speed through libVLC,
+existing compiled scaletempo/time-stretch support, actual observed VLC rate,
+±10s / ±30s seek, embedded chapters or next/previous-track fallback, restart
+chapter/book, local finished state and up to 16 local bookmarks per book.
+The stored sleep preference is Off/15/30/45/60/end-of-track; countdowns are
+session-only and expiry pauses (or stops at track end) without continuing into
+the next track. Audible pitch preservation/rate behavior requires hardware
+acceptance; linking scaletempo is not proof of it.
+
+`plexstation-listening.json` contains **PlexStation-local** book/track positions,
+completion, bookmarks and stable scope IDs. It is bounded (512 records/512 KiB),
+mode 0600, owner/type/symlink checked and atomically replaced after file fsync.
+Corrupt/unsafe existing files are not silently overwritten. Preserve this file
+alongside prefs/account credentials during updates. It contains no auth token
+or playback URL. Continue Listening and Completed are explicitly local lists.
+Newer observed server timestamps supersede older local resume entries; when
+server metadata lacks reliable freshness, cross-client book-level reconciliation
+cannot be guaranteed. Actual scoped track timelines/scrobbles still go to PMS;
+local book-level completion/bookmarks are not claimed synchronized to other apps.
+
+Queue/positions are bounded and profile/server scoped. Profile changes stop VLC
+and invalidate stale work. Multi-file books play sequential track items; an
+individual track with multiple Media Parts remains unsupported. Missing chapter
+metadata falls back to track navigation. Persistent paused queue reconstruction,
+per-book speed overrides, a full bookmark browser, and narrator/series-specific
+filters remain incomplete. The latest local bookmark can be restored in Now Playing.
+
+The audio transition review also found native ps5http's independent logger
+printed media and redirect URLs despite suppression of VLC's logger. Both
+messages now redact the address unconditionally. No credentials/URLs are added
+to listening records or diagnostics. A host ImGui fixture now rebuilds its legacy
+font atlas when new text invalidates it; the production Vulkan backend owns its
+actual atlas updates. Fixture success does not validate console font rendering.

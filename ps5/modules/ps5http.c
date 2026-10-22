@@ -800,7 +800,7 @@ static int Open(vlc_object_t *obj)
         access->p_sys = NULL;
         return VLC_EGENERIC; /* a segment for a video already stopped */
     }
-    PLOG("open %s", access->psz_url);
+    PLOG("open [media address redacted]");
 
     if (send_request(access, 0) != VLC_SUCCESS)
         goto error;
@@ -811,7 +811,7 @@ static int Open(vlc_object_t *obj)
             to = strdup(sys->redirect);
         if (!to)
             goto error;
-        PLOG("redirected (%d) to %s", sys->status, to);
+        PLOG("redirected (%d) [media address redacted]", sys->status);
         /* Not freed here: access_New() keeps the old address (to spot a
          * loop) and frees it itself. Freeing it too was a double free. */
         access->psz_url = to;

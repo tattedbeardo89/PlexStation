@@ -3,7 +3,13 @@
 struct AudioPage {std::string path,title;std::vector<Item> entries;int focus=0,start=0,total=0;};
 struct AudioUI {
     bool screen=false, active=false, now_playing=false, queue_view=false, menu=false, start_pending=false;
-    bool books=false, complete_album=false, shuffle_after=false;
+    bool books=false, playback_books=false, complete_album=false, shuffle_after=false;
+    Item book;
+    int speed=1, sleep_choice=0;
+    int64_t resume_position=0;
+    bool rate_pending=false;
+    SleepTimer sleep;
+    double save_at=0;
     int focus=0, menu_focus=0, start=0,total=0, queue_focus=0;
     std::string path,title,request_path,request_title;
     int request_start=0;bool request_push=false;
@@ -16,6 +22,9 @@ struct AudioUI {
     Progress report;
     double retry_at=0;
 } audio;
+ListeningStore listening;
+bool listening_loaded=false;
+void book_save(bool finished=false);
 std::string audio_scope() {return account_key("plex_audio")+"."+encode(selected_server.id);}
 bool book_section(const Item &i) {return music_section(i) && pref_int((audio_scope()+".books."+encode(i.id)).c_str(),0)!=0;}
 bool audio_available(bool books) {
@@ -23,7 +32,7 @@ bool audio_available(bool books) {
     return false;
 }
 void audio_reset() {
-    if(audio.active)player_stop();
+    if(audio.active){book_save();player_stop();}
     audio=AudioUI{};
 }
 void audio_leave_browse() {audio.screen=false;audio.now_playing=false;audio.queue_view=false;audio.menu=false;}
@@ -40,6 +49,7 @@ void audio_load(const std::string &path,const std::string &title,bool push=true,
     });
 }
 void audio_home(bool books) {
+    if(!listening_loaded){listening.load(std::string(plat_data_dir())+"/plexstation-listening.json");listening_loaded=true;}
     audio.screen=true;audio.books=books;audio.now_playing=false;audio.queue_view=false;audio.menu=false;
     audio.entries.clear();audio.history.clear();audio.path="sections";audio.title=books?"Audiobooks":"Music";audio.focus=0;
     for(const auto &s:home_sections)if(music_section(s) && book_section(s)==books)audio.entries.push_back(s);
@@ -52,8 +62,15 @@ void audio_start() {
     submit(AudioResolve,[b,t,item]{return client->call("GET",b,"/library/metadata/"+encode(item.id),t);});
 }
 void audio_queue_load(const Item &item,bool shuffle=false) {
-    if(job!=None)return;
+    if(job!=None){message="Finishing a server request; select Play again shortly.";return;}
+    if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}
+    audio.playback_books=audio.books;
+    audio.book=item;
+    if(item.type=="track" && !item.parent_id.empty()) {audio.book.id=item.parent_id;audio.book.type="album";audio.book.title=item.album;}
+    audio.speed=std::clamp(pref_int((audio_scope()+".speed").c_str(),1),0,6);
+    audio.resume_position=0;audio.sleep_choice=std::clamp(pref_int((audio_scope()+".sleep").c_str(),0),0,5);audio.sleep.clear();
     if(item.type=="track") {
+        if(audio.playback_books)audio.resume_position=book_resume({item},listening.get(audio_scope(),audio.book.id)).position;
         audio.queue.assign({item});audio.start_pending=true;return;
     }
     auto path=item.type=="playlist" ? "/playlists/"+encode(item.id)+"/items" : "/library/metadata/"+encode(item.id)+(item.type=="artist"?"/allLeaves":"/children");
@@ -81,7 +98,11 @@ void audio_finish(int kind,const Result &result) {
         auto tracks=audio_tracks(result.data,audio.complete_album);
         if(tracks.empty()){message="No permitted audio tracks returned";return;}
         audio.queue.assign(std::move(tracks));
-        if(audio.shuffle_after)audio.queue.shuffle(static_cast<uint32_t>(plat_time()*1000000));
+        if(audio.playback_books) {
+            auto resume=book_resume(audio.queue.entries,listening.get(audio_scope(),audio.book.id));
+            audio.queue.cursor=resume.index;audio.resume_position=resume.position;
+        }
+        if(audio.shuffle_after && !audio.playback_books)audio.queue.shuffle(static_cast<uint32_t>(plat_time()*1000000));
         audio.start_pending=true;return;
     }
     auto parsed=items(result.data);
@@ -89,23 +110,50 @@ void audio_finish(int kind,const Result &result) {
     auto decision=audio_direct_play(base,server_token,parsed[0]);
     if(decision.mode!=Mode::DirectPlay){message=decision.error;return;}
     if(video){stop();} // one VLC player; never overlap video and audio
-    if(!player_open(decision.url,0,{":no-video"})){message="VLC could not open audio";return;}
-    if(audio.active){queue_progress("stopped",player_time());player_stop();}
+    if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}
+    // Reconcile again with freshly resolved server timestamps before applying local resume.
+    if(audio.playback_books && parsed[0].last_played>number(listening.get(audio_scope(),audio.book.id),"updated"))audio.resume_position=parsed[0].offset;
+    if(!player_open(decision.url,audio.resume_position,{":no-video",":audio-time-stretch"})){message="VLC could not open audio";return;}
+    audio.resume_position=0;audio.rate_pending=audio.playback_books;
     audio.current=parsed[0];playing=audio.current;audio.active=true;audio.report={};audio.now_playing=true;
     audio.screen=true;sidebar=false;audio.retry_at=0;audio.focus=0;
     player_set_audio_delay(global_delay);
 }
+void book_save(bool finished) {
+    if(!audio.playback_books || audio.book.id.empty() || !audio.queue.current())return;
+    auto existing=listening.get(audio_scope(),audio.book.id);
+    int64_t total=0,duration=0;
+    for(size_t n=0;n<audio.queue.order.size();++n) {
+        auto length=audio.queue.entries[audio.queue.order[n]].duration;
+        duration+=std::min<int64_t>(length,INT64_MAX/4000);
+        if(n<audio.queue.cursor)total+=std::min<int64_t>(length,INT64_MAX/4000);
+    }
+    int64_t position=std::max<int64_t>(0,player_time());
+    existing["book"]=audio.book.id;existing["kind"]=audio.book.type;existing["title"]=audio.book.title;existing["thumb"]=audio.book.thumb;
+    existing["track"]=audio.current.id;existing["position"]=position;existing["total_position"]=total+std::min<int64_t>(position,INT64_MAX/4000);
+    existing["total_duration"]=duration;existing["finished"]=finished;existing["updated"]=static_cast<int64_t>(std::time(nullptr));
+    if(!listening.put(audio_scope(),audio.book.id,std::move(existing)))message="Local listening position could not be saved; check storage permissions.";
+}
 void audio_next(bool previous=false,bool natural=false) {
     if(audio.active) {
+        book_save(natural && !previous && audio.queue.cursor+1>=audio.queue.order.size());
         queue_progress("stopped",player_time());player_stop();audio.active=false;
     }
     bool next=previous?audio.queue.previous():audio.queue.advance(natural);
-    if(next)audio.start_pending=true;
+    if(next){audio.resume_position=0;audio.start_pending=true;}
 }
 void audio_tick(double now) {
     if(audio.active) {
+        if(audio.rate_pending && !player_buffering()){player_set_rate(book_speed(audio.speed));audio.rate_pending=false;}
+        if(audio.playback_books && now>=audio.save_at){book_save();audio.save_at=now+10;}
+        if(audio.sleep.due(now,player_ended() && !player_failed())) {
+            book_save();queue_progress("paused",player_time());
+            if(player_ended()){player_stop();audio.active=false;audio.sleep.clear();return;}
+            if(!player_paused())player_toggle_pause();
+            audio.sleep.clear();
+        }
         if(player_ended()) {
-            if(player_failed()){message="Audio interrupted. Cross on Retry resumes this track.";audio.active=false;player_stop();audio.retry_at=now;}
+            if(player_failed()){message="Audio interrupted. Cross on Retry resumes this track.";book_save();audio.resume_position=player_time();audio.active=false;player_stop();audio.retry_at=now;}
             else {if(audio.completed.size()<32)audio.completed.push_back(audio.current);audio_next(false,true);}
         } else if(audio.report.due(static_cast<int64_t>(now*1000),player_paused()?"paused":"playing"))
             queue_progress(player_paused()?"paused":"playing",player_time());
@@ -127,7 +175,7 @@ bool audio_frame(uint32_t hit,float) {
     if(!audio.screen || settings || profile_screen || !available.empty() || reconnect_screen || editor || video)return false;
     if(sidebar)return false;
     if(hit & PAD_OPTIONS){settings=true;settings_page=0;focus=0;return true;}
-    if(hit & PAD_LEFT){sidebar=true;return true;}
+    if((hit & PAD_LEFT) && !audio.now_playing){sidebar=true;return true;}
     draw_text(390,165,34,audio.now_playing?"Now Playing":audio.queue_view?"Queue":audio.title);
     if(hit & PAD_CIRCLE) {
         if(audio.menu){audio.menu=false;return true;}
@@ -139,14 +187,28 @@ bool audio_frame(uint32_t hit,float) {
     if(audio.now_playing) {
         if(!diagnostic(TextOnly))poster(400,235,480,480,audio.current,false);
         draw_text(940,245,36,audio.current.title);draw_text(940,310,29,audio.current.artist);draw_text(940,360,28,audio.current.album);
+        draw_text(940,390,22,"VLC rate: "+std::to_string(player_rate())+"x • output 48 kHz S16 (not bit-perfect)");
         draw_text(940,425,27,std::to_string(player_time()/1000)+" / "+std::to_string(audio.current.duration/1000)+" s");
         float fraction=audio.current.duration>0?std::clamp(static_cast<float>(player_time())/audio.current.duration,0.f,1.f):0;
         rect(940,480,800,10,IM_COL32(55,55,60,255));rect(940,480,800*fraction,10,IM_COL32(235,171,54,255));
-        const char *labels[]={"Play / Pause","Previous Track","Next Track","Shuffle","Repeat","Queue","Stop","Retry Current Track"};
+        if(audio.playback_books) {
+            if(hit & PAD_LEFT)player_seek(std::max<int64_t>(0,player_time()-10000));
+            if(hit & PAD_RIGHT)player_seek(player_time()+10000);
+            if(hit & PAD_L2)player_seek(std::max<int64_t>(0,player_time()-30000));
+            if(hit & PAD_R2)player_seek(player_time()+30000);
+            if(hit & PAD_TRIANGLE){
+                auto saved=listening.get(audio_scope(),audio.book.id);auto bookmarks=saved.find("bookmarks");
+                if(bookmarks==saved.end() || !bookmarks->is_array())saved["bookmarks"]=Json::array();
+                if(saved["bookmarks"].size()<16)saved["bookmarks"].push_back({{"track",audio.current.id},{"position",player_time()}});
+                if(!listening.put(audio_scope(),audio.book.id,std::move(saved)))message="Bookmark storage failed";
+                else message="PlexStation-local bookmark saved (not Plex-synchronized)";
+            }
+        }
+        const char *labels[]={"Play / Pause","Previous Track","Next Track","Shuffle","Repeat","Queue","Stop","Retry Current Track","Speed","Sleep Timer","Next Chapter","Previous Chapter","Restart Chapter","Restart Book","Mark Book Finished","Restore Last Local Bookmark"};
         if(hit & PAD_UP)audio.focus=std::max(0,audio.focus-1);
-        if(hit & PAD_DOWN)audio.focus=std::min(7,audio.focus+1);
+        if(hit & PAD_DOWN)audio.focus=std::min(audio.playback_books?15:7,audio.focus+1);
         int first=std::max(0,audio.focus-3);
-        for(int j=first;j<8 && j<first+4;++j)row(j,audio.focus,550+(j-first)*80,std::string(labels[j])+(j==4?audio.queue.repeat==Repeat::Off?": Off":audio.queue.repeat==Repeat::All?": All":": One":""));
+        for(int j=first;j<(audio.playback_books?16:8) && j<first+4;++j)row(j,audio.focus,550+(j-first)*80,std::string(labels[j])+(j==4?audio.queue.repeat==Repeat::Off?": Off":audio.queue.repeat==Repeat::All?": All":": One":j==8?": "+std::to_string(book_speed(audio.speed))+"x":j==9?": "+std::string(audio.sleep_choice==0?"Off":audio.sleep_choice==5?"End of Track":(std::to_string(audio.sleep_choice*15)+" min")):""));
         if(hit & PAD_R1)audio_next();
         if(hit & PAD_L1){if(player_time()>3000)player_seek(0);else audio_next(true);}
         if(hit & PAD_CROSS) {
@@ -154,14 +216,23 @@ bool audio_frame(uint32_t hit,float) {
             case 0: if(audio.active)player_toggle_pause();else audio.start_pending=true;break;
             case 1: if(player_time()>3000)player_seek(0);else audio_next(true);break;
             case 2:audio_next();break;
-            case 3:if(audio.queue.shuffled)audio.queue.unshuffle();else audio.queue.shuffle(static_cast<uint32_t>(plat_time()*1000000));break;
+            case 3:if(audio.playback_books){message="Audiobook shuffle is disabled to preserve chapter order";break;}if(audio.queue.shuffled)audio.queue.unshuffle();else audio.queue.shuffle(static_cast<uint32_t>(plat_time()*1000000));break;
             case 4:audio.queue.repeat=static_cast<Repeat>((static_cast<int>(audio.queue.repeat)+1)%3);break;
             case 5:audio.now_playing=false;audio.queue_view=true;audio.queue_focus=audio.queue.cursor;break;
-            case 6:queue_progress("stopped",player_time());player_stop();audio.active=false;break;
+            case 6:book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;break;
             case 7:audio.start_pending=true;break;
+            case 8:audio.speed=(audio.speed+1)%7;player_set_rate(book_speed(audio.speed));pref_set((audio_scope()+".speed").c_str(),audio.speed);break;
+            case 9:audio.sleep_choice=(audio.sleep_choice+1)%6;audio.sleep.set(audio.sleep_choice==5?-1:audio.sleep_choice*15,plat_time());pref_set((audio_scope()+".sleep").c_str(),audio.sleep_choice);break;
+            case 10: {auto chapters=player_chapters();int c=player_chapter();if(c>=0 && c+1<static_cast<int>(chapters.size()))player_set_chapter(c+1);else audio_next();break;}
+            case 11: {int c=player_chapter();if(c>0)player_set_chapter(c-1);else audio_next(true);break;}
+            case 12: {int c=player_chapter();if(c>=0)player_set_chapter(c);else player_seek(0);break;}
+            case 13:book_save();audio.queue.cursor=0;audio.resume_position=0;audio.start_pending=true;break;
+            case 14:book_save(true);queue_progress("stopped",player_time());player_stop();audio.active=false;break;
+            case 15: {auto saved=listening.get(audio_scope(),audio.book.id);auto m=saved.find("bookmarks");if(m!=saved.end() && m->is_array() && !m->empty()){auto mark=m->back();for(size_t n=0;n<audio.queue.order.size();++n)if(audio.queue.entries[audio.queue.order[n]].id==text(mark,"track")){audio.queue.cursor=n;audio.resume_position=number(mark,"position");audio.start_pending=true;break;}}break;}
+
             }
         }
-        draw_text(390,910,23,"L1 Previous • R1 Next • Circle Browse • Options Settings");return true;
+        draw_text(390,910,23,audio.playback_books?"Left/Right ±10s • L2/R2 ±30s • Triangle Local Bookmark • Circle Browse":"L1 Previous • R1 Next • Circle Browse • Options Settings");return true;
     }
     if(audio.queue_view) {
         if(hit & PAD_UP)audio.queue_focus=std::max(0,audio.queue_focus-1);
@@ -170,7 +241,7 @@ bool audio_frame(uint32_t hit,float) {
         for(int j=first;j<static_cast<int>(audio.queue.order.size()) && j<first+7;++j)row(j,audio.queue_focus,235+(j-first)*85,audio_label(audio.queue.entries[audio.queue.order[j]]));
         if((hit & PAD_CROSS) && !audio.queue.order.empty()){audio.queue.cursor=audio.queue_focus;audio.start_pending=true;}
         if(hit & PAD_SQUARE)audio.queue.remove(audio.queue_focus);
-        if(hit & PAD_TRIANGLE){if(audio.active){queue_progress("stopped",player_time());player_stop();audio.active=false;}audio.queue.clear();}
+        if(hit & PAD_TRIANGLE){if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}audio.queue.clear();}
         draw_text(390,890,23,"Cross Play • Square Remove (skip current first) • Triangle Clear Queue");return true;
     }
     if(audio.menu) {
@@ -209,8 +280,13 @@ bool audio_frame(uint32_t hit,float) {
             audio.path="music/"+item.id;audio.title=item.title;audio.entries.clear();audio.focus=0;
             const char *names[]={"Artists","Albums","Tracks","Recently Added Albums","Recently Played Tracks","Playlists","Collections","Genres","Favorite Tracks","Search Music"};
             const char *suffix[]={"/all?type=8&sort=titleSort","/all?type=9&sort=titleSort","/all?type=10&sort=titleSort","/recentlyAdded?type=9","/all?type=10&sort=lastViewedAt:desc&lastViewedAt>>=0","/playlists","/collections","/genre?type=9","/all?type=10&userRating>=8","search"};
-            for(int j=0;j<10;++j) {Item choice;choice.title=names[j];choice.type="audio-route";choice.key=j==5?"/playlists?playlistType=audio":"/library/sections/"+encode(item.id)+suffix[j];choice.id=item.id;audio.entries.push_back(choice);}
-        } else if(item.type=="audio-route") {if(item.key.find("search")!=std::string::npos){editor=3;edit_text.clear();edit_focus=0;}else audio_load(item.key,item.title); }
+            if(audio.books) {
+                auto continuing=listening.books(audio_scope());if(!continuing.empty()){Item choice;choice.type="local-listening";choice.title="Continue Listening (PlexStation-local)";choice.id="progress";audio.entries.push_back(choice);}
+                auto completed=listening.books(audio_scope(),1);if(!completed.empty()){Item choice;choice.type="local-listening";choice.title="Completed (PlexStation-local)";choice.id="completed";audio.entries.push_back(choice);}
+            }
+            for(int j=0;j<10;++j) {Item choice;choice.title=audio.books && j==0?"Authors":audio.books && j==1?"Books":names[j];choice.type="audio-route";choice.key=j==5?"/playlists?playlistType=audio":"/library/sections/"+encode(item.id)+suffix[j];choice.id=item.id;audio.entries.push_back(choice);}
+        } else if(item.type=="local-listening") {audio.entries=listening.books(audio_scope(),item.id=="completed"?1:0);audio.path="local-listening";audio.title=item.title;audio.focus=0;}
+        else if(item.type=="audio-route") {if(item.key.find("search")!=std::string::npos){editor=3;edit_text.clear();edit_focus=0;}else audio_load(item.key,item.title); }
         else if(item.type=="artist" || item.type=="album")audio_load("/library/metadata/"+encode(item.id)+"/children",item.title);
         else if(item.type=="playlist")audio_load("/playlists/"+encode(item.id)+"/items",item.title);
         else if(item.type=="collection")audio_load("/library/collections/"+encode(item.id)+"/children",item.title);
@@ -218,4 +294,23 @@ bool audio_frame(uint32_t hit,float) {
         else message="This server category is not yet supported";
     }
     draw_text(390,890,23,"Cross Browse / Play Track • Square Playback Menu • L2/R2 Pages • Left Sidebar");return true;
+}
+
+void audio_settings_frame(uint32_t hit) {
+    std::vector<Item> sections;for(const auto &s:home_sections)if(music_section(s))sections.push_back(s);
+    if(hit & PAD_UP)focus=std::max(0,focus-1);
+    if(hit & PAD_DOWN)focus=std::min(std::max(0,static_cast<int>(sections.size())-1),focus+1);
+    if(sections.empty()){draw_text(400,250,28,"No accessible music libraries to designate");return;}
+    int first=std::max(0,focus-6);
+    for(int n=first;n<static_cast<int>(sections.size()) && n<first+7;++n)row(n,focus,225+(n-first)*90,sections[n].title+(book_section(sections[n])?": Audiobooks":": Music"));
+    if(hit & PAD_CROSS){const auto &s=sections[std::clamp(focus,0,static_cast<int>(sections.size())-1)];pref_set((audio_scope()+".books."+encode(s.id)).c_str(),book_section(s)?0:1);}
+    draw_text(390,895,23,"Cross: designate library for this profile/server only; server metadata is unchanged");
+}
+
+int audio_focus_state() {
+    if(!audio.screen)return -1;
+    if(audio.now_playing)return audio.focus>=0 && audio.focus<(audio.playback_books?16:8);
+    if(audio.menu)return audio.menu_focus>=0 && audio.menu_focus<6;
+    if(audio.queue_view)return audio.queue.order.empty() || (audio.queue_focus>=0 && audio.queue_focus<static_cast<int>(audio.queue.order.size()));
+    return audio.entries.empty() || (audio.focus>=0 && audio.focus<static_cast<int>(audio.entries.size()));
 }

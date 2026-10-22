@@ -11,6 +11,14 @@ static std::string last_opened_url;
 static std::vector<std::string> last_opened_options;
 extern "C" void plat_pad_set_private(bool enabled) {private_input=enabled;}
 static int64_t position = 20000;
+static int64_t last_opened_start;
+static float test_rate=1.f;
+float player_rate(){return test_rate;}
+void player_set_rate(float r){test_rate=r;}
+bool player_buffering(){return false;}
+std::vector<Chapter> player_chapters(){return {{0,"One"},{50000,"Two"}};}
+int player_chapter(){return position>=50000?1:0;}
+void player_set_chapter(int n){position=n*50000;}
 extern "C" double plat_time() { return clock_now; }
 extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
 static std::map<std::string,std::string> test_prefs;
@@ -27,7 +35,7 @@ ImTextureID Artwork::landscape(const std::string &,const std::string &,const std
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
 }
-bool player_open(const std::string &url, int64_t, const std::vector<std::string> &options) {last_opened_url=url;last_opened_options=options;return true;}
+bool player_open(const std::string &url, int64_t start, const std::vector<std::string> &options) {last_opened_start=start;last_opened_url=url;last_opened_options=options;return true;}
 void player_stop() {}
 PlayerEvent player_tick() { return PLAYER_EVENT_NONE; }
 bool player_ended() { return false; }
@@ -50,6 +58,7 @@ static void frame(uint32_t buttons = 0, float lx = 0, float ly = 0, float dt = 1
     clock_now += dt;
     controller_imgui(pad);
     ImGui::GetIO().DeltaTime = dt;
+    if(!ImGui::GetIO().Fonts->IsBuilt()){unsigned char *pixels;int w,h;ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);}
     ImGui::NewFrame(); ui_frame(pad, dt); ImGui::Render();
 }
 static void press(uint32_t button) { frame(); frame(button); frame(); }
@@ -363,18 +372,30 @@ int main() {
         assert(q.headers.at("X-Plex-Token")=="child-pms");
         return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"101","type":"track","title":"Song","parentTitle":"Album","grandparentTitle":"Artist","Media":[{"audioCodec":"flac","container":"flac","Part":[{"key":"/library/parts/101/song.flac"}]}]}]}})",""};
     },device);
+    auto audio_drain=[&] {for(int n=0;n<20;++n){frame();if(job!=None){pending.wait();finish_job();}if(!audio.start_pending && !progress_pending && job==None)return;}assert(false);};
     audio_home();assert(audio.screen && audio.entries.size()==1 && !video);
     press(PAD_CROSS);assert(audio.entries.size()==10);
     Item song;song.id="101";song.type="track";song.title="Song";
-    audio_queue_load(song);audio_tick(clock_now);drain();
+    audio_queue_load(song);audio_drain();
     assert(audio.active && !video && audio.now_playing && last_opened_url.find("child-pms")!=std::string::npos);
-    assert(last_opened_options==std::vector<std::string>{":no-video"});
+    assert(!last_opened_options.empty() && last_opened_options[0]==":no-video");
     paused=false;audio.focus=0;press(PAD_CROSS);assert(paused);
     press(PAD_CIRCLE);assert(!audio.now_playing && audio.active);
     press(PAD_TOUCHPAD);assert(audio.now_playing);
+    // Designation is profile/server scoped and never changes PMS metadata.
+    audio_settings_frame(PAD_CROSS);assert(audio_available(true) && !audio_available());
+    audio_home(true);audio_queue_load(song);audio_drain();
+    assert(audio.playback_books && audio.active && !video);
+    paused=false;audio.focus=8;press(PAD_CROSS);assert(test_rate==1.10f);
+    position=70000;audio.focus=12;press(PAD_CROSS);assert(position==50000);
+    audio.focus=9;press(PAD_CROSS);assert(audio.sleep.deadline>clock_now);
+    clock_now=audio.sleep.deadline+1;frame();assert(paused && audio.sleep.deadline==0);
+    position=45000;book_save();auto saved=listening.get(audio_scope(),audio.book.id);assert(number(saved,"position")==45000);
+    auto old_scope=audio_scope();account_id="other-profile";assert(listening.get(audio_scope(),audio.book.id).empty());assert(!audio_available(true));account_id="owner/profile:child";
+    assert(audio_scope()==old_scope);audio_drain();audio_reset();audio_home(true);audio_queue_load(song);audio_drain();assert(last_opened_start==45000);
     clear_profile();assert(!audio.active && !audio.queue.current() && !audio.screen);
     drain();
-    unlink(credential_file.c_str()); rmdir(temp);
+    unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);
     ImGui::DestroyContext();

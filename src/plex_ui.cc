@@ -9,6 +9,7 @@
 #include "plex/home.h"
 #include "plex/home_feed.h"
 #include "plex/audio.h"
+#include "plex/listening.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -129,6 +130,7 @@ void choose_profile();
 void show_profiles();
 void audio_reset();
 void audio_leave_browse();
+int audio_focus_state();
 void audio_finish(int kind,const Result &result);
 void audio_tick(double now);
 bool audio_frame(uint32_t hit,float dt);
@@ -558,7 +560,8 @@ bool custom_focus_valid() {
     if(video)return !tracks || (track_focus>=0 && track_focus<2);
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page ? 1 : 10);
+    if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<3;
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
     if(home_screen) {
@@ -1162,6 +1165,7 @@ void ui_frame(const PadState &pad, float dt) {
                 message = "Watchlist integration is not implemented yet";
         }
     } else if (settings) {
+        if(settings_page==4){audio_settings_frame(hit);return;}
         if(settings_page==3) {
             if(hit & PAD_UP)focus=0;
             if(hit & PAD_DOWN)focus=1;
@@ -1200,7 +1204,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
-            focus = std::min(8, focus + 1);
+            focus = std::min(9, focus + 1);
         if (hit & PAD_CROSS) {
             if (focus == 0)
                 global_delay = audio_offset(global_delay, 1);
@@ -1225,8 +1229,9 @@ void ui_frame(const PadState &pad, float dt) {
                 edit_text = account_pref("plex_manual_uri","https://");
                 edit_focus = 0;
             }
-            if(focus==8) {settings_page=3;focus=0;}
-            if(focus==6 || focus==7) {settings_page=focus==6 ? 1 : 2; focus=0;}
+            if(focus==9) {settings_page=4;focus=0;}
+            else if(focus==8) {settings_page=3;focus=0;}
+            else if(focus==6 || focus==7) {settings_page=focus==6 ? 1 : 2; focus=0;}
             pref_set(account_key("plex_audio_delay").c_str(), global_delay);
             pref_set("plex_allow_http", allow_http ? 1 : 0);
         }
@@ -1239,6 +1244,7 @@ void ui_frame(const PadState &pad, float dt) {
         row(6,focus,660,"Server");
         row(7,focus,740,"Developer Options");
         row(8,focus,820,"Profiles");
+        row(9,focus,900,"Audio / Audiobook Libraries");
     } else if (!available.empty()) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
