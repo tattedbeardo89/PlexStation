@@ -137,3 +137,11 @@ Neither a successful compile nor the new instrumentation proves a hardware fix.
 New reports also record the PID at startup and crash for ShadowMountPlus correlation.
 The symbolizer requires the matching build manifest; optional `--installed-eboot`
 checks the console executable hash before using any ELF addresses.
+
+C++ termination additionally captures up to 24 raw caller addresses **before**
+raising SIGABRT, in normal call context through the already pinned SDK's
+`ps5_backtrace`/libunwind implementation. This is deliberately not called from
+the signal handler. Host unwinding is tested; reliable PS5 unwinding/module
+mapping is still pending. Zero/truncated results require ShadowMountPlus data,
+not fabricated frames. Ordinary failed assertions retain the SDK's flushed
+file/function/line message. This does not identify the previous physical abort.

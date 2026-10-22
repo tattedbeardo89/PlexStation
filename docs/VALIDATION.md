@@ -380,3 +380,19 @@ timeline/media URL tokens, full TV navigation and stale-user results. Existing
 pad, artwork, auth, real native TLS, connection/fallback, permission and strict
 syntax tests passed. Final ASan/UBSan and native pipeline results follow when
 complete; fixtures do not establish live Plex permissions or PS5 acceptance.
+
+### Final validation hardening
+
+The combined title compiled successfully, but the next debug/report step exposed
+a separate workflow ownership error: container-created validation.json was
+root-owned and the host collector opened it for writing. It now publishes an
+atomic replacement in the runner-owned directory. An isolated collector test
+checks read-only report replacement, required files, empty successful link logs
+and binary hashes; failures also receive a dedicated annotation and failed report.
+The installation remains gated on all steps succeeding.
+
+The pinned SDK source at b83202be confirms normal-context `ps5_backtrace` uses
+libunwind, and pinned PS5_Vulkan f410e67a maps backtrace to that implementation.
+C++ termination now captures up to 24 raw callers before SIGABRT, outside signal
+context. The host unwinding test passed; PS5/unmatched-module unwinding is not
+claimed. SIGSYS/SIGABRT still require physical reproduction/build correlation.
