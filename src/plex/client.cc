@@ -108,10 +108,17 @@ std::vector<Item> items(const Json &j,bool include_media) {
                 Json parts=Json::array();auto list=version.find("Part");
                 if(list!=version.end() && list->is_array())for(const auto &part:*list) {
                     auto key=text(part,"key");
-                    parts.push_back({{"key",key.size()<=4096 ? key : ""}});
+                    Json streams=Json::array();auto ss=part.find("Stream");
+                    if(ss!=part.end() && ss->is_array())for(const auto &stream:*ss) {
+                        Json value=Json::object();for(const char *field:{"id","streamType","codec","language","languageCode","key","forced","selected","channels","decision"}) {
+                            auto v=stream.find(field);if(v!=stream.end() && (v->is_string() || v->is_number() || v->is_boolean()))value[field]=v->is_string()?Json(display_text(v->get<std::string>(),512)):*v;
+                        }
+                        streams.push_back(std::move(value));if(streams.size()==32)break;
+                    }
+                    parts.push_back({{"key",key.size()<=4096 ? key : ""},{"Stream",std::move(streams)}});
                     if(parts.size()==2)break; // preserve multipart rejection without copying every part
                 }
-                x.media.push_back({{"container",display_text(text(version,"container"),40)},{"videoCodec",display_text(text(version,"videoCodec"),40)},{"audioCodec",display_text(text(version,"audioCodec"),40)},{"audioChannels",number(version,"audioChannels")},{"Part",std::move(parts)}});
+                x.media.push_back({{"container",display_text(text(version,"container"),40)},{"videoCodec",display_text(text(version,"videoCodec"),40)},{"audioCodec",display_text(text(version,"audioCodec"),40)},{"audioChannels",number(version,"audioChannels")},{"width",number(version,"width")},{"height",number(version,"height")},{"videoFrameRate",display_text(text(version,"videoFrameRate"),20)},{"Part",std::move(parts)}});
                 if(x.media.size()==8)break;
             }
         }
@@ -233,6 +240,26 @@ Result Client::call(const std::string &method, const std::string &base, const st
             !root->Attribute("machineIdentifier") || !*root->Attribute("machineIdentifier"))
             return {{},failure_message(Failure::IdentityMalformed),r.status,Failure::IdentityMalformed};
         return {Json{{"MediaContainer",{{"machineIdentifier",root->Attribute("machineIdentifier")}}}},"",r.status};
+    }
+    if(path.rfind("/video/:/transcode/universal/decision",0)==0 && body_start!=std::string::npos && r.body[body_start]=='<') {
+        tinyxml2::XMLDocument document;
+        if(r.body.find("<!DOCTYPE")!=std::string::npos || document.Parse(r.body.data(),r.body.size())!=tinyxml2::XML_SUCCESS)return {{},"Invalid streaming decision XML",r.status};
+        auto *root=document.RootElement();if(!root || std::string(root->Name())!="MediaContainer" || root->NextSiblingElement())return {{},"Invalid streaming decision",r.status};
+        size_t nodes=0;bool invalid=false;
+        std::function<Json(tinyxml2::XMLElement *,int)> convert=[&](tinyxml2::XMLElement *element,int depth)->Json {
+            if(depth>8 || ++nodes>512){invalid=true;return Json::object();}
+            Json out=Json::object();
+            for(auto *a=element->FirstAttribute();a;a=a->Next()) {std::string value=a->Value();if(value.size()>4096){invalid=true;return out;}out[a->Name()]=value;}
+            for(auto *child=element->FirstChildElement();child;child=child->NextSiblingElement()) {
+                std::string name=child->Name();if(name=="Video" || name=="Track")name="Metadata";
+                if(name!="Metadata" && name!="Media" && name!="Part" && name!="Stream")continue;
+                if(!out.contains(name))out[name]=Json::array();
+                out[name].push_back(convert(child,depth+1));if(invalid)break;
+            }
+            return out;
+        };
+        auto decision=convert(root,0);if(invalid)return {{},"Streaming decision exceeds safe limits",r.status};
+        return {Json{{"MediaContainer",std::move(decision)}},"",r.status};
     }
     if (r.body.empty())
         return {Json::object(), "", r.status};

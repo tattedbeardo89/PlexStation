@@ -13,6 +13,16 @@ extern "C" void plat_pad_set_private(bool enabled) {private_input=enabled;}
 static int64_t position = 20000;
 static int64_t last_opened_start;
 static float test_rate=1.f;
+const VideoInfo &player_video_info(){static VideoInfo info{};return info;}
+static int64_t test_sub_delay=0;
+int64_t player_subtitle_delay(){return test_sub_delay;}
+void player_set_subtitle_delay(int64_t n){test_sub_delay=n;}
+SubStyle player_sub_style(){return {100,0,false};}
+void player_set_sub_style(const SubStyle &){}
+bool player_add_subtitle(const std::string &){return true;}
+std::string player_audio_language(){return "";}
+void player_set_languages(const std::string &,const std::string &){}
+
 float player_rate(){return test_rate;}
 void player_set_rate(float r){test_rate=r;}
 bool player_buffering(){return false;}
@@ -395,7 +405,7 @@ int main() {
     assert(audio_scope()==old_scope);audio_drain();audio_reset();audio_home(true);audio_queue_load(song);audio_drain();assert(last_opened_start==45000);
     clear_profile();assert(!audio.active && !audio.queue.current() && !audio.screen);
     drain();
-    unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str()); rmdir(temp);
+    unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);
     ImGui::DestroyContext();

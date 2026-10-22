@@ -7,7 +7,8 @@ struct AudioUI {
     Item book;
     int speed=1, sleep_choice=0;
     int64_t resume_position=0;
-    bool rate_pending=false;
+    bool rate_pending=false,force_transcode=false;
+    std::string stream_session;
     SleepTimer sleep;
     double save_at=0;
     int focus=0, menu_focus=0, start=0,total=0, queue_focus=0;
@@ -31,7 +32,12 @@ bool audio_available(bool books) {
     for(const auto &s:home_sections)if(music_section(s) && book_section(s)==books)return true;
     return false;
 }
+void retire_audio_stream() {
+    if(!audio.stream_session.empty() && cleanups.size()<8)cleanups.push_back({base,server_token,"/music/:/transcode/universal/stop?session="+encode(audio.stream_session)});
+    audio.stream_session.clear();
+}
 void audio_reset() {
+    retire_audio_stream();
     if(audio.active){book_save();player_stop();}
     audio=AudioUI{};
 }
@@ -64,6 +70,7 @@ void audio_start() {
 void audio_queue_load(const Item &item,bool shuffle=false) {
     if(job!=None){message="Finishing a server request; select Play again shortly.";return;}
     if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}
+    retire_audio_stream();audio.force_transcode=false;
     audio.playback_books=audio.books;
     audio.book=item;
     if(item.type=="track" && !item.parent_id.empty()) {audio.book.id=item.parent_id;audio.book.type="album";audio.book.title=item.album;}
@@ -108,7 +115,12 @@ void audio_finish(int kind,const Result &result) {
     auto parsed=items(result.data);
     if(parsed.empty() || !audio.queue.current() || parsed[0].id!=audio.queue.current()->id){message="Audio identity mismatch";return;}
     auto decision=audio_direct_play(base,server_token,parsed[0]);
-    if(decision.mode!=Mode::DirectPlay){message=decision.error;return;}
+    if(decision.mode!=Mode::DirectPlay || audio.force_transcode) {
+        auto session=new_stream_id();decision=audio_transcode(base,server_token,parsed[0],session);
+        if(decision.mode==Mode::Unsupported){message=decision.error;return;}
+        retire_audio_stream();audio.stream_session=session;audio.force_transcode=true;
+        message="PMS AAC/HLS transcode requested; actual playback requires server acceptance";
+    }
     if(video){stop();} // one VLC player; never overlap video and audio
     if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}
     // Reconcile again with freshly resolved server timestamps before applying local resume.
@@ -140,7 +152,7 @@ void audio_next(bool previous=false,bool natural=false) {
         queue_progress("stopped",player_time());player_stop();audio.active=false;
     }
     bool next=previous?audio.queue.previous():audio.queue.advance(natural);
-    if(next){audio.resume_position=0;audio.start_pending=true;}
+    if(next){retire_audio_stream();audio.force_transcode=false;audio.resume_position=0;audio.start_pending=true;}
 }
 void audio_tick(double now) {
     if(audio.active) {
@@ -153,7 +165,11 @@ void audio_tick(double now) {
             audio.sleep.clear();
         }
         if(player_ended()) {
-            if(player_failed()){message="Audio interrupted. Cross on Retry resumes this track.";book_save();audio.resume_position=player_time();audio.active=false;player_stop();audio.retry_at=now;}
+            if(player_failed()){
+                book_save();audio.resume_position=player_time();audio.active=false;player_stop();audio.retry_at=now;
+                if(!audio.force_transcode){audio.force_transcode=true;audio.start_pending=true;message="Original audio failed; requesting PMS AAC/HLS fallback";}
+                else message="Audio fallback failed. Retry or choose another item; no track was skipped.";
+            }
             else {if(audio.completed.size()<32)audio.completed.push_back(audio.current);audio_next(false,true);}
         } else if(audio.report.due(static_cast<int64_t>(now*1000),player_paused()?"paused":"playing"))
             queue_progress(player_paused()?"paused":"playing",player_time());
@@ -219,7 +235,7 @@ bool audio_frame(uint32_t hit,float) {
             case 3:if(audio.playback_books){message="Audiobook shuffle is disabled to preserve chapter order";break;}if(audio.queue.shuffled)audio.queue.unshuffle();else audio.queue.shuffle(static_cast<uint32_t>(plat_time()*1000000));break;
             case 4:audio.queue.repeat=static_cast<Repeat>((static_cast<int>(audio.queue.repeat)+1)%3);break;
             case 5:audio.now_playing=false;audio.queue_view=true;audio.queue_focus=audio.queue.cursor;break;
-            case 6:book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;break;
+            case 6:retire_audio_stream();book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;break;
             case 7:audio.start_pending=true;break;
             case 8:audio.speed=(audio.speed+1)%7;player_set_rate(book_speed(audio.speed));pref_set((audio_scope()+".speed").c_str(),audio.speed);break;
             case 9:audio.sleep_choice=(audio.sleep_choice+1)%6;audio.sleep.set(audio.sleep_choice==5?-1:audio.sleep_choice*15,plat_time());pref_set((audio_scope()+".sleep").c_str(),audio.sleep_choice);break;
@@ -227,7 +243,7 @@ bool audio_frame(uint32_t hit,float) {
             case 11: {int c=player_chapter();if(c>0)player_set_chapter(c-1);else audio_next(true);break;}
             case 12: {int c=player_chapter();if(c>=0)player_set_chapter(c);else player_seek(0);break;}
             case 13:book_save();audio.queue.cursor=0;audio.resume_position=0;audio.start_pending=true;break;
-            case 14:book_save(true);queue_progress("stopped",player_time());player_stop();audio.active=false;break;
+            case 14:retire_audio_stream();book_save(true);queue_progress("stopped",player_time());player_stop();audio.active=false;break;
             case 15: {auto saved=listening.get(audio_scope(),audio.book.id);auto m=saved.find("bookmarks");if(m!=saved.end() && m->is_array() && !m->empty()){auto mark=m->back();for(size_t n=0;n<audio.queue.order.size();++n)if(audio.queue.entries[audio.queue.order[n]].id==text(mark,"track")){audio.queue.cursor=n;audio.resume_position=number(mark,"position");audio.start_pending=true;break;}}break;}
 
             }

@@ -132,3 +132,59 @@ messages now redact the address unconditionally. No credentials/URLs are added
 to listening records or diagnostics. A host ImGui fixture now rebuilds its legacy
 font atlas when new text invalidates it; the production Vulkan backend owns its
 actual atlas updates. Fixture success does not validate console font rendering.
+
+## Checkpoint C implementation — advanced playback
+
+Original supported video remains the fast path. Unsupported originals or chosen
+quality caps request the PMS universal streaming decision asynchronously. Accepted
+server responses must identify supported H.264/HEVC output and explicit video
+copy/transcode behavior; unknown/rejected decisions fail visibly. Video copy is
+labelled Direct Stream, separately from full video transcode. HLS startup still
+requires actual PMS/VLC acceptance, segment authorization and PS5 testing.
+No fixture proves playable HLS, quality adaptation or audible fallback.
+
+Quality is stored per profile with separate local/remote choices: Original,
+Automatic, 4K/40 Mbps, 1080p/8 Mbps, 720p/4 Mbps, 480p/1.5 Mbps, 360p/720 kbps.
+Automatic is an explicit fixed policy (Original local, 1080p cap remote), not a
+measured bandwidth estimate or adaptive streaming claim. Original failures can
+request one server fallback; unsupported/failed audio requests AAC/HLS via the
+actual music universal endpoint. Server rejection is an error, never silently
+skipped or reported as working. Transcode sessions receive best-effort stop
+requests; actual server cleanup/expiry remains an acceptance item.
+
+During video press Square for playback information, per-media persisted audio
+±25 ms/reset, subtitle delay, subtitle size, external subtitle selection and Off.
+External supported subtitle keys must remain under the selected PMS's
+`/library/streams/`; arbitrary host URLs are rejected. SRT/WebVTT/ASS/SSA are
+adapter candidates, not physical rendering acceptance. Existing libVLC embedded
+tracks remain available. Playback settings cycle audio/subtitle languages;
+profile activation restores that profile's choice. Forced-subtitle selection
+and subtitle style persistence have remaining player/version limitations.
+Per-media audio offsets use profile + server + ratingKey, retain ±500 ms limits,
+and are reapplied on open; real sign/seek/restart effectiveness needs PS5 testing.
+
+Next Episode uses actual accessible show allLeaves order with bounded pagination,
+retaining specials and skipping no episodes based on watched state. Autoplay is
+Off by default; enabling it offers a cancellable ten-second countdown. Missing
+series identity, no subsequent item or a server pagination failure disables it.
+Completion threshold is profile-scoped, configurable 50–100%; completion scrobbles
+are best-effort and do not establish server-side watch acceptance.
+
+A token-free durable progress outbox coalesces latest per-item updates, rejects
+stale acknowledgements, retries with bounded backoff, and revalidates metadata
+with the freshly authorized profile/PMS before retry. Newer observed server
+lastViewedAt supersedes older queued positions. Preserve mode-0600
+`plexstation-progress.json` during updates; no auth token or playback URL is
+stored there. Missing/unreliable PMS timestamps and device clock drift limit
+cross-client reconciliation; it is not a transactional cross-device sync system.
+
+### Protocol evidence
+
+Inspected official Plex for Kodi commit
+`97191f248a20223bb93296789c010ff2204a9c76`, plexnet/plexplayer.py,
+serverdecision.py and audioobject.py: universal decision/start endpoints,
+1000–1999 success range, copy/transcode stream decisions and music HLS path.
+Inspected Python-PlexAPI commit `dea7cad9227ec976fa93c363c43c01b3cee305af`,
+plexapi/base.py and myplex.py for stream parameters and cloud Watchlist semantics.
+These references are source evidence, not live protocol verification against
+the owner's server. No Plex credentials or live server were available here.

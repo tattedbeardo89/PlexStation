@@ -93,7 +93,7 @@ class Client {
 };
 Pin pin(const Json &);
 std::string authorization_url(const std::string &client_id, const std::string &code);
-enum class Mode { DirectPlay, Unsupported };
+enum class Mode { DirectPlay, Unsupported, DirectStream, Transcode };
 struct Playback {
     Mode mode = Mode::Unsupported;
     std::string url, error;

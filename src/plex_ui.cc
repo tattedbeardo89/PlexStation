@@ -10,6 +10,9 @@
 #include "plex/home_feed.h"
 #include "plex/audio.h"
 #include "plex/listening.h"
+#include "plex/streaming.h"
+#include "plex/episodes.h"
+#include "plex/progress_outbox.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -112,6 +115,7 @@ enum Job {
     Details,
     Timeline,
     AudioBrowse, AudioQueueLoad, AudioResolve, AudioScrobble,
+    VideoPlan, Cleanup, NextEpisode,
     Watch
 };
 Job job = None;
@@ -128,6 +132,24 @@ void load_home();
 void activate_profile();
 void choose_profile();
 void show_profiles();
+void restore_video_preferences();
+void load_outbox();
+void record_progress(const Item &,const std::string &,int64_t);
+void capture_timeline(const Item &,const std::string &,int64_t);
+void timeline_complete(const Result &);
+void retry_progress();
+void request_video(bool force=false);
+void service_next();
+void clear_next();
+void next_ready(const Result &r);
+void offer_autoplay(double now);
+bool next_countdown_frame(uint32_t hit,double now);
+void mark_video_completion(int64_t position);
+void video_plan_ready(const Result &result);
+void retire_stream();
+void service_cleanup();
+void video_tools(uint32_t hit);
+void video_options_frame(uint32_t hit);
 void audio_reset();
 void audio_leave_browse();
 int audio_focus_state();
@@ -181,9 +203,10 @@ void connect_server(const Server &s) {
     submit(Select,[s,http]{return client->select(s,http,next_base,&next_attempts);});
 }
 void connected(const Json &data) {
-    audio_reset();
+    clear_next();audio_reset();
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
+    load_outbox();
     artwork->clear(); history.clear(); detail={}; playing={};
     progress_pending=false; progress={};
     available.clear(); settings=false; settings_page=0; in_detail=false; sidebar=false; focus=0; nav=0;
@@ -206,6 +229,8 @@ void refresh() {
     submit(Resources, [token] { return client->resources(token); });
 }
 void clear_profile() {
+    clear_next();
+    retire_stream();
     audio_reset();
     if(video) {player_stop();video=false;}
     artwork->clear(); ++screen_generation; ++feed_generation;
@@ -237,6 +262,7 @@ void activate_profile() {
     }
     pref_set(primary_key("plex_last_profile").c_str(),active_profile.id);
     global_delay=std::clamp(pref_int(account_key("plex_audio_delay").c_str(),0),-500,500);
+    restore_video_preferences();
     profile_screen=false;profile_pin=false;profile_error.clear();erase_pin();
     account_loading=true;refresh();
 }
@@ -264,7 +290,7 @@ void signout() {
         player_stop();
         video = false;
     }
-    audio_reset();
+    clear_next();retire_stream();audio_reset();
     artwork->clear();
     profile_token.clear();primary_id.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
     account.clear(); account_id.clear(); reconnect_screen=false; force_picker=false; settings_page=0;
@@ -294,6 +320,7 @@ void signout() {
         message = "Signed out. Cross to sign in";
 }
 void queue_progress(const std::string &state, int64_t position) {
+    record_progress(playing,state,position);
     progress_item=playing;
     progress_state = state;
     progress_time = position;
@@ -307,6 +334,10 @@ void finish_job() {
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
     if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve) && pending_generation!=screen_generation) return;
+    if(done==VideoPlan){if(pending_generation==screen_generation)video_plan_ready(result);return;}
+    if(done==Timeline){timeline_complete(result);return;}
+    if(done==Cleanup)return;
+    if(done==NextEpisode){if(pending_generation==screen_generation)next_ready(result);return;}
     if(done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioScrobble) {audio_finish(done,result);return;}
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
@@ -506,30 +537,12 @@ void open_item() {
     } else if(item.type=="show" || item.type=="season" || item.type=="movie" || item.type=="episode")open_media(item);
     else message="This media type is not supported by the current playback adapter.";
 }
-void play() {
-    audio_reset();
-    if (progress_pending) {
-        message = "Saving previous playback state; try again shortly";
-        return;
-    }
-    auto decision = direct_play(base, server_token, detail, version);
-    if (decision.mode != Mode::DirectPlay) {
-        message = decision.error;
-        return;
-    }
-    if (!player_open(decision.url, detail.offset)) {
-        message = "VLC could not open the selected media";
-        return;
-    }
-    playing = detail;
-    video = true;
-    tracks = false;
-    progress = {};
-    player_set_audio_delay(global_delay);
-    overlay_until = plat_time() + 5;
-}
+void play() {request_video();}
+
 void stop() {
+    retire_stream();
     auto position = player_time();
+    mark_video_completion(position);
     queue_progress("stopped", position);
     detail.offset = position;
     player_stop();
@@ -560,7 +573,7 @@ bool custom_focus_valid() {
     if(video)return !tracks || (track_focus>=0 && track_focus<2);
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page ? 1 : 10);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 11);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<3;
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
@@ -685,7 +698,9 @@ void home_frame(uint32_t hit,float dt) {
     draw->PopClipRect();
     if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
 }
+#include "plex_video_ui.h"
 #include "plex_audio_ui.h"
+#include "plex_progress_ui.h"
 
 void profile_screen_frame(uint32_t hit) {
     rect(0,0,1920,1080,IM_COL32(12,13,17,255));
@@ -862,6 +877,9 @@ void ui_frame(const PadState &pad, float dt) {
     uint32_t hit = controller.update(pad, dt);
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
+    retry_progress();
+    service_cleanup();
+    service_next();
     audio_tick(now);
     auth.tick(now);
     if (auth.poll_due(now) && job == None) {
@@ -871,6 +889,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     bool was_video = video;
     if (video) {
+        if(video_info){video_tools(hit);hit=0;}
         if (hit)
             overlay_until = now + 5;
         if ((hit & PAD_CROSS) && !tracks)
@@ -885,12 +904,14 @@ void ui_frame(const PadState &pad, float dt) {
         }
         if (hit & PAD_OPTIONS)
             tracks = !tracks;
+        if(hit & PAD_SQUARE){video_info=true;video_tools(0);hit=0;}
         if (hit & PAD_L1)
             player_set_audio_delay(audio_offset(player_audio_delay(), -1));
         if (hit & PAD_R1)
             player_set_audio_delay(audio_offset(player_audio_delay(), 1));
         if (hit & PAD_TRIANGLE)
             player_set_audio_delay(0);
+        if(tracks && (hit & PAD_TRIANGLE))video_info=!video_info;
         if (tracks) {
             auto audio = player_audio_tracks(), subs = player_subtitle_tracks();
             if (hit & PAD_UP)
@@ -923,19 +944,20 @@ void ui_frame(const PadState &pad, float dt) {
         if (video && player_ended()) {
             if (player_failed())
                 message = "Playback failed; check decoder and server connectivity";
-            stop();
+            if(player_failed() && !stream_fallback){stream_fallback=true;player_stop();video=false;detail=playing;request_video(true);}
+            else {bool ended_well=!player_failed();stop();if(ended_well)offer_autoplay(now);}
         }
         if (video &&
             progress.due(static_cast<int64_t>(now * 1000), player_paused() ? "paused" : "playing"))
             queue_progress(player_paused() ? "paused" : "playing", player_time());
-        if (video && (now < overlay_until || tracks)) {
+        if (video && !video_info && (now < overlay_until || tracks)) {
             rect(70, 780, 1780, 230, IM_COL32(10, 10, 14, 230));
             draw_text(100, 800, 36, playing.title);
             draw_text(100, 855, 27,
                       std::to_string(player_time() / 1000) + " / " +
                           std::to_string(player_length() / 1000) +
-                          " s   Original / Direct Play requested");
-            draw_text(100, 900, 26, "Cross Pause | Left/Right Seek | Options Tracks | Circle Stop");
+                          " s   "+stream_plan.server_mode);
+            draw_text(100, 900, 26, "Cross Pause | Left/Right Seek | Options Tracks | Square Playback Info | Circle Stop");
             draw_text(100, 945, 25,
                       "L1/R1 Audio sync: " + std::to_string(player_audio_delay()) +
                           " ms (+ delays audio); Triangle resets");
@@ -946,6 +968,7 @@ void ui_frame(const PadState &pad, float dt) {
         auto item = progress_item;
         auto pos = progress_time;
         progress_pending = false;
+        capture_timeline(item,state,pos);
         submit(Timeline,
                [b, t, state, item, pos] { return client->timeline(b, t, item, state, pos); });
     }
@@ -978,6 +1001,7 @@ void ui_frame(const PadState &pad, float dt) {
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())
         draw_text(390, 950, 25, message, IM_COL32(240, 185, 90, 255));
+    if(next_countdown_frame(hit,now))return;
     if(audio_frame(hit,dt))return;
     if(manual_confirm_http) {
         draw_text(390,230,34,"Approve unencrypted local HTTP?");
@@ -1165,6 +1189,7 @@ void ui_frame(const PadState &pad, float dt) {
                 message = "Watchlist integration is not implemented yet";
         }
     } else if (settings) {
+        if(settings_page==5){video_options_frame(hit);return;}
         if(settings_page==4){audio_settings_frame(hit);return;}
         if(settings_page==3) {
             if(hit & PAD_UP)focus=0;
@@ -1204,7 +1229,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
-            focus = std::min(9, focus + 1);
+            focus = std::min(10, focus + 1);
         if (hit & PAD_CROSS) {
             if (focus == 0)
                 global_delay = audio_offset(global_delay, 1);
@@ -1229,22 +1254,15 @@ void ui_frame(const PadState &pad, float dt) {
                 edit_text = account_pref("plex_manual_uri","https://");
                 edit_focus = 0;
             }
-            if(focus==9) {settings_page=4;focus=0;}
+            if(focus==10) {settings_page=5;focus=0;}
+            else if(focus==9) {settings_page=4;focus=0;}
             else if(focus==8) {settings_page=3;focus=0;}
             else if(focus==6 || focus==7) {settings_page=focus==6 ? 1 : 2; focus=0;}
             pref_set(account_key("plex_audio_delay").c_str(), global_delay);
             pref_set("plex_allow_http", allow_http ? 1 : 0);
         }
-        row(0, focus, 180, "Default audio delay +25 ms (" + std::to_string(global_delay) + " ms)");
-        row(1, focus, 260, "Default audio delay -25 ms");
-        row(2, focus, 340, allow_http ? "Local HTTP: allowed" : "Local HTTP: disabled");
-        row(3, focus, 420, "Refresh servers");
-        row(4, focus, 500, "Sign out");
-        row(5, focus, 580, "Manual server address");
-        row(6,focus,660,"Server");
-        row(7,focus,740,"Developer Options");
-        row(8,focus,820,"Profiles");
-        row(9,focus,900,"Audio / Audiobook Libraries");
+        const std::string labels[]={"Default audio delay +25 ms ("+std::to_string(global_delay)+" ms)","Default audio delay -25 ms",allow_http?"Local HTTP: allowed":"Local HTTP: disabled","Refresh servers","Sign out","Manual server address","Server","Developer Options","Profiles","Audio / Audiobook Libraries","Playback / Quality / Subtitles"};
+        int first=std::max(0,focus-7);for(int n=first;n<11 && n<first+8;++n)row(n,focus,180+(n-first)*90,labels[n]);
     } else if (!available.empty()) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
@@ -1353,6 +1371,7 @@ bool ui_sensitive_input() {return profile_pin;}
 
 void ui_shutdown() {
     ++screen_generation;++feed_generation;
+    retire_stream();
     audio_reset();
     if(video){player_stop();video=false;}
     // Waiting is confined to application exit, never the rendering/input loop.
