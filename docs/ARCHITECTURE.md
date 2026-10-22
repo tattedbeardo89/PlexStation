@@ -31,7 +31,7 @@ own /app0, with /data/plexstation as its optional media folder.
   no automatic redirects, 5 s connect / 15 s whole-request timeout, 8 MiB limit.
 - `plex/transport_ps5.cc`: GnuTLS/socket transport, verified app CA store and
   hostname, bounded connect/record waits and response size. Compiled and linked
-  in successful native PS5 builds; runtime authentication still needs acceptance. DNS resolution
+  in successful native PS5 builds; owner-confirmed authentication on build 2458e45; new profile flows still need acceptance. DNS resolution
   runs on a worker but OS resolver duration remains platform-dependent.
 - `plex/artwork.*`: single asynchronous poster request/decode, server-sized
   images, max 640x960 decode, max 12 cached GPU textures, LRU eviction. GPU
@@ -68,15 +68,16 @@ retrieval and subtitle appearance UI are not implemented. Existing libVLC
 embedded track controls are exposed. No JWT flow is claimed: device PIN
 requests now use non-strong TV PINs, corrected browser-auth QR URLs and a tested
 asynchronous lifecycle. See AUTHENTICATION.md for accessible references and
-official-site access limits; live account acceptance is still pending.
+official-site access limits; owner-confirmed primary-account authentication is distinct from pending Plex Home acceptance.
 
-The UI is an initial functional interface, not the requested finished Plex TV
-experience. Full home carousels, genres/filters, watchlist, cast presentation,
-next episode, animated transitions, per-item offsets, completion thresholds,
-automatic reconnection/retry and full localization remain incomplete. Progress
-updates are coalesced at 10-second intervals and on state changes; a failed
-update is reported, but an offline retry queue is not implemented. Search and
-metadata endpoints have fixture coverage only, not live PMS acceptance.
+The native TV UI includes actual Home carousels, cast/genre presentation,
+basic sorting/filtering and account/profile-scoped automatic server reconnection.
+The full requested Plex experience remains incomplete: cloud Watchlist, advanced
+filters, automatic next episode, per-item offsets and full localization are not
+implemented. Progress updates are coalesced at 10-second intervals and on state
+changes; a failed update is reported, but an offline retry queue is not
+implemented. New Home/profile flows have fixture coverage, with live PMS and
+physical acceptance still pending. See TV-CLIENT-STATUS.md for the full matrix.
 
 
 Plex Home now keeps the primary linked token in the existing private credential

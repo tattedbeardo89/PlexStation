@@ -52,6 +52,19 @@ was introduced. Dependency/toolchain pins and cache fingerprint are unchanged.
 
 ## Build and download
 
+**Latest successful combined build:** [run 39702538057](https://github.com/tattedbeardo89/PlexStation/actions/runs/39702538057),
+commit `d52e5cd39ad6689f1f917179a6d1761132adde03`.
+
+- Installation: `PlexStation-PPSA85301-d52e5cd39ad6689f1f917179a6d1761132adde03` (37.4 MB).
+- Matching symbols: `PlexStation-native-debug-d52e5cd39ad6689f1f917179a6d1761132adde03` (86.4 MB).
+- Logs/report: `PlexStation-build-diagnostics-d52e5cd39ad6689f1f917179a6d1761132adde03` (187 KB).
+
+Host regression/ASan/UBSan, real native compilation, complete packaging, debug
+collection and ZIP permission gates passed. Physical crash resolution, live Plex
+Home permissions and playback acceptance remain unverified. Documentation-only
+commits after this build do not change its executable.
+
+
 Actions → **Build PlexStation PS5** → **Run workflow** → branch
 `feature/plexstation-initial-implementation` → **Run workflow**. Wait for green
 success. Under Artifacts download `PlexStation-PPSA85301-<built-commit>`;

@@ -412,3 +412,48 @@ custom uploads and retains a bounded batch until teardown. Video plane setup
 checks the same upload availability/idle results without changing decoding or
 audio algorithms. GPU device-loss recovery is explicitly not claimed. Modified
 graphics source passed host syntax; actual GPU error paths require device tests.
+
+
+## Checkpoint D — successful combined native handoff
+
+[Actions run 39702538057](https://github.com/tattedbeardo89/PlexStation/actions/runs/39702538057)
+completed successfully in approximately ten minutes for built commit
+`d52e5cd39ad6689f1f917179a6d1761132adde03`, on branch
+`feature/plexstation-initial-implementation`.
+
+All host regression suites passed, including real curl/native GnuTLS transport,
+authentication, Plex Home/feed, artwork/cache, controller/UI, endpoint fallback,
+crash/symbolization/collector and strict source checks. ASan/UBSan (with leak
+detection) passed the five core/Home/feed/artwork/controller fixtures. These
+include the final deferred-texture-clear and UI-shutdown changes. The pinned
+Arch container on the GitHub Ubuntu runner compiled the actual PS5 title, then
+complete-package validation, matching debug collection and ZIP Unix-mode checks
+passed. This is a native build result, not only host syntax verification.
+
+Published artifacts reported by the successful run:
+
+| Artifact | Size | Actions outer artifact SHA256 |
+| --- | --- | --- |
+| `PlexStation-PPSA85301-d52e5cd39ad6689f1f917179a6d1761132adde03` | 37.4 MB | `17fa2d6e87213cc5518aab1bd8b441fc4236e9633791e39fa00a2d3f3d71e126` |
+| `PlexStation-native-debug-d52e5cd39ad6689f1f917179a6d1761132adde03` | 86.4 MB | `917d406088107e08267979330e64c693e5d53587709feef032e54d254d5d2563` |
+| `PlexStation-build-diagnostics-d52e5cd39ad6689f1f917179a6d1761132adde03` | 187 KB | `9d44b160440236c5911bb593d5ae11ea824afe16762156b58a21d759a0421239` |
+
+Artifact names, sizes/digests and workflow conclusion were checked using public
+GitHub metadata. Authenticated artifact downloads were unavailable in this
+session, so no separate downloaded-binary inspection is claimed. The workflow
+itself validates the built installation and matching executable hashes before
+upload. Outer artifact hashes above are not the installed eboot.bin hash; use
+SHA256SUMS/build.json inside the matching artifacts for executable correlation.
+
+The separate successful stability-only Checkpoint A remains run 39697533557.
+Intermediate failed/cancelled runs are not installation recommendations. GitHub
+reported a Node.js 20 action deprecation warning (actions ran under Node.js 24);
+it did not fail this build. Pinned action updates are outside this stability pass.
+
+Physical testing remains required: original Movies SIGABRT is not root-caused,
+SIGSYS remains unmatched to a build/launch, and new Plex Home PIN/permissions,
+profile-specific progress, TV navigation and native playback need owner
+acceptance. No unsupported-syscall diagnosis or firmware compatibility claim is
+inferred from this successful compile. The feature/limitation matrix and exact
+Windows deployment/test sequence are in TV-CLIENT-STATUS.md. Documentation-only
+handoff commits do not alter the built source SHA above.

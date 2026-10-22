@@ -1,8 +1,10 @@
 # Remembered server and automatic reconnection
 
 PlexStation validates the restored private account token with Plex before
-loading servers. The validated numeric Plex account ID scopes the preferred
-PMS machineIdentifier in the existing `prefs.txt` settings. No account/server
+loading servers. The validated primary account ID and freshly validated active Plex Home profile
+identity scope the preferred PMS machineIdentifier in the existing `prefs.txt`
+settings. Primary-account-only preferences are migrated only for the validated
+owner profile; another Home user cannot inherit them. No account/server
 tokens are written to preferences. Each account retains its own selection
 across sign-out. Newly linked accounts are validated before using preferences.
 
@@ -30,7 +32,7 @@ selection after this update to establish their initial preference.
 
 ## Controller diagnostics and movie-list safety
 
-**Settings → Diagnostics → Controller diagnostic overlay** toggles the on-screen
+**Settings → Developer Options → Controller diagnostic overlay** toggles the on-screen
 strip, default Off. The choice persists; safe throttled input logging and
 Triangle's endpoint diagnostics remain available independently.
 
