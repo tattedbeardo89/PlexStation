@@ -8,6 +8,7 @@
 #include "plex/diagnostics.h"
 #include "plex/home.h"
 #include "plex/home_feed.h"
+#include "plex/audio.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -109,6 +110,7 @@ enum Job {
     Browse,
     Details,
     Timeline,
+    AudioBrowse, AudioQueueLoad, AudioResolve, AudioScrobble,
     Watch
 };
 Job job = None;
@@ -125,6 +127,13 @@ void load_home();
 void activate_profile();
 void choose_profile();
 void show_profiles();
+void audio_reset();
+void audio_leave_browse();
+void audio_finish(int kind,const Result &result);
+void audio_tick(double now);
+bool audio_frame(uint32_t hit,float dt);
+bool audio_available(bool books=false);
+void audio_home(bool books=false);
 void test_manual() {
     auto target=connection_target;
     target.connections={{manual_candidate,true,false}};
@@ -138,8 +147,13 @@ std::string progress_state;
 int64_t progress_time = 0;
 bool progress_pending = false;
 Progress progress;
+Item progress_item;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
-                            "Watchlist", "Search", "Settings"};
+                            "Watchlist", "Search", "Settings", "Music", "Audiobooks"};
+bool nav_visible(int i) {return i!=4 && (i!=7 || audio_available()) && (i!=8 || audio_available(true));}
+int nav_step(int i,int direction,bool wrap=false) {
+    for(int n=0;n<10;++n) {i+=direction;if(wrap)i=(i+9)%9;else i=std::clamp(i,-1,8);if(i<0 || nav_visible(i))return i;}return 0;
+}
 void submit(Job kind, std::function<Result()> work) {
     if (job != None)
         return;
@@ -165,6 +179,7 @@ void connect_server(const Server &s) {
     submit(Select,[s,http]{return client->select(s,http,next_base,&next_attempts);});
 }
 void connected(const Json &data) {
+    audio_reset();
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
     artwork->clear(); history.clear(); detail={}; playing={};
@@ -189,6 +204,7 @@ void refresh() {
     submit(Resources, [token] { return client->resources(token); });
 }
 void clear_profile() {
+    audio_reset();
     if(video) {player_stop();video=false;}
     artwork->clear(); ++screen_generation; ++feed_generation;
     home_screen=false;home_sections.clear();feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_error.clear();library_tools=false;
@@ -246,6 +262,7 @@ void signout() {
         player_stop();
         video = false;
     }
+    audio_reset();
     artwork->clear();
     profile_token.clear();primary_id.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
     account.clear(); account_id.clear(); reconnect_screen=false; force_picker=false; settings_page=0;
@@ -275,6 +292,7 @@ void signout() {
         message = "Signed out. Cross to sign in";
 }
 void queue_progress(const std::string &state, int64_t position) {
+    progress_item=playing;
     progress_state = state;
     progress_time = position;
     progress_pending = true;
@@ -286,7 +304,8 @@ void finish_job() {
     Job done = job;
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
-    if((done==Browse || done==Sections || done==Details || done==HomeFeed) && pending_generation!=screen_generation) return;
+    if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve) && pending_generation!=screen_generation) return;
+    if(done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioScrobble) {audio_finish(done,result);return;}
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
     if (cancel_bootstrap && (done == ValidateAccount || done == HomeUsers || done == Resources)) {
@@ -486,6 +505,7 @@ void open_item() {
     else message="This media type is not supported by the current playback adapter.";
 }
 void play() {
+    audio_reset();
     if (progress_pending) {
         message = "Saving previous playback state; try again shortly";
         return;
@@ -537,7 +557,7 @@ bool custom_focus_valid() {
     if(profile_screen)return profile_pin ? pin_focus>=0 && pin_focus<10 : profile_focus>=0 && profile_focus<static_cast<int>(home_profiles.size());
     if(video)return !tracks || (track_focus>=0 && track_focus<2);
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
-    if(sidebar)return nav>=-1 && nav<7 && nav!=4;
+    if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
     if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9);
     if(in_detail)return focus>=0 && focus<3;
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
@@ -662,6 +682,8 @@ void home_frame(uint32_t hit,float dt) {
     draw->PopClipRect();
     if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
 }
+#include "plex_audio_ui.h"
+
 void profile_screen_frame(uint32_t hit) {
     rect(0,0,1920,1080,IM_COL32(12,13,17,255));
     centered(130,58,profile_pin ? "Enter profile PIN" : "Who's Watching?");
@@ -837,6 +859,7 @@ void ui_frame(const PadState &pad, float dt) {
     uint32_t hit = controller.update(pad, dt);
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
+    audio_tick(now);
     auth.tick(now);
     if (auth.poll_due(now) && job == None) {
         auto p = auth.current;
@@ -917,7 +940,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (progress_pending && job == None) {
         auto b = base, t = server_token, state = progress_state;
-        auto item = playing;
+        auto item = progress_item;
         auto pos = progress_time;
         progress_pending = false;
         submit(Timeline,
@@ -934,17 +957,17 @@ void ui_frame(const PadState &pad, float dt) {
     draw_text(45, 55, 38, "PlexStation", IM_COL32(235, 171, 54, 255));
     if(sidebar && nav==-1)rect(25,100,280,44,IM_COL32(120,78,16,255));
     draw_text(45,112,22,active_profile.name.empty() ? "Profile" : active_profile.name);
-    for (int i = 0; i < 7; ++i) {
-        if(i==4)continue;
-        int slot=i>4 ? i-1 : i;
+    for (int i=0,slot=-1;i<9;++i) {
+        if(!nav_visible(i))continue;
+        ++slot;
         if (sidebar && nav == i)
-            rect(25, 150 + slot * 87, 280, 65, IM_COL32(120, 78, 16, 255));
-        float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();float y=182+slot*87;
+            rect(25, 150 + slot * 78, 280, 65, IM_COL32(120, 78, 16, 255));
+        float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();float y=182+slot*78;
         ImU32 color=nav==i ? IM_COL32(235,171,54,255) : IM_COL32(160,162,174,255);
         if(i==0) {draw->AddTriangle({43*scale,y*scale},{55*scale,(y-12)*scale},{67*scale,y*scale},color,2*scale);draw->AddRect({47*scale,y*scale},{63*scale,(y+13)*scale},color,0,0,2*scale);}
         else if(i==5) {draw->AddCircle({53*scale,(y-2)*scale},8*scale,color,12,2*scale);draw->AddLine({59*scale,(y+5)*scale},{68*scale,(y+14)*scale},color,2*scale);}
         else {draw->AddRect({44*scale,(y-12)*scale},{66*scale,(y+12)*scale},color,3*scale,0,2*scale);for(int line=0;line<std::min(i,3);++line)draw->AddLine({48*scale,(y-6+line*6)*scale},{62*scale,(y-6+line*6)*scale},color,scale);}
-        draw_text(83,166+slot*87,28,navigation[i]);
+        draw_text(83,166+slot*78,28,navigation[i]);
     }
     draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? "Home" : page_title);
     if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{270*scale,105*scale},{306*scale,141*scale});}}
@@ -952,6 +975,7 @@ void ui_frame(const PadState &pad, float dt) {
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())
         draw_text(390, 950, 25, message, IM_COL32(240, 185, 90, 255));
+    if(audio_frame(hit,dt))return;
     if(manual_confirm_http) {
         draw_text(390,230,34,"Approve unencrypted local HTTP?");
         draw_text(390,310,26,"Traffic and credentials are not encrypted on this connection.");
@@ -1032,7 +1056,8 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_CIRCLE)
             editor = 0;
         if ((hit & PAD_TRIANGLE) && job == None) {
-            if (editor == 1) {
+            if (editor == 3) {audio_load("/search?type=10&query="+encode(edit_text),"Music Search");editor=0;}
+            else if (editor == 1) {
                 load("/search?query=" + encode(edit_text), "Search");
                 editor = 0;
             } else {
@@ -1095,8 +1120,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (hit & (PAD_L1 | PAD_R1)) {
         if(job==Browse || job==Sections || job==Details || job==HomeFeed) {++screen_generation;++feed_generation;}
-        nav = (nav + ((hit & PAD_R1) ? 1 : 6)) % 7;
-        if(nav==4)nav=(hit & PAD_R1) ? 5 : 3;
+        nav = nav_step(nav,(hit & PAD_R1)?1:-1,true);
         sidebar = true;
         hit |= PAD_CROSS; // Same section activation as the sidebar.
     }
@@ -1113,11 +1137,13 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (sidebar) {
         if (hit & PAD_UP)
-            {nav = std::max(-1, nav - 1);if(nav==4)nav=3;}
+            {nav=nav_step(nav,-1);}
         if (hit & PAD_DOWN)
-            {nav = std::min(6, nav + 1);if(nav==4)nav=5;}
+            {nav=nav_step(nav,1);}
         if ((hit & PAD_CROSS) && job == None) {
             if(nav==-1) {settings=true;settings_page=3;sidebar=false;focus=0;return;}
+            if(nav==7 || nav==8) {audio_home(nav==8);return;}
+            audio_leave_browse();
             settings = nav == 6; settings_page=0;
             in_detail = false;
             sidebar = false;
@@ -1321,6 +1347,7 @@ bool ui_sensitive_input() {return profile_pin;}
 
 void ui_shutdown() {
     ++screen_generation;++feed_generation;
+    audio_reset();
     if(video){player_stop();video=false;}
     // Waiting is confined to application exit, never the rendering/input loop.
     if(pending.valid()){pending.wait();pending=std::future<Result>{};}

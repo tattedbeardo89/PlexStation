@@ -8,6 +8,7 @@ static double clock_now;
 static std::string test_data_dir = "/tmp";
 static bool paused, private_input;
 static std::string last_opened_url;
+static std::vector<std::string> last_opened_options;
 extern "C" void plat_pad_set_private(bool enabled) {private_input=enabled;}
 static int64_t position = 20000;
 extern "C" double plat_time() { return clock_now; }
@@ -26,7 +27,7 @@ ImTextureID Artwork::landscape(const std::string &,const std::string &,const std
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
 }
-bool player_open(const std::string &url, int64_t, const std::vector<std::string> &) {last_opened_url=url;return true;}
+bool player_open(const std::string &url, int64_t, const std::vector<std::string> &options) {last_opened_url=url;last_opened_options=options;return true;}
 void player_stop() {}
 PlayerEvent player_tick() { return PLAYER_EVENT_NONE; }
 bool player_ended() { return false; }
@@ -353,6 +354,26 @@ int main() {
     assert(job==HomeUsers);pending.wait();finish_job();
     requested_profile=home_profiles.front();choose_profile();
     assert(profile_pin && profile_token.empty() && job==None);signout();
+    // Production Music UI, audio-only options, profile token and queue isolation.
+    account="owner";account_id="owner/profile:child";profile_token="child";
+    base="https://audio.invalid";server_token="child-pms";account_loading=false;profile_screen=false;
+    selected_server.id="audio-pms";home_sections.clear();Item section;section.id="12";section.type="artist";section.title="Music";home_sections.push_back(section);
+    assert(audio_available() && !audio_available(true) && nav_visible(7));
+    client=std::make_unique<Client>([](const Request &q) {
+        assert(q.headers.at("X-Plex-Token")=="child-pms");
+        return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"101","type":"track","title":"Song","parentTitle":"Album","grandparentTitle":"Artist","Media":[{"audioCodec":"flac","container":"flac","Part":[{"key":"/library/parts/101/song.flac"}]}]}]}})",""};
+    },device);
+    audio_home();assert(audio.screen && audio.entries.size()==1 && !video);
+    press(PAD_CROSS);assert(audio.entries.size()==10);
+    Item song;song.id="101";song.type="track";song.title="Song";
+    audio_queue_load(song);audio_tick(clock_now);drain();
+    assert(audio.active && !video && audio.now_playing && last_opened_url.find("child-pms")!=std::string::npos);
+    assert(last_opened_options==std::vector<std::string>{":no-video"});
+    paused=false;audio.focus=0;press(PAD_CROSS);assert(paused);
+    press(PAD_CIRCLE);assert(!audio.now_playing && audio.active);
+    press(PAD_TOUCHPAD);assert(audio.now_playing);
+    clear_profile();assert(!audio.active && !audio.queue.current() && !audio.screen);
+    drain();
     unlink(credential_file.c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);

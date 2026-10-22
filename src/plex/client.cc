@@ -92,6 +92,13 @@ std::vector<Item> items(const Json &j,bool include_media) {
         x.duration = std::max<int64_t>(0,number(v,"duration"));
         x.offset = std::max<int64_t>(0,number(v,"viewOffset"));
         x.watched = number(v, "viewCount") > 0;
+        x.artist=display_text(text(v,"grandparentTitle",text(v,"originalTitle")),256);
+        x.album=display_text(text(v,"parentTitle"),256);
+        x.parent_id=text(v,"parentRatingKey");x.grandparent_id=text(v,"grandparentRatingKey");
+        x.disc=static_cast<int>(std::clamp<int64_t>(number(v,"parentIndex"),0,10000));
+        x.track=static_cast<int>(std::clamp<int64_t>(number(v,"index"),0,100000));
+        x.added=std::max<int64_t>(0,number(v,"addedAt"));x.last_played=std::max<int64_t>(0,number(v,"lastViewedAt"));
+        if(x.thumb.empty())x.thumb=text(v,"parentThumb",text(v,"grandparentThumb"));
         x.season = number(v, "parentIndex");
         x.episode = number(v, "index");
         if (include_media && v.contains("Media") && v["Media"].is_array()) {
@@ -104,7 +111,7 @@ std::vector<Item> items(const Json &j,bool include_media) {
                     parts.push_back({{"key",key.size()<=4096 ? key : ""}});
                     if(parts.size()==2)break; // preserve multipart rejection without copying every part
                 }
-                x.media.push_back({{"container",display_text(text(version,"container"),40)},{"videoCodec",display_text(text(version,"videoCodec"),40)},{"Part",std::move(parts)}});
+                x.media.push_back({{"container",display_text(text(version,"container"),40)},{"videoCodec",display_text(text(version,"videoCodec"),40)},{"audioCodec",display_text(text(version,"audioCodec"),40)},{"audioChannels",number(version,"audioChannels")},{"Part",std::move(parts)}});
                 if(x.media.size()==8)break;
             }
         }
