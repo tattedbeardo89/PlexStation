@@ -41,6 +41,9 @@ int main() {
     std::string deep(60,'[');deep+="0";deep+=std::string(60,']');
     Client nested([&](const Request &){return Reply{200,deep,""};},"fixture");
     CHECK(!nested.call("GET","https://fixture.invalid","/library/test"));
+    CHECK(items(j,false)[0].media.is_null());
+    auto many_versions=j;for(int n=0;n<1000;++n)many_versions["MediaContainer"]["Metadata"][0]["Media"].push_back(j["MediaContainer"]["Metadata"][0]["Media"][0]);
+    CHECK(items(many_versions)[0].media.size()==8);
     auto playback = direct_play("https://server", "a&b", media[0]);
     CHECK(playback.mode == Mode::DirectPlay);
     CHECK(playback.url == "https://server/library/parts/7/file.mkv?X-Plex-Token=a%26b");

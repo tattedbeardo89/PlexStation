@@ -20,3 +20,11 @@ manifest['installed_eboot_sha256']=hashlib.sha256(exe.read_bytes()).hexdigest()
 shutil.copy2(root/'docs/CRASH-DIAGNOSTICS.md',out/'SYMBOLIZATION.md')
 shutil.copy2(root/'tools/symbolize-crash.py',out/'symbolize-crash.py')
 print('Matching unstripped ELF, converted ELF, linker map, symbols and binary identities retained')
+
+report_path=root/'artifacts/validation.json'
+if report_path.is_file():
+    report=json.loads(report_path.read_text())
+    report['host_tests']='passed required workflow regression gate; see artifacts/logs/host-*.log'
+    report['hardware_verification']='NOT TESTED; live Plex Home permissions, library crash resolution and playback remain pending'
+    report['debug_manifest']='debug/build.json'
+    report_path.write_text(json.dumps(report,indent=2)+'\n')

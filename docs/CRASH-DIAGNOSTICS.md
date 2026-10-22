@@ -122,3 +122,14 @@ The owner has clarified the signal correlation: build 2458e45 / Actions run
 Movies-library entry. The 15:03:20 SIGSYS entry has no independently confirmed
 installed build or same-launch UI milestones. It must remain a separate,
 unmatched report until further FTP evidence correlates it.
+
+## Preserved independent stability build
+
+[Successful Checkpoint A run 39697533557](https://github.com/tattedbeardo89/PlexStation/actions/runs/39697533557)
+built `8e6ae8e3e756721f4dcd66279503712b68b2950d` before Plex Home or the Home
+interface changes. Its complete installation is
+`PlexStation-PPSA85301-8e6ae8e3e756721f4dcd66279503712b68b2950d`;
+the separate matching debug artifact is
+`PlexStation-native-debug-8e6ae8e3e756721f4dcd66279503712b68b2950d`.
+Use this independent build for isolation and compare against later builds.
+Neither a successful compile nor the new instrumentation proves a hardware fix.

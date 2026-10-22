@@ -37,8 +37,10 @@ int main() {
     now=1.1; reuse=true; fail_open=false;
     data[0].connected=1; data[0].lx=data[0].ly=data[0].rx=data[0].ry=128;
     data[0].buttons=PAD_CROSS; data[0].timestamp_us=1;
+    plat_pad_set_private(true);
     assert(plat_pad_read(&state)); assert(state.connected && requested_user==42 && opens==2);
     assert(state.buttons==PAD_CROSS && state.lx==0 && state.ly==0);
+    plat_pad_set_private(false); // privacy only suppresses diagnostics, never delivery
     // Read newest timestamp, regardless of batch order.
     count=2; data[1]=data[0]; data[0].timestamp_us=20; data[0].buttons=PAD_DOWN;
     data[1].timestamp_us=10; data[1].buttons=PAD_UP;

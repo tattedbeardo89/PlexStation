@@ -23,6 +23,8 @@ PAD_ASSERT(offsetof(PadSample, timestamp_us) == 0x50, "timestamp at 0x50");
 
 static int32_t pad_handle = -1, pad_user = -1;
 static double pad_next_open;
+static bool pad_input_private;
+void plat_pad_set_private(bool enabled) {pad_input_private=enabled;}
 
 static float stick_axis(uint8_t v)
 {
@@ -119,7 +121,7 @@ bool plat_pad_read(PadState *state)
     bool stale = !have_last || now - last_sample_at > 0.5;
     bool connected = !stale && last.connected;
     bool intercepted = have_last && (last.buttons & PAD_INTERCEPTED);
-    if (now >= log_at) {
+    if (!pad_input_private && now >= log_at) {
         fprintf(stderr, "pad:poll count=%u samples=%d connected=%d intercepted=%d stale=%d raw=%08x delivered=%u changes=%u\n",
                 polls, n, connected, intercepted, stale, have_last ? last.buttons : 0,
                 deliveries, events);

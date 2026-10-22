@@ -15,3 +15,6 @@ void ui_frame(const PadState &pad, float dt);
 /* Where the video goes this frame, in pixels; false: no video. */
 bool ui_video_rect(float *x, float *y, float *w, float *h);
 bool ui_quit_requested();
+
+/* Private PIN entry: main/backend logs must not expose its button/focus sequence. */
+bool ui_sensitive_input();

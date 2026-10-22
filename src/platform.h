@@ -68,6 +68,8 @@ double plat_time(void);
 int plat_language(void);
 
 bool plat_pad_read(PadState *state);
+/* Suppress raw input diagnostics while entering private profile PINs. */
+void plat_pad_set_private(bool enabled);
 /* A short buzz of the controller's small motor (0..1), for ms milliseconds. */
 void plat_pad_rumble(float strength, int ms);
 

@@ -16,7 +16,8 @@ ImTextureID library_upload_rgba(const unsigned char *rgba,int w,int h) {
 }
 void library_free_image(ImTextureID texture) {if(texture) ++freed;}
 static void settle(plex::Artwork &art) {
-    for(int i=0;i<100;++i) {std::this_thread::sleep_for(std::chrono::milliseconds(2)); art.update();}
+    for(int i=0;i<1500 && art.busy();++i) {std::this_thread::sleep_for(std::chrono::milliseconds(2));art.update();}
+    assert(!art.busy());
 }
 int main() {
     // One-pixel uncompressed TGA, real stb decode.

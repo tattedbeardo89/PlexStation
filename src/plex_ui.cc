@@ -7,6 +7,7 @@
 #include "plex/client.h"
 #include "plex/diagnostics.h"
 #include "plex/home.h"
+#include "plex/home_feed.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -42,6 +43,8 @@ struct Page {
     std::string path, title;
     std::vector<Item> items;
     int focus = 0, start = 0, total = 0;
+    bool home=false;
+    Item previous_detail{}; bool show_details=false;
 };
 std::vector<Page> history;
 std::string page_path, page_title = "Home";
@@ -55,6 +58,16 @@ bool controller_overlay=false;
 int settings_page=0;
 uint64_t screen_generation=0, pending_generation=0;
 bool grid_checkpoint=false;
+bool home_screen=false, library_tools=false;
+std::vector<Item> home_sections;
+std::vector<Hub> feed_rows;
+std::vector<int> feed_columns;
+std::vector<float> feed_scroll;
+int feed_focus=0, tools_focus=0, requested_section=0;
+float feed_vertical=0;
+std::string feed_error, details_target;
+bool full_description=false;float description_scroll=0;
+std::atomic<uint64_t> feed_generation{0};
 std::string primary_id, profile_token, profile_error, pin_digits;
 Profile active_profile, requested_profile;
 std::vector<Profile> home_profiles;
@@ -85,6 +98,7 @@ enum Job {
     PinStart,
     PinPoll,
     ValidateAccount,
+    HomeFeed,
     HomeUsers,
     HomeSwitch,
     ValidateProfile,
@@ -107,6 +121,7 @@ int diagnostic_focus=0;
 Json manual_sections;
 std::string manual_candidate;
 void submit(Job kind, std::function<Result()> work);
+void load_home();
 void activate_profile();
 void choose_profile();
 void show_profiles();
@@ -154,11 +169,19 @@ void connected(const Json &data) {
     save_account_pref("plex_preferred_server",selected_server.id);
     artwork->clear(); history.clear(); detail={}; playing={};
     progress_pending=false; progress={};
-    available.clear(); settings=false; settings_page=0; in_detail=false; sidebar=false; focus=0;
+    available.clear(); settings=false; settings_page=0; in_detail=false; sidebar=false; focus=0; nav=0;
     reconnect_screen=false; connection_diagnostics=false; editor=0;
-    listing=items(data); page_path="/library/sections"; page_title="Libraries";
+    listing=items(data,false); page_path="/library/sections"; page_title="Libraries";
     page_start=0; page_total=listing.size();
+    home_sections=listing; home_screen=true;feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_vertical=0;
     if(listing.empty()) message="Connected; no accessible libraries were returned.";
+    load_home();
+}
+void load_home() {
+    if(job!=None || base.empty())return;
+    auto b=base,t=server_token;auto sections=home_sections;
+    auto epoch=++feed_generation;feed_error.clear();home_screen=true;
+    submit(HomeFeed,[b,t,sections,epoch] {return home_feed(*client,b,t,sections,[epoch]{return feed_generation.load()==epoch;});});
 }
 void refresh() {
     if(!primary_id.empty() && profile_token.empty()) {profile_screen=true;profile_error="Select and authorize a profile first.";return;}
@@ -167,16 +190,19 @@ void refresh() {
 }
 void clear_profile() {
     if(video) {player_stop();video=false;}
-    artwork->clear(); ++screen_generation;
+    artwork->clear(); ++screen_generation; ++feed_generation;
+    home_screen=false;home_sections.clear();feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_error.clear();library_tools=false;
+    profile_pin=false;requested_profile={};
     profile_token.clear(); active_profile={}; account_id.clear(); base.clear(); server_token.clear();
     selected_server={};connection_target={}; available.clear();listing.clear();history.clear();detail={};playing={};
+    full_description=false;description_scroll=0;
     progress_pending=false;progress={};tracks=false;in_detail=false;settings=false;editor=0;
     reconnect_screen=false;connection_diagnostics=false;manual_tested=false;manual_sections={};
     force_picker=false;focus=0;sidebar=false;erase_pin();
 }
 void show_profiles() {
     profile_screen=true; profile_pin=false; profile_error.clear();profile_focus=0;erase_pin();
-    if(job!=None) {deferred_profiles=true;++screen_generation;return;}
+    if(job!=None) {deferred_profiles=true;++screen_generation;++feed_generation;return;}
     clear_profile();
     if(home_profiles.empty() && home_enabled) {auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
 }
@@ -260,7 +286,7 @@ void finish_job() {
     Job done = job;
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
-    if((done==Browse || done==Sections || done==Details) && pending_generation!=screen_generation) return;
+    if((done==Browse || done==Sections || done==Details || done==HomeFeed) && pending_generation!=screen_generation) return;
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
     if (cancel_bootstrap && (done == ValidateAccount || done == HomeUsers || done == Resources)) {
@@ -307,6 +333,14 @@ void finish_job() {
             if (auth.state != AuthState::Failed)
                 auth.fail("Saved sign-in is no longer valid. Press Cross to sign in again.");
         } else account_error = result.error;
+        return;
+    }
+    if(done==HomeFeed) {
+        if(!result) {feed_error=result.error;return;}
+        feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);
+        grid_checkpoint=false;feed_focus=0;feed_vertical=0;home_screen=true;
+        auto warnings=result.data.find("warnings");
+        if(warnings!=result.data.end() && warnings->is_array() && !warnings->empty() && (*warnings)[0].is_string())feed_error=(*warnings)[0].get<std::string>();
         return;
     }
     if(done==HomeUsers) {
@@ -367,6 +401,7 @@ void finish_job() {
         account_loading = false; account_error.clear();
         if (!credentials_saved)
             message = "Signed in for this session; saving failed. Check account storage permissions.";
+        home_screen=false;
         available = servers(result.data);
         auto saved_uri=account_pref("plex_manual_uri"), saved_id=account_pref("plex_manual_server_id");
         if(valid_base(saved_uri,true))
@@ -392,23 +427,25 @@ void finish_job() {
         connected(result.data);
     } else if (done == Sections || done == Browse) {
         if(done==Browse) {
-            if(request_push) history.push_back({page_path,page_title,listing,focus,page_start,page_total});
+            if(request_push) {if(history.size()>=24)history.erase(history.begin());history.push_back({page_path,page_title,listing,focus,page_start,page_total,home_screen,in_detail?detail:Item{},in_detail});}
+            home_screen=false;
             page_path=request_path; page_title=request_title; page_start=request_start;
         }
         fprintf(stderr,"browse: response parse begin\n");
-        listing = items(result.data);
+        listing = items(result.data,false);
         fprintf(stderr,"browse: parsed items=%zu\n",listing.size());
         checkpoint(10,"ui state replaced",listing.size());
         grid_checkpoint=false;
         focus = 0;
         in_detail = false;
         auto c = result.data.find("MediaContainer");
-        page_total = c != result.data.end() ? number(*c, "totalSize", listing.size()) : 0;
+        page_total = static_cast<int>(std::clamp<int64_t>(c != result.data.end() ? number(*c,"totalSize",listing.size()) : 0,0,INT32_MAX));
         if (listing.empty())
             message = "No items in this section";
         if (done == Sections) {
-            if (nav == 1 || nav == 2) {
-                const std::string type = nav == 1 ? "movie" : "show";
+            home_screen=false;history.clear();
+            if (requested_section == 1 || requested_section == 2) {
+                const std::string type = requested_section == 1 ? "movie" : "show";
                 listing.erase(std::remove_if(listing.begin(), listing.end(),
                                              [&](const Item &i) { return i.type != type; }),
                               listing.end());
@@ -420,7 +457,7 @@ void finish_job() {
         detail.watched = !detail.watched;
     } else if (done == Details) {
         auto parsed = items(result.data);
-        if (parsed.empty()) {
+        if (parsed.empty() || (!details_target.empty() && parsed.front().id!=details_target)) {
             message = "Metadata is unavailable";
             return;
         }
@@ -430,6 +467,14 @@ void finish_job() {
         version = 0;
     }
 }
+void open_media(const Item &item) {
+    if(job!=None)return;
+    if(item.type=="movie" || item.type=="episode" || item.type=="show" || item.type=="season") {
+        details_target=item.id;
+        auto b=base,t=server_token,path="/library/metadata/"+encode(item.id);
+        submit(Details,[b,t,path]{return client->call("GET",b,path,t);});
+    }
+}
 void open_item() {
     if (job != None || listing.empty() || focus<0 || focus>=static_cast<int>(listing.size()))
         return;
@@ -437,13 +482,8 @@ void open_item() {
     if (page_path == "/library/sections") {
         diagnostic_lines=0; checkpoint(1,"library selection");
         load("/library/sections/" + encode(item.id) + "/all", item.title);
-    } else if (item.type == "show" || item.type == "season")
-        load("/library/metadata/" + encode(item.id) + "/children", item.title);
-    else if (item.type == "movie" || item.type == "episode") {
-        auto b = base, t = server_token, path = "/library/metadata/" + encode(item.id);
-        submit(Details, [b, t, path] { return client->call("GET", b, path, t); });
-    } else
-        load("/library/sections/" + encode(item.id) + "/all", item.title);
+    } else if(item.type=="show" || item.type=="season" || item.type=="movie" || item.type=="episode")open_media(item);
+    else message="This media type is not supported by the current playback adapter.";
 }
 void play() {
     if (progress_pending) {
@@ -499,9 +539,11 @@ struct InputDiagnostic {
     const PadState &pad;
     uint32_t hit;
     ~InputDiagnostic() {
+        plat_pad_set_private(profile_pin);
+        if(profile_pin)return; // Never log keypad digits through focus/action traces.
         const char *screen = profile_screen ? (profile_pin ? "profile-pin" : "profiles") : video ? (tracks ? "tracks" : "playback") :
             editor ? "keyboard" : account.empty() ? "sign-in" : sidebar ? "sidebar" :
-            settings ? "settings" : in_detail ? "detail" : !available.empty() ? "servers" : "library";
+            settings ? "settings" : in_detail ? "detail" : home_screen && available.empty() ? "home" : !available.empty() ? "servers" : "library";
         int selected = profile_screen ? (profile_pin ? pin_focus : profile_focus) : video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
         bool valid = profile_screen ? selected>=0 && selected<(profile_pin ? 10 : static_cast<int>(home_profiles.size())) : (selected >= 0 || (sidebar && nav==-1)) && (sidebar ? nav < 7 : settings ? focus < (settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9) :
             in_detail ? focus < 3 : editor ? edit_focus < static_cast<int>(alphabet.size()) :
@@ -534,6 +576,74 @@ struct InputDiagnostic {
 void centered(float y, float size, const std::string &text, float center = 960) {
     float width = ImGui::GetFont()->CalcTextSizeA(size, 10000, 0, text.c_str()).x;
     draw_text(center - width / 2, y, size, text);
+}
+void poster(float x,float y,float width,float height,const Item &item,bool selected) {
+    float scale=gfx.height/1080.f;
+    rect(x-5,y-5,width+10,height+10,selected ? IM_COL32(230,166,47,255) : IM_COL32(32,34,41,255));
+    auto texture=item.type=="episode" ? artwork->landscape(base,server_token,item.thumb) : artwork->get(base,server_token,item.thumb);
+    if(texture) {
+        float ratio=item.type=="episode" ? 16.f/9 : 2.f/3;
+        float image_width=std::min(width,height*ratio);
+        float image_height=image_width/ratio;
+        float left=x+(width-image_width)*.5f;
+        float top=y+(height-image_height)*.5f;
+        ImGui::GetBackgroundDrawList()->AddImage(texture,{left*scale,top*scale},{(left+image_width)*scale,(top+image_height)*scale});
+    }
+    else {rect(x,y,width,height,IM_COL32(38,40,48,255));draw_text(x+12,y+height*.45f,22,item.thumb.empty()?"No poster":"Artwork unavailable");}
+    if(item.watched) {rect(x+width-48,y+8,40,32,IM_COL32(160,105,20,245));draw_text(x+width-38,y+10,22,"✓");}
+    if(item.duration>0 && item.offset>0) {
+        float progress=std::clamp(static_cast<float>(item.offset)/item.duration,0.f,1.f);
+        rect(x,y+height-8,width,8,IM_COL32(60,60,65,255));rect(x,y+height-8,width*progress,8,IM_COL32(235,170,40,255));
+    }
+}
+void home_frame(uint32_t hit,float dt) {
+    if(!feed_rows.empty() && !grid_checkpoint) {checkpoint(15,"first Home carousel",feed_rows.size());grid_checkpoint=true;}
+    if(feed_rows.empty()) {
+        draw_text(390,250,32,job==HomeFeed ? "Loading your Home..." : "No Home items are available");
+        draw_text(390,330,25,"Open Movies or TV Shows to browse your libraries. Cross: refresh Home");
+        if(!feed_error.empty())draw_text(390,420,23,feed_error);
+        if(hit & PAD_LEFT)sidebar=true;
+        if((hit & PAD_CROSS) && job==None)load_home();
+        return;
+    }
+    feed_focus=std::clamp(feed_focus,0,static_cast<int>(feed_rows.size())-1);
+    if(hit & PAD_UP)feed_focus=std::max(0,feed_focus-1);
+    if(hit & PAD_DOWN)feed_focus=std::min(static_cast<int>(feed_rows.size())-1,feed_focus+1);
+    auto &column=feed_columns[feed_focus];auto &selected=feed_rows[feed_focus];
+    if(hit & PAD_LEFT) {if(column>0)--column;else sidebar=true;}
+    if(hit & PAD_RIGHT)column=std::min(static_cast<int>(selected.entries.size())-1,column+1);
+    if(plex::diagnostic(TextOnly)) {
+        draw_text(390,180,32,selected.title);
+        int first=std::max(0,column-4);
+        for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*85,selected.entries[i].title);
+        if((hit & PAD_CROSS) && job==None && !sidebar)open_media(selected.entries[column]);
+        return;
+    }
+    float amount=std::clamp(dt*14,0.f,1.f);
+    float target=static_cast<float>(std::max(0,feed_focus-1));feed_vertical+=(target-feed_vertical)*amount;
+    float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+    draw->PushClipRect({365*scale,155*scale},{1890*scale,938*scale},true);
+    for(int r=std::max(0,feed_focus-2);r<static_cast<int>(feed_rows.size()) && r<=feed_focus+2;++r) {
+        auto &hub=feed_rows[r];float y=170+(r-feed_vertical)*390;
+        if(y>938 || y+390<155)continue;
+        draw_text(390,y,31,hub.title);
+        float dest=static_cast<float>(std::max(0,feed_columns[r]-4));feed_scroll[r]+=(dest-feed_scroll[r])*amount;
+        for(int c=std::max(0,static_cast<int>(feed_scroll[r]));c<static_cast<int>(hub.entries.size()) && c<static_cast<int>(feed_scroll[r])+5;++c) {
+            auto &item=hub.entries[c];float x=390+(c-feed_scroll[r])*280;
+            if(plex::diagnostic(TextOnly))row(c,feed_columns[r],y+55+(c%3)*80,item.title);
+            else {
+                poster(x,y+60,240,245,item,!sidebar && r==feed_focus && c==feed_columns[r]);
+                auto title=item.title;if(title.size()>27)title=title.substr(0,24)+"...";
+                draw_text(x,y+315,22,title);
+                std::string secondary=item.type=="episode" ? item.series+(item.season>0 ? " S"+std::to_string(item.season) : "")+(item.episode>0 ? " E"+std::to_string(item.episode) : "") : item.year ? std::to_string(item.year) : "";
+                if(hub.continuing && item.duration>item.offset)secondary+="  "+std::to_string((item.duration-item.offset)/60000)+" min left";
+                if(secondary.size()>40)secondary=secondary.substr(0,37)+"...";
+                draw_text(x,y+347,18,secondary,IM_COL32(165,167,177,255));
+            }
+        }
+    }
+    draw->PopClipRect();
+    if((hit & PAD_CROSS) && job==None && !sidebar)open_media(selected.entries[column]);
 }
 void profile_screen_frame(uint32_t hit) {
     rect(0,0,1920,1080,IM_COL32(12,13,17,255));
@@ -808,11 +918,19 @@ void ui_frame(const PadState &pad, float dt) {
     if(sidebar && nav==-1)rect(25,100,280,44,IM_COL32(120,78,16,255));
     draw_text(45,112,22,active_profile.name.empty() ? "Profile" : active_profile.name);
     for (int i = 0; i < 7; ++i) {
+        if(i==4)continue;
+        int slot=i>4 ? i-1 : i;
         if (sidebar && nav == i)
-            rect(25, 150 + i * 87, 280, 65, IM_COL32(120, 78, 16, 255));
-        draw_text(45, 166 + i * 87, 28, navigation[i]);
+            rect(25, 150 + slot * 87, 280, 65, IM_COL32(120, 78, 16, 255));
+        float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();float y=182+slot*87;
+        ImU32 color=nav==i ? IM_COL32(235,171,54,255) : IM_COL32(160,162,174,255);
+        if(i==0) {draw->AddTriangle({43*scale,y*scale},{55*scale,(y-12)*scale},{67*scale,y*scale},color,2*scale);draw->AddRect({47*scale,y*scale},{63*scale,(y+13)*scale},color,0,0,2*scale);}
+        else if(i==5) {draw->AddCircle({53*scale,(y-2)*scale},8*scale,color,12,2*scale);draw->AddLine({59*scale,(y+5)*scale},{68*scale,(y+14)*scale},color,2*scale);}
+        else {draw->AddRect({44*scale,(y-12)*scale},{66*scale,(y+12)*scale},color,3*scale,0,2*scale);for(int line=0;line<std::min(i,3);++line)draw->AddLine({48*scale,(y-6+line*6)*scale},{62*scale,(y-6+line*6)*scale},color,scale);}
+        draw_text(83,166+slot*87,28,navigation[i]);
     }
-    draw_text(390, 65, 46, settings ? "Settings" : in_detail ? detail.title : page_title);
+    draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? "Home" : page_title);
+    if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{270*scale,105*scale},{306*scale,141*scale});}}
     if (job != None)
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())
@@ -913,60 +1031,85 @@ void ui_frame(const PadState &pad, float dt) {
         }
         return;
     }
-    bool grid = !listing.empty() && page_path != "/library/sections" && !settings && !in_detail &&
+    if(full_description) {
+        float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+        float height=ImGui::GetFont()->CalcTextSizeA(28*scale,10000,1350*scale,detail.summary.c_str()).y/scale;
+        if(hit & PAD_UP)description_scroll=std::max(0.f,description_scroll-70);
+        if(hit & PAD_DOWN)description_scroll=std::min(std::max(0.f,height-650),description_scroll+70);
+        rect(360,155,1510,780,IM_COL32(16,18,24,255));
+        draw->PushClipRect({390*scale,190*scale},{1800*scale,870*scale},true);
+        draw->AddText(ImGui::GetFont(),28*scale,{390*scale,(200-description_scroll)*scale},IM_COL32(235,235,240,255),detail.summary.c_str(),nullptr,1350*scale);draw->PopClipRect();
+        draw_text(390,890,24,"Up/Down: scroll   Circle/Square: close");
+        if(hit & (PAD_CIRCLE|PAD_SQUARE))full_description=false;
+        return;
+    }
+    if(in_detail && (hit & PAD_SQUARE)) {full_description=true;description_scroll=0;return;}
+    if(library_tools) {
+        const char *labels[]={"Title A–Z","Recently Added","Release Date (newest)","Unwatched Only","All Items","Search"};
+        if(hit & PAD_CIRCLE)library_tools=false;
+        if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
+        if(hit & PAD_DOWN)tools_focus=std::min(5,tools_focus+1);
+        for(int i=0;i<6;++i)row(i,tools_focus,210+i*100,labels[i]);
+        if((hit & PAD_CROSS) && job==None) {
+            library_tools=false;
+            if(tools_focus==5){editor=1;edit_text.clear();edit_focus=0;}
+            else {const char *queries[]={"?sort=titleSort:asc","?sort=addedAt:desc","?sort=originallyAvailableAt:desc","?unwatched=1",""};load(page_path.substr(0,page_path.find('?'))+queries[tools_focus],page_title,false);}
+        }
+        return;
+    }
+    bool on_home=home_screen && !settings && !in_detail && available.empty();
+    bool grid = !on_home && !listing.empty() && page_path != "/library/sections" && !settings && !in_detail &&
                 available.empty() && !plex::diagnostic(TextOnly);
-    if (hit & PAD_LEFT) {
+    if ((hit & PAD_LEFT) && (!on_home || sidebar)) {
         if (!sidebar && grid && focus % 5 > 0)
             --focus;
         else
             sidebar = true;
     }
-    if (hit & PAD_RIGHT) {
+    if ((hit & PAD_RIGHT) && (!on_home || sidebar)) {
         if (!sidebar && grid)
             focus = std::min(static_cast<int>(listing.size()) - 1, focus + 1);
-        else
-            sidebar = false;
+        else {sidebar = false;if(on_home)hit &= ~PAD_RIGHT;}
     }
     if (hit & PAD_OPTIONS) {
-        ++screen_generation; settings = !settings; settings_page=0;
+        if(job!=HomeFeed) {++screen_generation;++feed_generation;} settings = !settings; settings_page=0;
         sidebar = false;
         focus = 0;
     }
     if (hit & (PAD_L1 | PAD_R1)) {
-        if(job==Browse || job==Sections || job==Details) ++screen_generation;
+        if(job==Browse || job==Sections || job==Details || job==HomeFeed) {++screen_generation;++feed_generation;}
         nav = (nav + ((hit & PAD_R1) ? 1 : 6)) % 7;
+        if(nav==4)nav=(hit & PAD_R1) ? 5 : 3;
         sidebar = true;
         hit |= PAD_CROSS; // Same section activation as the sidebar.
     }
     if (hit & PAD_CIRCLE) {
-        ++screen_generation;
+        ++screen_generation; ++feed_generation;
         if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : settings_page==3 ? 8 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
         else if (in_detail) { in_detail = false; sidebar = false; }
         else if (!history.empty() && (job==None || job==Browse || job==Sections || job==Details)) {
             auto p = history.back(); history.pop_back();
             page_title = p.title; page_path = p.path; listing = std::move(p.items);
-            focus = std::clamp(p.focus,0,std::max(0,static_cast<int>(listing.size())-1)); page_start = p.start; page_total = p.total; sidebar = false;
+            focus = std::clamp(p.focus,0,std::max(0,static_cast<int>(listing.size())-1)); page_start = p.start; page_total = p.total; home_screen=p.home;in_detail=p.show_details;if(p.show_details)detail=std::move(p.previous_detail);sidebar = false;
         } else sidebar = true;
         hit &= ~PAD_CIRCLE; // One back action per frame.
     }
     if (sidebar) {
         if (hit & PAD_UP)
-            nav = std::max(-1, nav - 1);
+            {nav = std::max(-1, nav - 1);if(nav==4)nav=3;}
         if (hit & PAD_DOWN)
-            nav = std::min(6, nav + 1);
+            {nav = std::min(6, nav + 1);if(nav==4)nav=5;}
         if ((hit & PAD_CROSS) && job == None) {
             if(nav==-1) {settings=true;settings_page=3;sidebar=false;focus=0;return;}
             settings = nav == 6; settings_page=0;
             in_detail = false;
             sidebar = false;
             focus = 0;
-            if (nav == 0) {
-                auto b = base, t = server_token;
-                submit(Sections, [b, t] { return client->sections(b, t); });
-            } else if (nav == 3)
+            if (nav == 0) {load_home();}
+            else if (nav == 3)
                 load("/library/onDeck", "Continue Watching");
             else if (nav == 1 || nav == 2) {
-                auto b = base, t = server_token;
+                auto b = base, t = server_token; requested_section=nav;
                 submit(Sections, [b, t] { return client->sections(b, t); });
             } else if (nav == 5) {
                 editor = 1;
@@ -982,7 +1125,7 @@ void ui_frame(const PadState &pad, float dt) {
             row(0,focus,220,"Switch User");
             bool show=pref_int(primary_key("plex_show_profiles").c_str(),1)!=0;
             row(1,focus,320,std::string("Show Who's Watching at Startup: ")+(show ? "On" : "Off"));
-            if((hit & PAD_CROSS) && job==None) {
+            if(hit & PAD_CROSS) {
                 if(focus==0)show_profiles();
                 else pref_set(primary_key("plex_show_profiles").c_str(),show?0:1);
             }
@@ -997,11 +1140,11 @@ void ui_frame(const PadState &pad, float dt) {
                 bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : false;
                 row(i,focus,190+(i-first)*90,std::string(labels[i])+(i<=6 ? (enabled ? ": On" : ": Off") : ""));
             }
-            if((hit & PAD_CROSS) && job==None) {
+            if(hit & PAD_CROSS) {
                 if(focus==0) {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay_v2",controller_overlay?1:0);}
                 else if(focus<=6) {diagnostic_flags.fetch_xor(1u<<(focus-1));pref_set("plex_developer_flags_v1",static_cast<int>(diagnostic_flags.load()));artwork->clear();diagnostic_lines=0;}
                 else if(focus==7) {connection_diagnostics=true;diagnostic_focus=0;}
-                else if(focus==8) message="Library tracing uses numbered CP01-CP15; retrieve plexstation.log and vlc-crash.txt over FTP.";
+                else if(focus==8) message="Library CP01-CP15; artwork cached="+std::to_string(artwork->cached())+" worker="+(artwork->busy()?"busy":"idle")+"; logs: plexstation.log / vlc-crash.txt.";
                 else message=std::string("PlexStation ")+PLEX_BUILD_COMMIT+"; PPSA85301; native VLC; hardware verification pending";
             }
             return;
@@ -1065,25 +1208,37 @@ void ui_frame(const PadState &pad, float dt) {
             connect_server(available[std::clamp(focus,0,static_cast<int>(available.size())-1)]);
         }
     } else if (in_detail) {
+        if(!plex::diagnostic(TextOnly)) {
+            poster(1560,220,250,340,detail,false);
+            auto backdrop=artwork->landscape(base,server_token,detail.art);
+            if(backdrop) {float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();draw->AddImage(backdrop,{385*scale,155*scale},{1510*scale,540*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32(255,255,255,35));}
+        }
         draw_text(390, 220, 25,
-                  std::to_string(detail.year) + " • " + std::to_string(detail.duration / 60000) +
-                      " min");
+                  (detail.year ? std::to_string(detail.year)+" • " : "")+(detail.duration>0 ? std::to_string(detail.duration/60000)+" min" : ""));
         float scale = gfx.height / 1080.f;
         ImGui::GetBackgroundDrawList()->AddText(
             ImGui::GetFont(), 28 * scale, {390 * scale, 280 * scale}, IM_COL32(225, 225, 230, 255),
-            detail.summary.c_str(), nullptr, 1250 * scale);
-        row(0, focus, 640, detail.offset > 0 ? "Resume" : "Play");
+            (detail.summary.size()>500 ? detail.summary.substr(0,500)+"... (Square: read more)" : detail.summary).c_str(), nullptr, 1100 * scale);
+        row(0, focus, 640, detail.type=="show" ? "Browse seasons" : detail.type=="season" ? "Browse episodes" : detail.offset > 0 ? "Resume" : "Play");
+        std::string tags=detail.content_rating;
+        for(const auto &genre:detail.genres) {if(!tags.empty())tags+=" • ";tags+=genre;}
+        draw_text(390,570,22,tags.size()>110 ? tags.substr(0,107)+"..." : tags);
+        std::string cast="Cast: ";for(const auto &name:detail.cast){if(cast.size()>180)break;if(cast.size()>6)cast+=", ";cast+=name;}
+        if(!detail.cast.empty())draw_text(390,610,20,cast.size()>130 ? cast.substr(0,127)+"..." : cast);
         row(1, focus, 725, detail.watched ? "Mark unwatched" : "Mark watched");
-        row(2, focus, 810, "Playback version: " + std::to_string(version + 1) + " (Cross cycles)");
+        row(2,focus,810,detail.type=="show" || detail.type=="season" ? "Read description" : detail.media.is_array() && !detail.media.empty() ? "Playback version: "+std::to_string(version+1)+" / "+std::to_string(detail.media.size())+" (Cross cycles)" : "No playable versions provided");
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
             focus = std::min(2, focus + 1);
         if ((hit & PAD_CROSS) && job == None) {
-            if (focus == 0)
-                play();
+            if (focus == 0) {
+                if(detail.type=="show" || detail.type=="season")load("/library/metadata/"+encode(detail.id)+"/children",detail.title);
+                else play();
+            }
             else if (focus == 2) {
-                if (detail.media.is_array() && !detail.media.empty())
+                if(detail.type=="show" || detail.type=="season") {full_description=true;description_scroll=0;}
+                else if (detail.media.is_array() && !detail.media.empty())
                     version = (version + 1) % detail.media.size();
             } else {
                 auto b = base, t = server_token;
@@ -1091,7 +1246,8 @@ void ui_frame(const PadState &pad, float dt) {
                 submit(Watch, [b, t, i] { return client->watched(b, t, i, !i.watched); });
             }
         }
-    } else {
+    } else if(home_screen) {home_frame(hit,dt);}
+    else {
         if (!sidebar && (hit & PAD_UP))
             focus = std::max(0, focus - (grid ? 5 : 1));
         if (!sidebar && (hit & PAD_DOWN) && !listing.empty())
@@ -1102,19 +1258,12 @@ void ui_frame(const PadState &pad, float dt) {
             for (int i = first; i < static_cast<int>(listing.size()) && i < first + 10; ++i) {
                 float x = 390 + (i - first) % 5 * 285, y = 210 + (i - first) / 5 * 350;
                 bool selected = i == focus && !sidebar;
-                rect(x - 5, y - 5, 260, 325,
-                     selected ? IM_COL32(224, 160, 45, 255) : IM_COL32(30, 32, 40, 255));
-                auto texture = artwork->get(base, server_token, listing[i].thumb);
-                if (texture) {
-                    float s = gfx.height / 1080.f;
-                    ImGui::GetBackgroundDrawList()->AddImage(texture, {x * s, y * s},
-                                                             {(x + 250) * s, (y + 270) * s});
-                } else
-                    draw_text(x + 20, y + 115, 22, "Artwork unavailable");
+                poster(x,y,250,270,listing[i],selected);
                 auto label = listing[i].title;
                 if (label.size() > 22)
                     label = label.substr(0, 19) + "…";
                 draw_text(x + 7, y + 285, 23, label);
+                draw_text(x+7,y+315,18,listing[i].type=="episode" ? (listing[i].season>0 ? "S"+std::to_string(listing[i].season)+" " : "")+(listing[i].episode>0 ? "E"+std::to_string(listing[i].episode) : "Episode") : listing[i].year ? std::to_string(listing[i].year) : "");
             }
         } else {
             int first = std::max(0, focus - 7);
@@ -1125,19 +1274,18 @@ void ui_frame(const PadState &pad, float dt) {
             open_item();
         // Preserve the existing sort command, freeing R1 for section navigation.
         if ((hit & PAD_SQUARE) && !page_path.empty())
-            load(page_path + (page_path.find('?') == std::string::npos ? "?" : "&") +
-                     "sort=titleSort:asc", "Sorted by title");
-        if ((hit & PAD_R2) && page_start + 60 < page_total)
-            load(page_path, page_title, false, page_start + 60);
-        if ((hit & PAD_L2) && page_start >= 60)
-            load(page_path, page_title, false, page_start - 60);
+            {library_tools=true;tools_focus=0;}
+        if ((hit & PAD_R2) && static_cast<int64_t>(page_start) + (plex::diagnostic(TenItems)?10:60) < page_total)
+            load(page_path, page_title, false, page_start + (plex::diagnostic(TenItems)?10:60));
+        if ((hit & PAD_L2) && page_start >= (plex::diagnostic(TenItems)?10:60))
+            load(page_path, page_title, false, page_start - (plex::diagnostic(TenItems)?10:60));
         if (page_total > 60)
             draw_text(390, 920, 22,
                       "Square Sort • L2/R2 Pages • " + std::to_string(page_start + 1) + "–" +
                           std::to_string(page_start + listing.size()) + " of " +
                           std::to_string(page_total));
     }
-    draw_text(390, 985, 21,"Triangle: connection diagnostics • Server picker Square: manual endpoint");
+    draw_text(390, 985, 21,"Triangle: connection diagnostics • Square: library sort/filter or manual server");
     draw_text(390, 1020, 23,
               "D-pad / Stick Navigate • Cross Select • Circle Back • L1/R1 Sections • Options Settings");
 }
@@ -1151,3 +1299,5 @@ bool ui_video_rect(float *x, float *y, float *w, float *h) {
     return true;
 }
 bool ui_quit_requested() { return false; }
+
+bool ui_sensitive_input() {return profile_pin;}

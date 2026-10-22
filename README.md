@@ -5,10 +5,10 @@ Native PS5 homebrew Plex client under development, derived from
 and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
 [server reconnection and movie-library safety build 39659172075](https://github.com/tattedbeardo89/PlexStation/actions/runs/39659172075).
-The owner confirms launch, Cross input, completed Plex linking and server
-discovery on build cdfe733. Connecting to that PMS failed in the older build; the connectivity, automatic
-reconnection and movie-library safety changes require device acceptance.
-Media playback remains unverified.
+The owner confirms launch, Plex authentication, PMS connection and available
+library retrieval on connectivity build 2458e45. Entering Movies then aborts on
+that build. Separate ShadowMountPlus SIGSYS evidence is not yet correlated to
+a build/launch. No physical crash resolution or playback acceptance is claimed.
 
 Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
 Launch/UI rendering is owner-confirmed; input and playback need verification. PlexStation
@@ -51,13 +51,14 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 
 These are implemented source paths. Native compilation, linking and package
 checks passed in Actions, and the owner confirmed PS5 launch/UI rendering.
-Plex linking/server discovery are owner-confirmed. PMS connectivity, full
-controller navigation, codec support and audio sync still require acceptance.
+Plex linking, PMS connection and library discovery are owner-confirmed on the
+older build. Full browsing, revised profile/Home flows, playback and audio sync
+still require acceptance.
 
 ## Incomplete features
 
-Transcoding/Direct Stream negotiation, automatic bandwidth quality, watchlist,
-full Plex-style home carousels and filtering, external subtitles, next episode,
+Transcoding/Direct Stream negotiation, automatic bandwidth quality, cloud watchlist,
+music/audiobooks, advanced filters, external subtitles, automatic next episode,
 per-item offsets, completion thresholds, offline progress retries and final
 visual polish remain incomplete. The revised TV PIN/QR flow has host coverage; live Plex account authorization
 and PS5 restart persistence still need verification.
@@ -82,3 +83,10 @@ See LICENSE and THIRD_PARTY.md. Not affiliated with Plex, Sony or VideoLAN.
 Account-scoped automatic PMS reconnection, Change Server and optional controller
 overlay settings are documented in [server reconnection](docs/SERVER-RECONNECTION.md),
 including the movie-library crash investigation and physical acceptance checklist.
+
+Plex Home users/PINs, isolated profile sessions, personalized Home carousels,
+Continue Watching, movie sort/filter controls and native stability isolation
+are implemented in the current source. See [delivery status and physical
+checklist](docs/TV-CLIENT-STATUS.md), [Plex Home API/isolation](docs/PLEX-HOME.md)
+and [crash diagnosis and matching debug symbols](docs/CRASH-DIAGNOSTICS.md).
+These source implementations do not establish live Plex or PS5 acceptance.

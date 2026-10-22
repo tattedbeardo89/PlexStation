@@ -64,3 +64,9 @@ Watching uses that context too when implemented by the Home interface layer.
 Close PlexStation before deploying updates. Preserve `prefs.txt` and private
 `plexstation-account.json`, correct ownership, and account-file mode 600. Normal
 package files remain 755 executable/directory and 644 ordinary resources.
+
+Raw button/focus diagnostics are suppressed during PIN entry in the UI, main
+loop and PS5 pad backend, even if the overlay is enabled. This prevents keypad
+choices being inferred from debug logs. The separate Home layer now implements
+actual scoped Continue Watching and other supported PMS hubs; live permissions
+and progress attribution still require the checklist in TV-CLIENT-STATUS.md.

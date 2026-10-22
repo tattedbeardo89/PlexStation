@@ -100,7 +100,7 @@ int main(void)
         bool pad_ok = plat_pad_read(&pad);
         controller_imgui(pad); // Queue platform events BEFORE ImGui::NewFrame.
         static double pad_log_at;
-        if (t >= pad_log_at) {
+        if (!ui_sensitive_input() && t >= pad_log_at) {
             fprintf(stderr, "input:main frame=%llu poll=%d connected=%d buttons=%08x stick=%.2f,%.2f forwarded=1\n",
                     (unsigned long long)gfx.frame_number, pad_ok, pad.connected,
                     pad.buttons, pad.lx, pad.ly);

@@ -274,3 +274,5 @@ const char *plat_take_typed(void)
     }
     return NULL;
 }
+
+void plat_pad_set_private(bool enabled) { (void)enabled; }

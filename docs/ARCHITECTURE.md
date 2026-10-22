@@ -77,3 +77,14 @@ automatic reconnection/retry and full localization remain incomplete. Progress
 updates are coalesced at 10-second intervals and on state changes; a failed
 update is reported, but an offline retry queue is not implemented. Search and
 metadata endpoints have fixture coverage only, not live PMS acceptance.
+
+
+Plex Home now keeps the primary linked token in the existing private credential
+file and switched tokens in memory. Fresh validated profile identity scopes
+resource discovery, server preferences and timeline/playback authorization.
+PIN entry suppresses raw/focus input diagnostics. Home feeds use actual
+Continue Watching/server hubs and bounded supplemental metadata queries.
+There are 12 cached textures, one asynchronous fetch/decode at a time, no
+bulk library image preload, and generation checks on screen/profile changes.
+See PLEX-HOME.md and CRASH-DIAGNOSTICS.md for protocol references, matching debug
+artifacts and the still-unconfirmed physical abort diagnosis.

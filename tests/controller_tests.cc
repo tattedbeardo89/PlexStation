@@ -6,7 +6,9 @@
 Gfx gfx{};
 static double clock_now;
 static std::string test_data_dir = "/tmp";
-static bool paused;
+static bool paused, private_input;
+static std::string last_opened_url;
+extern "C" void plat_pad_set_private(bool enabled) {private_input=enabled;}
 static int64_t position = 20000;
 extern "C" double plat_time() { return clock_now; }
 extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
@@ -20,10 +22,11 @@ Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
 void Artwork::clear() {}
+ImTextureID Artwork::landscape(const std::string &,const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
 }
-bool player_open(const std::string &, int64_t, const std::vector<std::string> &) { return true; }
+bool player_open(const std::string &url, int64_t, const std::vector<std::string> &) {last_opened_url=url;return true;}
 void player_stop() {}
 PlayerEvent player_tick() { return PLAYER_EVENT_NONE; }
 bool player_ended() { return false; }
@@ -109,6 +112,8 @@ int main() {
     press(PAD_CIRCLE); assert(!settings && sidebar);
     auto before_cancel=listing.size();
     response.set_value(Result{}); frame(); assert(listing.size()==before_cancel);
+    while(job!=None) {pending.wait();finish_job();}
+    if(progress_pending) {frame();while(job!=None){pending.wait();finish_job();}}
     ControllerInput disconnected; PadState pad{}; pad.buttons=PAD_CROSS;
     assert(disconnected.update(pad,.016f)==0);
     pad.connected=true; assert(disconnected.update(pad,.016f)&PAD_CROSS);
@@ -132,6 +137,7 @@ int main() {
     auth.cancel(); pin_reply.data["authToken"]="cancelled-fixture-token";
     complete(PinPoll,pin_reply); assert(account.empty());
     auto fixture_transport = [](const Request &q) {
+        if(q.url.find("/hubs")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         if(q.url=="https://plex.tv/api/v2/user")
             return Reply{200,R"({"id":42,"username":"fixture"})",""};
         if(q.url.find("/identity")!=std::string::npos) return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
@@ -163,6 +169,7 @@ int main() {
         assert(q.headers.at("X-Plex-Token")=="fixture-scoped-token");
         if(q.url.find("/identity")!=std::string::npos)
             return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
+        if(q.url.find("/hubs")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         assert(q.url=="http://127.0.0.1:32400/library/sections");
         return Reply{200,R"({"MediaContainer":{"Directory":[]}})",""};
     };
@@ -178,6 +185,7 @@ int main() {
     assert(!connection_diagnostics && !manual_tested && editor==0);
     assert(test_prefs[account_key("plex_manual_uri")]=="http://127.0.0.1:32400" && test_prefs[account_key("plex_manual_server_id")]=="server");
     assert(base=="http://127.0.0.1:32400" && selected_server.id=="server");
+    while(job!=None) {pending.wait();finish_job();}
     // Simulate process startup using the real ui_init and saved private file.
     pref_set(primary_key("plex_show_profiles").c_str(),0);
     account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
@@ -185,9 +193,10 @@ int main() {
     pending.wait(); finish_job(); assert(job==Resources);
     pending.wait(); finish_job(); assert(!account_loading && job==Select && reconnect_screen);
     pending.wait(); finish_job(); assert(!reconnect_screen && available.empty() && selected_server.id=="server");
+    while(job!=None) {pending.wait();finish_job();}
     assert(account_pref("plex_preferred_server")=="server");
     // A short movie response cannot retain an index from the previous long list.
-    listing.resize(12); focus=11;
+    home_screen=false;listing.resize(12); focus=11;
     complete(Browse,Result{Json{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","movie"},{"type","movie"}}})}}}},"",200});
     assert(listing.size()==1 && focus==0);
     focus=11; open_item(); assert(job==None); focus=-1; open_item(); assert(job==None);
@@ -215,14 +224,16 @@ int main() {
     connection_target=available[1]; next_base="https://other.invalid";
     complete(Select,Result{Json{{"MediaContainer",{{"Directory",Json::array()}}}},"",200});
     assert(account_pref("plex_preferred_server")=="other" && !reconnect_screen);
+    while(job!=None) {pending.wait();finish_job();}
     // Real controller settings paths, default hidden overlay, persisted opt-in.
     assert(!controller_overlay); settings=true; sidebar=false; settings_page=0; focus=7;
     press(PAD_CROSS); assert(settings_page==2 && focus==0);
     press(PAD_CROSS); assert(controller_overlay && pref_int("plex_controller_overlay_v2",0)==1);
     press(PAD_CIRCLE); assert(settings_page==0 && focus==7);
     focus=6; press(PAD_CROSS); assert(settings_page==1);
-    press(PAD_CROSS); assert(job==Resources && force_picker);
-    pending.wait(); finish_job(); assert(job==None && !settings && available.size()==1);
+    press(PAD_CROSS); assert((job==Resources && force_picker) || (job==None && !settings && available.size()==1));
+    if(job==Resources) {pending.wait();finish_job();}
+    assert(job==None && !settings && available.size()==1);
 
     // Real UI profile lifecycle: primary session stays linked; Home tokens are isolated.
     home_enabled=true; primary_id="id:42";
@@ -244,27 +255,69 @@ int main() {
             return Reply{200,R"([{"name":"Child server","provides":"server","clientIdentifier":"child-server","accessToken":"child-server-token","connections":[{"uri":"https://child.invalid","local":true}]}])",""};
         }
         assert(q.headers.at("X-Plex-Token")=="child-server-token");
+        if(q.url.find("/hubs")!=std::string::npos || q.url.find("recentlyAdded")!=std::string::npos || q.url.find("originallyAvailableAt")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         if(q.url.find("/identity")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"machineIdentifier":"child-server"}})",""};
         if(q.url.find("/:/timeline")!=std::string::npos) {++child_timelines;return Reply{200,"{}",""};}
+        if(q.url.find("/library/metadata/show1/children")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"season1","type":"season","title":"Season"}]}})",""};
+        if(q.url.find("/library/metadata/season1/children")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"episode1","type":"episode","title":"Episode"}]}})",""};
+        if(q.url.find("/library/metadata/show1")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"show1","type":"show","title":"Show"}]}})",""};
+        if(q.url.find("/library/metadata/season1")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"season1","type":"season","title":"Season"}]}})",""};
+        if(q.url.find("/library/metadata/episode1")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"episode1","type":"episode","title":"Episode","Media":[{"container":"mp4","videoCodec":"h264","Part":[{"key":"/library/parts/episode1/file.mp4"}]}]}]}})",""};
+        if(q.url.find("/library/metadata/")!=std::string::npos) {
+            auto id=q.url.substr(q.url.find_last_of('/')+1);
+            return Reply{200,Json{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey",id},{"type","movie"},{"title","Selected fixture movie"},{"duration",100000},{"viewOffset",1000}}})}}}}.dump(),""};
+        }
         assert(q.url.find("/library/sections")!=std::string::npos);
         return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"99","title":"Child library","type":"movie"}]}})",""};
     };
     client=std::make_unique<Client>(child_transport,device);
     auto drain=[&] {for(int i=0;i<8 && job!=None;++i){pending.wait();finish_job();}assert(job==None);};
     show_profiles();assert(profile_screen && profile_token.empty() && listing.empty() && history.empty());
-    profile_focus=1;press(PAD_CROSS);assert(profile_pin && pin_digits.empty());
+    profile_focus=1;press(PAD_CROSS);assert(profile_pin && pin_digits.empty() && private_input && ui_sensitive_input());
     for(int i=0;i<4;++i)press(PAD_CROSS);
     drain();assert(profile_pin && !profile_error.empty() && pin_digits.empty() && child_resources==0);
     press(PAD_CROSS); // 0
     press(PAD_RIGHT);press(PAD_CROSS); // 1
     press(PAD_RIGHT);press(PAD_CROSS); // 2
     press(PAD_RIGHT);press(PAD_CROSS); // 3
-    drain();assert(active_profile.id=="84" && account=="fixture-account-token" && profile_token=="child-account-token");
+    drain();frame();assert(!private_input && !ui_sensitive_input());
+    assert(active_profile.id=="84" && account=="fixture-account-token" && profile_token=="child-account-token");
     assert(account_id=="id:42/profile:child" && child_resources==1 && available.size()==1);
     connect_server(available.front());drain();assert(listing.size()==1 && listing[0].id=="99");
     assert(server_token=="child-server-token" && account_pref("plex_preferred_server")=="child-server");
     playing.id="child-movie";playing.duration=100000;queue_progress("paused",1000);frame();drain();assert(child_timelines==1);
     for(const auto &entry:test_prefs)assert(entry.second.find("token")==std::string::npos);
+    // Production Home carousel focus, long labels, progress metadata and details return.
+    feed_rows.clear();feed_columns.clear();feed_scroll.clear();
+    for(int r=0;r<3;++r) {
+        Hub hub;hub.id="row"+std::to_string(r);hub.title=r ? "Recently Added" : "Continue Watching";hub.continuing=r==0;
+        for(int c=0;c<8;++c){Item item;item.id="movie"+std::to_string(c);item.type="movie";item.title=std::string(90,'L');item.duration=100000;item.offset=25000;hub.entries.push_back(item);}
+        feed_rows.push_back(hub);feed_columns.push_back(0);feed_scroll.push_back(0);
+    }
+    home_screen=true;in_detail=false;settings=false;sidebar=false;feed_focus=0;nav=0;
+    for(int i=0;i<6;++i)press(PAD_RIGHT);
+    assert(feed_columns[0]==6 && !sidebar);
+    press(PAD_DOWN);assert(feed_focus==1 && feed_columns[1]==0);
+    press(PAD_RIGHT);assert(feed_columns[1]==1);
+    press(PAD_UP);assert(feed_focus==0 && feed_columns[0]==6);
+    press(PAD_CROSS);drain();assert(in_detail && detail.id=="movie6");
+    press(PAD_CIRCLE);assert(home_screen && !in_detail && feed_columns[0]==6);
+    feed_columns[0]=0;press(PAD_LEFT);assert(sidebar);press(PAD_RIGHT);assert(!sidebar && feed_columns[0]==0);
+    diagnostic_flags=TextOnly;frame();assert(home_screen);diagnostic_flags=0;
+    // Production TV hierarchy opens details, then seasons, then episodes and keeps the profile token.
+    home_screen=false;in_detail=false;sidebar=false;focus=0;history.clear();page_path="/library/sections/99/all";
+    listing={};Item show;show.id="show1";show.type="show";listing.push_back(show);
+    open_item();drain();assert(in_detail && detail.type=="show");
+    press(PAD_CROSS);drain();assert(!in_detail && listing.size()==1 && listing[0].type=="season");
+    open_item();drain();assert(in_detail && detail.type=="season");
+    press(PAD_CROSS);drain();assert(!in_detail && listing[0].type=="episode");
+    open_item();drain();assert(in_detail && detail.type=="episode");
+    press(PAD_SQUARE);assert(full_description);press(PAD_CIRCLE);assert(!full_description && in_detail);
+    press(PAD_CROSS);drain();assert(video && last_opened_url.find("child-server-token")!=std::string::npos && last_opened_url.find("fixture-account-token")==std::string::npos);
+    press(PAD_CIRCLE);drain();assert(!video && in_detail);
+    press(PAD_CIRCLE);drain();assert(!in_detail && !home_screen);
+    press(PAD_CIRCLE);drain();assert(in_detail && detail.type=="season");
+
     // A cancelled old-user response must not replace the new profile picker.
     std::promise<Result> old_user;pending=old_user.get_future();job=Browse;pending_generation=screen_generation;
     show_profiles();assert(deferred_profiles && profile_screen);

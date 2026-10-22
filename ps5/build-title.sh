@@ -70,8 +70,8 @@ for f in gfx image prefs player mpvshader subconv library network osub lang web 
 done
 "$sdk/bin/prospero-ar" rcs "$work/libprobe.a" "$work"/obj/*.o
 
-cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/app_crt.o"
-cc -std=c++20 -O2 -fno-exceptions -fno-rtti -c "$native/app_cpp_runtime.cpp" -o "$work/app_cpp_runtime.o"
+cc -std=c++20 -g -fno-omit-frame-pointer -O2 -fno-exceptions -fno-rtti -c "$native/app_crt.cpp" -o "$work/app_crt.o"
+cc -std=c++20 -g -fno-omit-frame-pointer -O2 -fno-exceptions -fno-rtti -c "$native/app_cpp_runtime.cpp" -o "$work/app_cpp_runtime.o"
 
 stub() {
     local library=$1 source=$2

@@ -37,6 +37,11 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
     Request q{"GET",base+"/photo/:/transcode?width=320&height=480&minSize=1&upscale=0&url="+encode(thumb),{{"X-Plex-Token",token}},""};
     return request_image(q,base+thumb);
 }
+ImTextureID Artwork::landscape(const std::string &base,const std::string &token,const std::string &path) {
+    if(diagnostic(TextOnly) || diagnostic(NoDownloads) || path.empty() || path.front()!='/' || path.rfind("//",0)==0 || !valid_base(base,true))return 0;
+    Request q{"GET",base+"/photo/:/transcode?width=640&height=360&minSize=0&upscale=0&url="+encode(path),{{"X-Plex-Token",token}},""};
+    return request_image(q,"landscape:"+base+path);
+}
 ImTextureID Artwork::avatar(const std::string &url,const std::string &token) {
     if(diagnostic(TextOnly) || diagnostic(NoDownloads))return 0;
     bool trusted=false;

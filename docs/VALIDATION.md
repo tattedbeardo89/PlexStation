@@ -330,3 +330,53 @@ Actual decoder/cache avatar/isolation tests and strict native-source host
 syntax passed. Accessible official Kodi and maintained PlexAPI references and
 live-verification limits are recorded in PLEX-HOME.md. Live Plex Home/PMS and
 physical PS5 behavior remain unverified.
+
+### Independently deployable Checkpoint A — native passed
+
+[Run 39697533557](https://github.com/tattedbeardo89/PlexStation/actions/runs/39697533557)
+produced the complete Checkpoint A build at
+`8e6ae8e3e756721f4dcd66279503712b68b2950d`. Native compilation, package and
+permission validation, matching debug collection and uploads passed. The first
+attempt compiled successfully but did not upload an install: debug collection
+incorrectly required a nonempty success-only linker log; the guard now allows
+that log to be empty while requiring all ELF/map/symbol files.
+
+- Installation: `PlexStation-PPSA85301-8e6ae8e3e756721f4dcd66279503712b68b2950d` (37.4 MB).
+- Debug: `PlexStation-native-debug-8e6ae8e3e756721f4dcd66279503712b68b2950d` (86 MB).
+- Logs: `PlexStation-build-diagnostics-8e6ae8e3e756721f4dcd66279503712b68b2950d` (184 KB).
+
+Artifact listings and job states were verified publicly; authenticated downloads
+were unavailable. This is the preserved stability-only installation, independent
+of the later profiles/Home interface. Physical SIGABRT/SIGSYS resolution and
+module symbolization remain unconfirmed.
+
+## Checkpoint C — personalized Home and native TV UI
+
+Implemented actual scoped Continue Watching and nonempty server hubs, bounded
+supplemental recently-added movie/TV, release-date sorted movie and On Deck
+requests. Native carousels show real progress/series/episode/remaining time,
+scroll and restore focus after details. Added original sidebar vector icons,
+active profile/avatar entry, movie sort/unwatched/all controls, existing search
+and pagination, show details/seasons/episodes, real metadata/poster/backdrop/
+genre/cast presentation and a scrollable description. Unsupported cloud
+Watchlist/music/audiobook navigation is hidden; limitations and fallback library
+scope are explicit in TV-CLIENT-STATUS.md. No screenshot was attached, so exact
+visual matching is not claimed.
+
+Metadata list extraction avoids copying playback Media trees. Detailed Media is
+bounded to eight versions and two part descriptors (preserving multipart
+rejection), with bounded labels/history and existing request/image/cache caps.
+PIN privacy now suppresses UI focus/action, main-loop and PS5 raw-pad logs, while
+leaving actual input delivery intact. A controller test race from outstanding
+old timeline work was exposed by the intermediate Checkpoint B CI gate; fixture
+jobs are now explicitly settled before manual completions rather than relying
+on worker timing. That failed run did not publish an installation.
+
+Host core passed 74 checks plus ten real libcurl scenarios. New Home fixtures
+verify real Continue Watching progress/identity, empty/unsupported responses,
+release-date requests, profile-scoped authorization and cancellation. Production
+UI fixtures verify carousel focus/return, PIN retry/privacy, child libraries and
+timeline/media URL tokens, full TV navigation and stale-user results. Existing
+pad, artwork, auth, real native TLS, connection/fallback, permission and strict
+syntax tests passed. Final ASan/UBSan and native pipeline results follow when
+complete; fixtures do not establish live Plex permissions or PS5 acceptance.

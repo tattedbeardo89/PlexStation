@@ -25,8 +25,11 @@ class Artwork {
 
   public:
     explicit Artwork(Transport t) : transport(std::move(t)) {}
+    bool busy() const {return pending.valid();}
+    size_t cached() const {return entries.size();}
     void update();
     ImTextureID get(const std::string &base, const std::string &token, const std::string &thumb);
+    ImTextureID landscape(const std::string &base,const std::string &token,const std::string &path);
     ImTextureID avatar(const std::string &url,const std::string &primary_token);
     void clear();
 };

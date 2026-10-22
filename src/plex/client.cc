@@ -51,7 +51,11 @@ static const Json &container(const Json &j) {
     auto it = j.find("MediaContainer");
     return it != j.end() && it->is_object() ? *it : empty;
 }
-std::vector<Item> items(const Json &j) {
+static std::string display_text(std::string value,size_t limit) {
+    if(value.size()>limit) {size_t end=limit;while(end && (static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;value.resize(end);}
+    return value;
+}
+std::vector<Item> items(const Json &j,bool include_media) {
     std::vector<Item> out;
     checkpoint(7,"container");
     const auto &c = container(j);
@@ -73,17 +77,37 @@ std::vector<Item> items(const Json &j) {
         x.type = text(v, "type");
         x.title = text(v, "title", "Untitled");
         if(x.title.empty()) x.title="Untitled";
-        x.summary = text(v, "summary");
+        x.title=display_text(x.title,256);
+        x.summary = display_text(text(v, "summary"),2048);
+        x.series=display_text(text(v,"grandparentTitle",text(v,"parentTitle")),256);
+        x.content_rating=display_text(text(v,"contentRating"),40);x.released=text(v,"originallyAvailableAt");
+        auto tags=[&](const char *name,std::vector<std::string> &out) {
+            auto list=v.find(name);if(list==v.end() || !list->is_array())return;
+            for(const auto &tag:*list) {auto label=display_text(text(tag,"tag"),80);if(!label.empty())out.push_back(label);if(out.size()==12)break;}
+        };
+        tags("Genre",x.genres);tags("Role",x.cast);
         x.thumb = text(v, "thumb");
         x.art = text(v, "art");
-        x.year = number(v, "year");
-        x.duration = number(v, "duration");
-        x.offset = number(v, "viewOffset");
+        x.year = static_cast<int>(std::clamp<int64_t>(number(v,"year"),0,9999));
+        x.duration = std::max<int64_t>(0,number(v,"duration"));
+        x.offset = std::max<int64_t>(0,number(v,"viewOffset"));
         x.watched = number(v, "viewCount") > 0;
         x.season = number(v, "parentIndex");
         x.episode = number(v, "index");
-        if (v.contains("Media") && v["Media"].is_array())
-            x.media = v["Media"];
+        if (include_media && v.contains("Media") && v["Media"].is_array()) {
+            x.media=Json::array();
+            for(const auto &version:v["Media"]) {
+                if(!version.is_object())continue;
+                Json parts=Json::array();auto list=version.find("Part");
+                if(list!=version.end() && list->is_array())for(const auto &part:*list) {
+                    auto key=text(part,"key");
+                    parts.push_back({{"key",key.size()<=4096 ? key : ""}});
+                    if(parts.size()==2)break; // preserve multipart rejection without copying every part
+                }
+                x.media.push_back({{"container",display_text(text(version,"container"),40)},{"videoCodec",display_text(text(version,"videoCodec"),40)},{"Part",std::move(parts)}});
+                if(x.media.size()==8)break;
+            }
+        }
         out.push_back(std::move(x));
     }
     checkpoint(8,"metadata extracted",out.size());

@@ -45,6 +45,8 @@ struct Item {
     int64_t duration = 0, offset = 0;
     bool watched = false;
     Json media;
+    std::string series, content_rating, released;
+    std::vector<std::string> genres, cast;
 };
 struct Pin {
     int64_t id = 0;
@@ -54,7 +56,7 @@ struct Pin {
 std::string encode(const std::string &);
 std::string text(const Json &, const char *, const std::string &fallback = "");
 int64_t number(const Json &, const char *, int64_t fallback = 0);
-std::vector<Item> items(const Json &);
+std::vector<Item> items(const Json &,bool include_media=true);
 std::vector<Server> servers(const Json &);
 bool valid_base(const std::string &, bool allow_http);
 struct ConnectionAttempt {
