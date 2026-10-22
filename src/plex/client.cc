@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "client.h"
 #include "diagnostics.h"
+#include "home.h"
 #include "tinyxml2/tinyxml2.h"
 #include <algorithm>
 #include <charconv>
@@ -171,6 +172,26 @@ Result Client::call(const std::string &method, const std::string &base, const st
         return {{}, "Server returned HTTP " + std::to_string(r.status), r.status, Failure::HttpStatus};
     if(library_request) checkpoint(5,"http validated");
     auto body_start=r.body.find_first_not_of(" \t\r\n",r.body.compare(0,3,"\xEF\xBB\xBF")==0 ? 3:0);
+    if(path.find("/home/users")!=std::string::npos && body_start!=std::string::npos && r.body[body_start]=='<') {
+        tinyxml2::XMLDocument document;
+        if(r.body.find("<!DOCTYPE")!=std::string::npos || document.Parse(r.body.data(),r.body.size())!=tinyxml2::XML_SUCCESS)
+            return {{},"Invalid Plex Home XML",r.status};
+        auto *root=document.RootElement(); if(!root || root->NextSiblingElement())return {{},"Invalid Plex Home response",r.status};
+        auto object=[](tinyxml2::XMLElement *element) {
+            Json out=Json::object();
+            for(const char *key:{"id","uuid","title","username","thumb","protected","admin","restricted","authenticationToken","authToken"})
+                if(auto value=element->Attribute(key))out[key]=value;
+            return out;
+        };
+        std::string name=root->Name();
+        if(name=="user" || name=="User")return {object(root),"",r.status};
+        if(name!="users" && name!="MediaContainer")return {{},"Invalid Plex Home user list",r.status};
+        Json list=Json::array();
+        for(auto *user=root->FirstChildElement();user && list.size()<32;user=user->NextSiblingElement()) {
+            std::string tag=user->Name();if(tag=="User" || tag=="user")list.push_back(object(user));
+        }
+        return {Json{{"users",std::move(list)}},"",r.status};
+    }
     if (path == "/identity" && body_start != std::string::npos && r.body[body_start] == '<') {
         tinyxml2::XMLDocument document;
         if (r.body.find("<!DOCTYPE") != std::string::npos ||
@@ -218,6 +239,25 @@ Result Client::poll_pin(int64_t id, const std::string &code) {
                 "/api/v2/pins/" + std::to_string(id) + "?code=" + encode(code));
     if (result && text(result.data, "clientIdentifier", client_id) != client_id)
         result.error = "Plex returned a PIN for another client.";
+    return result;
+}
+Result Client::home_users(const std::string &token) {
+    auto result=call("GET","https://plex.tv","/api/v2/home/users",token);
+    if(!result && (result.status==404 || result.status==405))result=call("GET","https://plex.tv","/api/home/users",token);
+    if(result && profiles(result.data).empty())result.error="Plex returned no valid Home profiles";
+    return result;
+}
+Result Client::switch_home(const std::string &token,const std::string &id,const std::string &pin_value) {
+    if(id.empty() || id.size()>32 || id.find_first_not_of("0123456789")!=std::string::npos || (!pin_value.empty() && !valid_pin(pin_value)))
+        return {{},"Invalid profile or four-digit PIN",0};
+    auto result=call("POST","https://plex.tv","/api/home/users/"+id+"/switch",token,"pin="+encode(pin_value));
+    if(!result)return result;
+    auto user=result.data.find("user");
+    if(user!=result.data.end() && user->is_object()) result.data=*user;
+    auto switched=text(result.data,"authenticationToken",text(result.data,"authToken"));
+    if(profile_id(result.data)!=id || switched.empty() || switched.size()>4096 || switched.find_first_of(" \r\n\t")!=std::string::npos)
+        return {{},"Plex returned an invalid or mismatched profile session",result.status};
+    result.data["authToken"]=std::move(switched);
     return result;
 }
 Result Client::resources(const std::string &token) {

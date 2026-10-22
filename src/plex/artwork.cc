@@ -34,7 +34,20 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
     if (thumb.empty() || thumb.front() != '/' || thumb.rfind("//", 0) == 0 ||
         !valid_base(base, true))
         return 0;
-    const std::string key = base + thumb;
+    Request q{"GET",base+"/photo/:/transcode?width=320&height=480&minSize=1&upscale=0&url="+encode(thumb),{{"X-Plex-Token",token}},""};
+    return request_image(q,base+thumb);
+}
+ImTextureID Artwork::avatar(const std::string &url,const std::string &token) {
+    if(diagnostic(TextOnly) || diagnostic(NoDownloads))return 0;
+    bool trusted=false;
+    for(const char *prefix:{"https://plex.tv/","https://images.plex.tv/","https://resources-cdn.plexapp.com/"})
+        if(url.rfind(prefix,0)==0)trusted=true;
+    if(!trusted || url.find_first_of("\r\n#")!=std::string::npos)return 0;
+    Request q{"GET",url,{},""};
+    if(url.rfind("https://plex.tv/",0)==0)q.headers["X-Plex-Token"]=token;
+    return request_image(q,"avatar:"+url);
+}
+ImTextureID Artwork::request_image(const Request &request,const std::string &key) {
     for (auto &e : entries)
         if (e.key == key) {
             e.used = frame;
@@ -46,16 +59,11 @@ ImTextureID Artwork::get(const std::string &base, const std::string &token,
     auto epoch = generation;
     bool decode=!diagnostic(NoDecode);
     checkpoint(11,"artwork schedule");
-    pending = std::async(std::launch::async, [network, base, token, thumb, key, epoch, decode] {
+    pending = std::async(std::launch::async, [network, request, key, epoch, decode] {
         Decoded out;
         out.key = key;
         out.generation = epoch;
-        Request q{"GET",
-                  base + "/photo/:/transcode?width=320&height=480&minSize=1&upscale=0&url=" +
-                      encode(thumb),
-                  {{"X-Plex-Token", token}},
-                  ""};
-        auto reply = network(q);
+        auto reply = network(request);
         checkpoint(12,"artwork downloaded",reply.body.size());
         if(!decode) return out;
         if (reply.status != 200 || !reply.error.empty() || reply.body.empty() ||

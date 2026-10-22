@@ -6,6 +6,7 @@
 #include "plex/artwork.h"
 #include "plex/client.h"
 #include "plex/diagnostics.h"
+#include "plex/home.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -54,6 +55,13 @@ bool controller_overlay=false;
 int settings_page=0;
 uint64_t screen_generation=0, pending_generation=0;
 bool grid_checkpoint=false;
+std::string primary_id, profile_token, profile_error, pin_digits;
+Profile active_profile, requested_profile;
+std::vector<Profile> home_profiles;
+bool profile_screen=false, profile_pin=false, home_enabled=false, deferred_profiles=false;
+int profile_focus=0, pin_focus=0;
+void erase_pin() {std::fill(pin_digits.begin(),pin_digits.end(),'0');pin_digits.clear();}
+std::string primary_key(const std::string &name) {return name+"."+encode(primary_id);}
 std::string account_key(const std::string &name) { return name + "." + encode(account_id); }
 std::string account_pref(const std::string &name, const char *fallback="") {
     return account_id.empty() ? fallback : pref_str(account_key(name).c_str(),fallback);
@@ -77,6 +85,9 @@ enum Job {
     PinStart,
     PinPoll,
     ValidateAccount,
+    HomeUsers,
+    HomeSwitch,
+    ValidateProfile,
     Resources,
     Select,
     Manual,
@@ -96,6 +107,9 @@ int diagnostic_focus=0;
 Json manual_sections;
 std::string manual_candidate;
 void submit(Job kind, std::function<Result()> work);
+void activate_profile();
+void choose_profile();
+void show_profiles();
 void test_manual() {
     auto target=connection_target;
     target.connections={{manual_candidate,true,false}};
@@ -147,8 +161,57 @@ void connected(const Json &data) {
     if(listing.empty()) message="Connected; no accessible libraries were returned.";
 }
 void refresh() {
-    auto token = account;
+    if(!primary_id.empty() && profile_token.empty()) {profile_screen=true;profile_error="Select and authorize a profile first.";return;}
+    auto token = primary_id.empty() ? account : profile_token;
     submit(Resources, [token] { return client->resources(token); });
+}
+void clear_profile() {
+    if(video) {player_stop();video=false;}
+    artwork->clear(); ++screen_generation;
+    profile_token.clear(); active_profile={}; account_id.clear(); base.clear(); server_token.clear();
+    selected_server={};connection_target={}; available.clear();listing.clear();history.clear();detail={};playing={};
+    progress_pending=false;progress={};tracks=false;in_detail=false;settings=false;editor=0;
+    reconnect_screen=false;connection_diagnostics=false;manual_tested=false;manual_sections={};
+    force_picker=false;focus=0;sidebar=false;erase_pin();
+}
+void show_profiles() {
+    profile_screen=true; profile_pin=false; profile_error.clear();profile_focus=0;erase_pin();
+    if(job!=None) {deferred_profiles=true;++screen_generation;return;}
+    clear_profile();
+    if(home_profiles.empty() && home_enabled) {auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
+}
+void activate_profile() {
+    active_profile=requested_profile;
+    account_id=profile_scope(primary_id,active_profile);
+    // Only the validated original owner may inherit its pre-profile preference.
+    if("id:"+active_profile.id==primary_id) {
+        for(const char *key:{"plex_preferred_server","plex_manual_uri","plex_manual_server_id"})
+            if(account_pref(key).empty()) {
+                auto old=pref_str((std::string(key)+"."+encode(primary_id)).c_str(),"");
+                if(!old.empty())save_account_pref(key,old);
+            }
+    }
+    pref_set(primary_key("plex_last_profile").c_str(),active_profile.id);
+    global_delay=std::clamp(pref_int(account_key("plex_audio_delay").c_str(),0),-500,500);
+    profile_screen=false;profile_pin=false;profile_error.clear();erase_pin();
+    account_loading=true;refresh();
+}
+void choose_profile() {
+    if(job!=None)return;
+    if(requested_profile.protected_user && !valid_pin(pin_digits)) {profile_pin=true;pin_focus=0;erase_pin();return;}
+    if(!home_enabled) {profile_token=account;activate_profile();return;}
+    auto token=account,id=requested_profile.id,secret=pin_digits;erase_pin();
+    submit(HomeSwitch,[token,id,secret]() mutable {
+        auto result=client->switch_home(token,id,secret);std::fill(secret.begin(),secret.end(),'0');return result;
+    });
+}
+void profiles_ready() {
+    profile_screen=true;account_loading=false;profile_focus=0;
+    auto last=pref_str(primary_key("plex_last_profile").c_str(),"");
+    if(!pref_int(primary_key("plex_show_profiles").c_str(),1)) {
+        auto found=std::find_if(home_profiles.begin(),home_profiles.end(),[&](const Profile &p){return p.id==last;});
+        if(found!=home_profiles.end()) {requested_profile=*found;if(found->protected_user){profile_pin=true;erase_pin();pin_focus=0;}else choose_profile();}
+    }
 }
 void signout() {
     if (job != None)
@@ -158,6 +221,7 @@ void signout() {
         video = false;
     }
     artwork->clear();
+    profile_token.clear();primary_id.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
     account.clear(); account_id.clear(); reconnect_screen=false; force_picker=false; settings_page=0;
     server_token.clear();
     base.clear();
@@ -195,10 +259,11 @@ void finish_job() {
     Result result = pending.get();
     Job done = job;
     job = None;
+    if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
     if((done==Browse || done==Sections || done==Details) && pending_generation!=screen_generation) return;
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
-    if (cancel_bootstrap && (done == ValidateAccount || done == Resources)) {
+    if (cancel_bootstrap && (done == ValidateAccount || done == HomeUsers || done == Resources)) {
         cancel_bootstrap = false; signout(); return;
     }
     if (done == PinStart || done == PinPoll) {
@@ -228,8 +293,14 @@ void finish_job() {
         if (result) {
             auto id=number(result.data,"id",0);
             if(id<=0) { account_error="Plex account identity is missing. Retry sign-in validation."; return; }
-            account_id="id:"+std::to_string(id);
-            account_error.clear(); refresh();
+            clear_profile();primary_id="id:"+std::to_string(id);
+            home_enabled=flag(result.data,"home",false);
+            account_error.clear();profile_error.clear();home_profiles.clear();
+            if(home_enabled) {profile_screen=true;account_loading=false;auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
+            else {
+                home_profiles.push_back({std::to_string(id),text(result.data,"uuid"),text(result.data,"title",text(result.data,"username","Plex account")),text(result.data,"thumb"),false,true,false});
+                profiles_ready();
+            }
         }
         else if (result.status == 401 || result.status == 403) {
             signout();
@@ -238,10 +309,25 @@ void finish_job() {
         } else account_error = result.error;
         return;
     }
+    if(done==HomeUsers) {
+        if(!result) {
+            if(result.status==401 || result.status==403) {signout();auth.fail("Primary account authorization expired. Sign in again.");}
+            else profile_error=result.error;
+            return;
+        }
+        home_profiles=profiles(result.data); profiles_ready();return;
+    }
+    if(done==HomeSwitch) {
+        if(!result) {profile_error=(result.status==401 || result.status==403) ? "Incorrect PIN or profile access denied. Retry or select another user." : result.error;erase_pin();return;}
+        profile_token=text(result.data,"authToken");auto token=profile_token;
+        submit(ValidateProfile,[token]{return client->validate_account(token);});return;
+    }
+    if(done==ValidateProfile) {
+        if(!result || profile_id(result.data)!=requested_profile.id) {profile_token.clear();profile_error="Profile authorization could not be verified. Select the profile and retry.";erase_pin();return;}
+        activate_profile();return;
+    }
     if (done == Resources && !result && (result.status == 401 || result.status == 403)) {
-        signout();
-        if (auth.state != AuthState::Failed)
-            auth.fail("Plex sign-in is no longer valid. Press Cross to sign in again.");
+        account_loading=false;show_profiles();profile_error="This profile session expired or lost access. Select a profile to retry.";
         return;
     }
     if (done==Select || done==Manual) {
@@ -413,11 +499,11 @@ struct InputDiagnostic {
     const PadState &pad;
     uint32_t hit;
     ~InputDiagnostic() {
-        const char *screen = video ? (tracks ? "tracks" : "playback") :
+        const char *screen = profile_screen ? (profile_pin ? "profile-pin" : "profiles") : video ? (tracks ? "tracks" : "playback") :
             editor ? "keyboard" : account.empty() ? "sign-in" : sidebar ? "sidebar" :
             settings ? "settings" : in_detail ? "detail" : !available.empty() ? "servers" : "library";
-        int selected = video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
-        bool valid = selected >= 0 && (sidebar ? nav < 7 : settings ? focus < (settings_page==2 ? 10 : settings_page ? 1 : 8) :
+        int selected = profile_screen ? (profile_pin ? pin_focus : profile_focus) : video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
+        bool valid = profile_screen ? selected>=0 && selected<(profile_pin ? 10 : static_cast<int>(home_profiles.size())) : (selected >= 0 || (sidebar && nav==-1)) && (sidebar ? nav < 7 : settings ? focus < (settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9) :
             in_detail ? focus < 3 : editor ? edit_focus < static_cast<int>(alphabet.size()) :
             account.empty() || video || (available.empty() ? focus < static_cast<int>(listing.size()) :
             focus < static_cast<int>(available.size())));
@@ -448,6 +534,58 @@ struct InputDiagnostic {
 void centered(float y, float size, const std::string &text, float center = 960) {
     float width = ImGui::GetFont()->CalcTextSizeA(size, 10000, 0, text.c_str()).x;
     draw_text(center - width / 2, y, size, text);
+}
+void profile_screen_frame(uint32_t hit) {
+    rect(0,0,1920,1080,IM_COL32(12,13,17,255));
+    centered(130,58,profile_pin ? "Enter profile PIN" : "Who's Watching?");
+    if(!profile_error.empty())centered(880,25,profile_error);
+    if(job!=None)centered(820,28,deferred_profiles ? "Finishing previous user request..." : "Authorizing profile...");
+    if(hit & PAD_CIRCLE) {
+        if(job!=None) {deferred_profiles=true;return;}
+        if(profile_pin) {profile_pin=false;erase_pin();profile_error.clear();}
+        else {profile_error="Select a profile to continue. Options: sign out.";}
+        return;
+    }
+    if((hit & PAD_OPTIONS) && job==None) {signout();return;}
+    if(profile_pin) {
+        centered(260,36,requested_profile.name);
+        centered(330,50,std::string(pin_digits.size(),'*')+std::string(4-pin_digits.size(),'_'));
+        if(job==None) {
+            if(hit & PAD_LEFT)pin_focus=std::max(0,pin_focus-1);
+            if(hit & PAD_RIGHT)pin_focus=std::min(9,pin_focus+1);
+            if(hit & PAD_UP)pin_focus=std::max(0,pin_focus-5);
+            if(hit & PAD_DOWN)pin_focus=std::min(9,pin_focus+5);
+            if((hit & PAD_SQUARE) && !pin_digits.empty())pin_digits.pop_back();
+            if((hit & PAD_CROSS) && pin_digits.size()<4) {pin_digits+=static_cast<char>('0'+pin_focus);if(pin_digits.size()==4)choose_profile();}
+        }
+        for(int i=0;i<10;++i) {float x=590+(i%5)*150,y=440+(i/5)*130;rect(x,y,115,95,i==pin_focus?IM_COL32(180,120,20,255):IM_COL32(32,34,40,255));draw_text(x+40,y+25,42,std::to_string(i));}
+        centered(740,24,"Cross: digit   Square: erase   Circle: cancel");return;
+    }
+    if(home_profiles.empty()) {
+        centered(390,30,"Loading Plex Home profiles");
+        if(job==None && (hit & PAD_CROSS)) {profile_error.clear();auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
+        centered(550,25,"Cross: retry   Options: sign out");return;
+    }
+    if(job==None) {
+        if(hit & PAD_LEFT)profile_focus=std::max(0,profile_focus-1);
+        if(hit & PAD_RIGHT)profile_focus=std::min(static_cast<int>(home_profiles.size())-1,profile_focus+1);
+        if(hit & PAD_UP)profile_focus=std::max(0,profile_focus-5);
+        if(hit & PAD_DOWN)profile_focus=std::min(static_cast<int>(home_profiles.size())-1,profile_focus+5);
+    }
+    int first=(profile_focus/5)*5;
+    int count=std::min(5,static_cast<int>(home_profiles.size())-first);
+    for(int i=first;i<first+count;++i) {
+        float x=960-count*150+(i-first)*300;
+        rect(x,310,260,300,i==profile_focus?IM_COL32(165,110,20,255):IM_COL32(30,32,39,255));
+        auto avatar=artwork->avatar(home_profiles[i].avatar,account);
+        if(avatar) {
+            float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale});
+        } else centered(390,70,"●",x+130);
+        centered(510,29,home_profiles[i].name,x+130);
+        if(home_profiles[i].protected_user)centered(560,23,"PIN protected",x+130);
+    }
+    centered(720,26,"D-pad / Stick: choose   Cross: select   Options: sign out");
+    if((hit & PAD_CROSS) && job==None) {requested_profile=home_profiles[profile_focus];profile_error.clear();choose_profile();}
 }
 void login_screen(uint32_t hit, double now) {
     rect(0, 0, 1920, 1080, IM_COL32(12,13,17,255));
@@ -552,7 +690,7 @@ bool ui_init() {
     // A new schema starts hidden even if an older diagnostic build opted in.
     controller_overlay = pref_int("plex_controller_overlay_v2",0)!=0;
     diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & 63u;
-    account_id.clear();
+    account_id.clear();primary_id.clear();profile_token.clear();profile_screen=false;
     auto &io = ImGui::GetIO();
     auto font = std::string(plat_data_dir()) + "/fonts/Inter-Regular.ttf";
     if (access(font.c_str(), R_OK) == 0)
@@ -663,9 +801,12 @@ void ui_frame(const PadState &pad, float dt) {
     if (was_video) hit = 0; // The stop/back press must not also leave details.
     artwork->update();
     if (account.empty() || account_loading) { login_screen(hit, now); return; }
+    if(profile_screen) {profile_screen_frame(hit);return;}
     rect(0, 0, 1920, 1080, IM_COL32(12, 13, 17, 255));
     rect(0, 0, 330, 1080, IM_COL32(20, 21, 26, 255));
     draw_text(45, 55, 38, "PlexStation", IM_COL32(235, 171, 54, 255));
+    if(sidebar && nav==-1)rect(25,100,280,44,IM_COL32(120,78,16,255));
+    draw_text(45,112,22,active_profile.name.empty() ? "Profile" : active_profile.name);
     for (int i = 0; i < 7; ++i) {
         if (sidebar && nav == i)
             rect(25, 150 + i * 87, 280, 65, IM_COL32(120, 78, 16, 255));
@@ -799,7 +940,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (hit & PAD_CIRCLE) {
         ++screen_generation;
-        if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
+        if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : settings_page==3 ? 8 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
         else if (in_detail) { in_detail = false; sidebar = false; }
         else if (!history.empty() && (job==None || job==Browse || job==Sections || job==Details)) {
             auto p = history.back(); history.pop_back();
@@ -810,10 +951,11 @@ void ui_frame(const PadState &pad, float dt) {
     }
     if (sidebar) {
         if (hit & PAD_UP)
-            nav = std::max(0, nav - 1);
+            nav = std::max(-1, nav - 1);
         if (hit & PAD_DOWN)
             nav = std::min(6, nav + 1);
         if ((hit & PAD_CROSS) && job == None) {
+            if(nav==-1) {settings=true;settings_page=3;sidebar=false;focus=0;return;}
             settings = nav == 6; settings_page=0;
             in_detail = false;
             sidebar = false;
@@ -834,6 +976,18 @@ void ui_frame(const PadState &pad, float dt) {
                 message = "Watchlist integration is not implemented yet";
         }
     } else if (settings) {
+        if(settings_page==3) {
+            if(hit & PAD_UP)focus=0;
+            if(hit & PAD_DOWN)focus=1;
+            row(0,focus,220,"Switch User");
+            bool show=pref_int(primary_key("plex_show_profiles").c_str(),1)!=0;
+            row(1,focus,320,std::string("Show Who's Watching at Startup: ")+(show ? "On" : "Off"));
+            if((hit & PAD_CROSS) && job==None) {
+                if(focus==0)show_profiles();
+                else pref_set(primary_key("plex_show_profiles").c_str(),show?0:1);
+            }
+            return;
+        }
         if(settings_page==2) {
             const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information"};
             if(hit & PAD_UP) focus=std::max(0,focus-1);
@@ -860,7 +1014,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
-            focus = std::min(7, focus + 1);
+            focus = std::min(8, focus + 1);
         if (hit & PAD_CROSS) {
             if (focus == 0)
                 global_delay = audio_offset(global_delay, 1);
@@ -885,21 +1039,20 @@ void ui_frame(const PadState &pad, float dt) {
                 edit_text = account_pref("plex_manual_uri","https://");
                 edit_focus = 0;
             }
+            if(focus==8) {settings_page=3;focus=0;}
             if(focus==6 || focus==7) {settings_page=focus==6 ? 1 : 2; focus=0;}
-            pref_set("plex_audio_delay", global_delay);
+            pref_set(account_key("plex_audio_delay").c_str(), global_delay);
             pref_set("plex_allow_http", allow_http ? 1 : 0);
         }
-        row(0, focus, 210, "Default audio delay +25 ms (" + std::to_string(global_delay) + " ms)");
-        row(1, focus, 295, "Default audio delay -25 ms");
-        row(2, focus, 380, allow_http ? "Local HTTP: allowed" : "Local HTTP: disabled");
-        row(3, focus, 465, "Refresh servers");
-        row(4, focus, 550, "Sign out");
-        row(5, focus, 635, "Manual server address");
-        row(6,focus,720,"Server");
-        row(7,focus,805,"Developer Options");
-        draw_text(
-            390, 900, 23,
-            "kstuff Lite + ShadowMountPlus 1.7 Beta 5 Fix 1: awaiting PS5 13.40 verification");
+        row(0, focus, 180, "Default audio delay +25 ms (" + std::to_string(global_delay) + " ms)");
+        row(1, focus, 260, "Default audio delay -25 ms");
+        row(2, focus, 340, allow_http ? "Local HTTP: allowed" : "Local HTTP: disabled");
+        row(3, focus, 420, "Refresh servers");
+        row(4, focus, 500, "Sign out");
+        row(5, focus, 580, "Manual server address");
+        row(6,focus,660,"Server");
+        row(7,focus,740,"Developer Options");
+        row(8,focus,820,"Profiles");
     } else if (!available.empty()) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);

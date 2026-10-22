@@ -20,6 +20,7 @@ Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
 void Artwork::clear() {}
+ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
 }
 bool player_open(const std::string &, int64_t, const std::vector<std::string> &) { return true; }
@@ -147,7 +148,8 @@ int main() {
     pin_reply.data["authToken"]="fixture-account-token";
     complete(PinPoll,pin_reply);
     assert(account=="fixture-account-token" && account_loading && job==ValidateAccount);
-    pending.wait(); finish_job(); assert(account_id=="id:42" && job==Resources);
+    pending.wait(); finish_job(); assert(primary_id=="id:42" && profile_screen && job==None);
+    requested_profile=home_profiles.front();choose_profile();assert(job==Resources);
     pending.wait(); finish_job();
     assert(!account_loading && available.size()==1 && !sidebar && focus==0);
     std::string restored_id,restored_token;
@@ -177,6 +179,7 @@ int main() {
     assert(test_prefs[account_key("plex_manual_uri")]=="http://127.0.0.1:32400" && test_prefs[account_key("plex_manual_server_id")]=="server");
     assert(base=="http://127.0.0.1:32400" && selected_server.id=="server");
     // Simulate process startup using the real ui_init and saved private file.
+    pref_set(primary_key("plex_show_profiles").c_str(),0);
     account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
     io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     pending.wait(); finish_job(); assert(job==Resources);
@@ -190,9 +193,10 @@ int main() {
     focus=11; open_item(); assert(job==None); focus=-1; open_item(); assert(job==None);
     focus=0;
     // Account scope survives sign-out but cannot leak to another Plex identity.
-    account_id="id:84"; assert(account_pref("plex_preferred_server").empty());
+    auto saved_scope=account_id;
+    account_id="id:84/profile:84"; assert(account_pref("plex_preferred_server").empty());
     save_account_pref("plex_preferred_server","other-server");
-    account_id="id:42"; assert(account_pref("plex_preferred_server")=="server");
+    account_id=saved_scope; assert(account_pref("plex_preferred_server")=="server");
     // Offline preferred PMS retains its preference and supports retry/cancellation.
     reconnect_screen=true; connection_target=selected_server;
     complete(Select,Result{{},"Server temporarily offline",0});
@@ -219,6 +223,60 @@ int main() {
     focus=6; press(PAD_CROSS); assert(settings_page==1);
     press(PAD_CROSS); assert(job==Resources && force_picker);
     pending.wait(); finish_job(); assert(job==None && !settings && available.size()==1);
+
+    // Real UI profile lifecycle: primary session stays linked; Home tokens are isolated.
+    home_enabled=true; primary_id="id:42";
+    home_profiles={{"42","owner","Owner","",true,true,false},{"84","child","Child","",true,false,true}};
+    int child_resources=0, child_timelines=0;
+    auto child_transport=[&](const Request &q) {
+        if(q.url.find("/switch")!=std::string::npos) {
+            assert(q.headers.at("X-Plex-Token")=="fixture-account-token");
+            assert(q.method=="POST" && q.url.find("/84/switch")!=std::string::npos);
+            if(q.body=="pin=0000")return Reply{401,"",""};
+            assert(q.body=="pin=0123");
+            return Reply{200,"<user id='84' authenticationToken='child-account-token'/>",""};
+        }
+        if(q.url.find("/api/v2/user")!=std::string::npos) {
+            assert(q.headers.at("X-Plex-Token")=="child-account-token");return Reply{200,R"({"id":84})",""};
+        }
+        if(q.url.find("/api/v2/resources?")!=std::string::npos) {
+            ++child_resources;assert(q.headers.at("X-Plex-Token")=="child-account-token");
+            return Reply{200,R"([{"name":"Child server","provides":"server","clientIdentifier":"child-server","accessToken":"child-server-token","connections":[{"uri":"https://child.invalid","local":true}]}])",""};
+        }
+        assert(q.headers.at("X-Plex-Token")=="child-server-token");
+        if(q.url.find("/identity")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"machineIdentifier":"child-server"}})",""};
+        if(q.url.find("/:/timeline")!=std::string::npos) {++child_timelines;return Reply{200,"{}",""};}
+        assert(q.url.find("/library/sections")!=std::string::npos);
+        return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"99","title":"Child library","type":"movie"}]}})",""};
+    };
+    client=std::make_unique<Client>(child_transport,device);
+    auto drain=[&] {for(int i=0;i<8 && job!=None;++i){pending.wait();finish_job();}assert(job==None);};
+    show_profiles();assert(profile_screen && profile_token.empty() && listing.empty() && history.empty());
+    profile_focus=1;press(PAD_CROSS);assert(profile_pin && pin_digits.empty());
+    for(int i=0;i<4;++i)press(PAD_CROSS);
+    drain();assert(profile_pin && !profile_error.empty() && pin_digits.empty() && child_resources==0);
+    press(PAD_CROSS); // 0
+    press(PAD_RIGHT);press(PAD_CROSS); // 1
+    press(PAD_RIGHT);press(PAD_CROSS); // 2
+    press(PAD_RIGHT);press(PAD_CROSS); // 3
+    drain();assert(active_profile.id=="84" && account=="fixture-account-token" && profile_token=="child-account-token");
+    assert(account_id=="id:42/profile:child" && child_resources==1 && available.size()==1);
+    connect_server(available.front());drain();assert(listing.size()==1 && listing[0].id=="99");
+    assert(server_token=="child-server-token" && account_pref("plex_preferred_server")=="child-server");
+    playing.id="child-movie";playing.duration=100000;queue_progress("paused",1000);frame();drain();assert(child_timelines==1);
+    for(const auto &entry:test_prefs)assert(entry.second.find("token")==std::string::npos);
+    // A cancelled old-user response must not replace the new profile picker.
+    std::promise<Result> old_user;pending=old_user.get_future();job=Browse;pending_generation=screen_generation;
+    show_profiles();assert(deferred_profiles && profile_screen);
+    old_user.set_value(Result{Json{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","old-user"}}})}}}},"",200});
+    finish_job();assert(profile_screen && listing.empty() && profile_token.empty() && base.empty());
+    // Remembered protected profiles still require selection/PIN, even with picker disabled.
+    pref_set(primary_key("plex_show_profiles").c_str(),0);profiles_ready();assert(job==None && profile_screen);
+    // A switched token which validates as the wrong profile never reaches resources.
+    requested_profile=home_profiles[1];profile_token="untrusted-profile-token";
+    complete(ValidateProfile,Result{Json{{"id",42}},"",200});
+    assert(profile_token.empty() && child_resources==1 && !profile_error.empty());
+    assert(pref_str(primary_key("plex_last_profile").c_str(),"")=="84");
 
     // Temporary network failures preserve the saved account for a retry.
     account_loading=true;

@@ -21,11 +21,13 @@ class Artwork {
     std::vector<Entry> entries;
     uint64_t frame = 0, generation = 0;
     Transport transport;
+    ImTextureID request_image(const Request &request,const std::string &key);
 
   public:
     explicit Artwork(Transport t) : transport(std::move(t)) {}
     void update();
     ImTextureID get(const std::string &base, const std::string &token, const std::string &thumb);
+    ImTextureID avatar(const std::string &url,const std::string &primary_token);
     void clear();
 };
 } // namespace plex

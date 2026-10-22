@@ -73,6 +73,8 @@ class Client {
     Result create_pin(bool strong = false);
     Result validate_account(const std::string &account_token);
     Result poll_pin(int64_t id, const std::string &code);
+    Result home_users(const std::string &primary_token);
+    Result switch_home(const std::string &primary_token,const std::string &id,const std::string &pin="");
     Result resources(const std::string &account_token);
     Result select(const Server &, bool allow_http, std::string &selected,
                   std::vector<ConnectionAttempt> *attempts = nullptr);

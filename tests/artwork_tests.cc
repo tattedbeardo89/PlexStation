@@ -40,5 +40,8 @@ int main() {
     plex::diagnostic_flags=plex::NoDecode; art.get("https://fixture.invalid","fixture","/no-decode");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=plex::NoUpload; art.get("https://fixture.invalid","fixture","/no-upload");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=0; art.clear();
+    assert(!art.avatar("https://evil.invalid/avatar","fixture"));
+    assert(!art.avatar("http://plex.tv/avatar","fixture"));
+    art.avatar("https://plex.tv/users/fixture/avatar","fixture");settle(art);assert(uploaded==16);art.clear();
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

@@ -309,3 +309,24 @@ Native workflow now retains matching unstripped application/debug information,
 converted ELF, linker map, symbols, build IDs and executable hashes separately
 from the signed production installation. Dependency cache fingerprint is
 unchanged. Native Checkpoint A result will be recorded when it completes.
+
+## Checkpoint B — Plex Home authorization and isolation
+
+Implemented actual profile listing (v2 JSON, 404/405-only legacy fallback,
+JSON/XML parsing), protected profile switching via POST form PIN, independent
+returned-token identity validation, masked controller keypad, actual HTTPS Plex
+avatars with neutral fallback, Switch User, remembered profile/startup option,
+and primary-account/profile-scoped PMS/audio preferences. No profile tokens or
+PINs enter plaintext preferences; only the primary linked account is persisted
+in its existing private credential file. Protected remembered profiles prompt
+for a PIN even with the picker disabled.
+
+Production client fixtures passed for listing/switching, incorrect PIN,
+unauthorized/mismatched sessions, valid JSON/XML, fallback and stable scopes.
+Production UI/controller tests passed for PIN entry/retry, profile identity
+validation, child-only libraries, resource/timeline token attribution, stale
+old-user request rejection, no admin fallback and settings with no token values.
+Actual decoder/cache avatar/isolation tests and strict native-source host
+syntax passed. Accessible official Kodi and maintained PlexAPI references and
+live-verification limits are recorded in PLEX-HOME.md. Live Plex Home/PMS and
+physical PS5 behavior remain unverified.
