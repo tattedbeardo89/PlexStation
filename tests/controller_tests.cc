@@ -297,6 +297,7 @@ int main() {
     home_screen=true;in_detail=false;settings=false;sidebar=false;feed_focus=0;nav=0;
     for(int i=0;i<6;++i)press(PAD_RIGHT);
     assert(feed_columns[0]==6 && !sidebar);
+    assert(custom_focus_valid());feed_columns[0]=999;assert(!custom_focus_valid());frame();assert(feed_columns[0]==7 && custom_focus_valid());feed_columns[0]=6;
     press(PAD_DOWN);assert(feed_focus==1 && feed_columns[1]==0);
     press(PAD_RIGHT);assert(feed_columns[1]==1);
     press(PAD_UP);assert(feed_focus==0 && feed_columns[0]==6);

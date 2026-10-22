@@ -533,6 +533,21 @@ void row(int index, int selected, float y, const std::string &label, bool enable
          index == selected && enabled ? IM_COL32(168, 108, 16, 255) : IM_COL32(27, 28, 33, 255));
     draw_text(420, y + 16, 29, label);
 }
+bool custom_focus_valid() {
+    if(profile_screen)return profile_pin ? pin_focus>=0 && pin_focus<10 : profile_focus>=0 && profile_focus<static_cast<int>(home_profiles.size());
+    if(video)return !tracks || (track_focus>=0 && track_focus<2);
+    if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
+    if(sidebar)return nav>=-1 && nav<7 && nav!=4;
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9);
+    if(in_detail)return focus>=0 && focus<3;
+    if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
+    if(home_screen) {
+        if(feed_rows.empty())return true; // the refresh action owns focus
+        return feed_focus>=0 && feed_focus<static_cast<int>(feed_rows.size()) && feed_columns.size()==feed_rows.size() &&
+            feed_columns[feed_focus]>=0 && feed_columns[feed_focus]<static_cast<int>(feed_rows[feed_focus].entries.size());
+    }
+    return account.empty() || (focus>=0 && focus<static_cast<int>(listing.size()));
+}
 // Runs even on early returns (sign-in, keyboard, playback). Custom focus is
 // deliberately reported separately from ImGui's widget navigation focus.
 struct InputDiagnostic {
@@ -545,18 +560,17 @@ struct InputDiagnostic {
             editor ? "keyboard" : account.empty() ? "sign-in" : sidebar ? "sidebar" :
             settings ? "settings" : in_detail ? "detail" : home_screen && available.empty() ? "home" : !available.empty() ? "servers" : "library";
         int selected = profile_screen ? (profile_pin ? pin_focus : profile_focus) : video ? track_focus : editor ? edit_focus : sidebar ? nav : focus;
-        bool valid = profile_screen ? selected>=0 && selected<(profile_pin ? 10 : static_cast<int>(home_profiles.size())) : (selected >= 0 || (sidebar && nav==-1)) && (sidebar ? nav < 7 : settings ? focus < (settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page ? 1 : 9) :
-            in_detail ? focus < 3 : editor ? edit_focus < static_cast<int>(alphabet.size()) :
-            account.empty() || video || (available.empty() ? focus < static_cast<int>(listing.size()) :
-            focus < static_cast<int>(available.size())));
+        bool home_content=home_screen && !profile_screen && !video && !editor && !sidebar && !settings && !in_detail && available.empty();
+        if(home_content && feed_focus>=0 && feed_focus<static_cast<int>(feed_columns.size()))selected=feed_columns[feed_focus];
+        bool valid=custom_focus_valid();
         static double log_at, event_log_at;
         static uint32_t received_since_log;
         received_since_log |= pad.buttons;
         double now = plat_time();
         auto &io = ImGui::GetIO();
         if (now >= log_at || (hit && now >= event_log_at)) {
-            fprintf(stderr, "input:ui connected=%d received=%08x actions=%08x screen=%s focus=%d valid=%d busy=%d imgui_gamepad=%d imgui_nav=%d\n",
-                    pad.connected, received_since_log, hit, screen, selected, valid, job != None,
+            fprintf(stderr, "input:ui connected=%d received=%08x actions=%08x screen=%s focus=%d home_row=%d valid=%d busy=%d imgui_gamepad=%d imgui_nav=%d\n",
+                    pad.connected, received_since_log, hit, screen, selected, home_content ? feed_focus : -1, valid, job != None,
                     !!(io.BackendFlags & ImGuiBackendFlags_HasGamepad), io.NavActive);
             received_since_log = 0;
             log_at = now + 5;
@@ -606,17 +620,20 @@ void home_frame(uint32_t hit,float dt) {
         if((hit & PAD_CROSS) && job==None)load_home();
         return;
     }
+    if(feed_columns.size()!=feed_rows.size())feed_columns.assign(feed_rows.size(),0);
+    if(feed_scroll.size()!=feed_rows.size())feed_scroll.assign(feed_rows.size(),0);
     feed_focus=std::clamp(feed_focus,0,static_cast<int>(feed_rows.size())-1);
     if(hit & PAD_UP)feed_focus=std::max(0,feed_focus-1);
     if(hit & PAD_DOWN)feed_focus=std::min(static_cast<int>(feed_rows.size())-1,feed_focus+1);
     auto &column=feed_columns[feed_focus];auto &selected=feed_rows[feed_focus];
+    column=std::clamp(column,0,std::max(0,static_cast<int>(selected.entries.size())-1));
     if(hit & PAD_LEFT) {if(column>0)--column;else sidebar=true;}
     if(hit & PAD_RIGHT)column=std::min(static_cast<int>(selected.entries.size())-1,column+1);
     if(plex::diagnostic(TextOnly)) {
         draw_text(390,180,32,selected.title);
         int first=std::max(0,column-4);
         for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*85,selected.entries[i].title);
-        if((hit & PAD_CROSS) && job==None && !sidebar)open_media(selected.entries[column]);
+        if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
         return;
     }
     float amount=std::clamp(dt*14,0.f,1.f);
@@ -643,7 +660,7 @@ void home_frame(uint32_t hit,float dt) {
         }
     }
     draw->PopClipRect();
-    if((hit & PAD_CROSS) && job==None && !sidebar)open_media(selected.entries[column]);
+    if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
 }
 void profile_screen_frame(uint32_t hit) {
     rect(0,0,1920,1080,IM_COL32(12,13,17,255));
