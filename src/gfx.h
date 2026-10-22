@@ -68,7 +68,8 @@ bool gfx_image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
 VkShaderModule gfx_shader(const uint32_t *code, size_t size);
 /* Runs commands now and waits (set-up only). */
 VkCommandBuffer gfx_one_shot_begin();
-void gfx_one_shot_end(VkCommandBuffer cmd);
+/* pending=true means completion is unknown: retain referenced resources. */
+bool gfx_one_shot_end(VkCommandBuffer cmd, bool *pending = nullptr);
 void gfx_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayout to,
                  VkPipelineStageFlags src_stage, VkAccessFlags src_access,
                  VkPipelineStageFlags dst_stage, VkAccessFlags dst_access);

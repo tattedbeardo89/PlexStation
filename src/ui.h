@@ -18,3 +18,6 @@ bool ui_quit_requested();
 
 /* Private PIN entry: main/backend logs must not expose its button/focus sequence. */
 bool ui_sensitive_input();
+
+/* Release UI textures/workers while the renderer/device are still alive. */
+void ui_shutdown();

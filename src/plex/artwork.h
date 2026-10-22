@@ -19,6 +19,7 @@ class Artwork {
     };
     std::future<Decoded> pending;
     std::vector<Entry> entries;
+    std::vector<ImTextureID> retired;
     uint64_t frame = 0, generation = 0;
     Transport transport;
     ImTextureID request_image(const Request &request,const std::string &key);

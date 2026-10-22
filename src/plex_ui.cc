@@ -1318,3 +1318,13 @@ bool ui_video_rect(float *x, float *y, float *w, float *h) {
 bool ui_quit_requested() { return false; }
 
 bool ui_sensitive_input() {return profile_pin;}
+
+void ui_shutdown() {
+    ++screen_generation;++feed_generation;
+    if(video){player_stop();video=false;}
+    // Waiting is confined to application exit, never the rendering/input loop.
+    if(pending.valid()){pending.wait();pending=std::future<Result>{};}
+    job=None;
+    if(artwork){artwork->clear();artwork->update();artwork.reset();}
+    client.reset();plat_pad_set_private(false);
+}

@@ -8,6 +8,10 @@
 #include <cstdio>
 namespace plex {
 void Artwork::update() {
+    // Called before this frame draws any images. Previous frame commands may
+    // still reference retired descriptors; library_free_image waits for the GPU.
+    for(auto texture:retired)library_free_image(texture);
+    retired.clear();
     ++frame;
     if (!pending.valid() ||
         pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
@@ -94,8 +98,9 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
 void Artwork::clear() {
     ++generation; // An obsolete in-flight request is discarded by update(), without blocking the
                   // UI.
-    for (auto &entry : entries)
-        library_free_image(entry.texture);
+    // clear() can run after an avatar was drawn earlier in the SAME UI frame.
+    // Keep its descriptor/image alive until the next update, after submission.
+    for(auto &entry:entries)if(entry.texture)retired.push_back(entry.texture);
     entries.clear();
 }
 } // namespace plex

@@ -145,3 +145,25 @@ the signal handler. Host unwinding is tested; reliable PS5 unwinding/module
 mapping is still pending. Zero/truncated results require ShadowMountPlus data,
 not fabricated frames. Ordinary failed assertions retain the SDK's flushed
 file/function/line message. This does not identify the previous physical abort.
+
+A later review confirmed a separate, newly reachable texture lifetime defect:
+profile/avatar rendering can enqueue an image, then a same-frame profile switch
+or developer toggle clears that cache. Waiting for past GPU work cannot protect
+commands that have not yet been submitted. Clears now retire descriptors/images
+until the next pre-draw artwork update; normal application shutdown drains UI
+workers/textures before destroying ImGui/Vulkan. A production artwork-cache test
+checks that a clear cannot immediately free current-frame handles. This is a
+confirmed code defect, not proof of the original 2458e45 Movies abort.
+
+One-shot Vulkan uploads now check command allocation/begin/end/submit/wait
+results and do not publish a texture after failure. The existing video plane
+setup handles an unavailable upload command without changing its decoding/audio
+algorithm. Device loss is logged as requiring renderer recovery, not claimed
+as automatically recoverable. These are preventive error paths, not GPU
+fault-injection or physical-root-cause proof.
+
+If upload queue acceptance/completion cannot be established, further custom
+uploads are disabled and one bounded batch is retained until device/process
+teardown instead of freeing potentially referenced memory. Cached textures
+are also retained if device idle cannot be established. This favors a clear
+restart-required error over unsafe reuse; it is not device-loss recovery.

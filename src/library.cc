@@ -1003,6 +1003,11 @@ ImTextureID make_texture(const Finished &t)
     for (size_t i = 0; i < made.size(); i++)
         memcpy((uint8_t *)mapped + regions[i + 1].bufferOffset, made[i].data(), made[i].size());
     VkCommandBuffer cmd = gfx_one_shot_begin();
+    if(!cmd) {
+        vkDestroyBuffer(gfx.device,staging,nullptr);vkFreeMemory(gfx.device,staging_mem,nullptr);
+        vkDestroyImageView(gfx.device,tex.view,nullptr);vkDestroyImage(gfx.device,tex.image,nullptr);vkFreeMemory(gfx.device,tex.memory,nullptr);
+        return 0;
+    }
     gfx_barrier(cmd, tex.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -1012,9 +1017,15 @@ ImTextureID make_texture(const Finished &t)
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT);
-    gfx_one_shot_end(cmd);
+    bool pending=false;
+    bool uploaded=gfx_one_shot_end(cmd,&pending);
+    if(pending)return 0; // completion is unknown; retain this bounded batch until teardown
     vkDestroyBuffer(gfx.device, staging, nullptr);
     vkFreeMemory(gfx.device, staging_mem, nullptr);
+    if(!uploaded) {
+        vkDestroyImageView(gfx.device,tex.view,nullptr);vkDestroyImage(gfx.device,tex.image,nullptr);vkFreeMemory(gfx.device,tex.memory,nullptr);
+        return 0;
+    }
     tex.set = ImGui_ImplVulkan_AddTexture(thumb_sampler, tex.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if(!tex.set) {
         vkDestroyImageView(gfx.device,tex.view,nullptr);
@@ -1327,7 +1338,9 @@ void library_free_image(ImTextureID tex)
     for (size_t i = 0; i < textures.size(); i++) {
         if ((ImTextureID)textures[i].set != tex)
             continue;
-        vkDeviceWaitIdle(gfx.device); /* the last frames may still read it */
+        if(vkDeviceWaitIdle(gfx.device)!=VK_SUCCESS) {
+            fprintf(stderr,"library: GPU completion unknown; retaining texture until teardown\n");return;
+        }
         ImGui_ImplVulkan_RemoveTexture(textures[i].set);
         vkDestroyImageView(gfx.device, textures[i].view, nullptr);
         vkDestroyImage(gfx.device, textures[i].image, nullptr);

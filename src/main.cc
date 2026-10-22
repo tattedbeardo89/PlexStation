@@ -254,6 +254,7 @@ int main(void)
     fprintf(stderr, "VLC for PS5 quitting\n");
     web_stop();
     net_shutdown();
+    ui_shutdown(); // retire descriptors before ImGui/Vulkan teardown
     library_shutdown();
     player_shutdown();
     gfx_shutdown();

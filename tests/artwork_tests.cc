@@ -36,13 +36,14 @@ int main() {
     art.get("https://fixture.invalid","fixture","/corrupt"); settle(art); assert(uploaded==1);
     image.assign(18,'\0'); image[2]=2; image[12]=image[14]=1; image[16]=24; image.append(3,'\x7f');
     for(int i=0;i<14;++i) {art.get("https://fixture.invalid","fixture","/"+std::to_string(i));settle(art);}
-    assert(uploaded==15 && freed==3); art.clear(); assert(freed==uploaded);
+    assert(uploaded==15 && freed==3); art.clear();assert(freed==3);
+    art.update();assert(freed==uploaded); // current-frame references survive until the next frame
     plex::diagnostic_flags=plex::NoDownloads; assert(!art.get("https://fixture.invalid","fixture","/no-download")); settle(art); assert(uploaded==15);
     plex::diagnostic_flags=plex::NoDecode; art.get("https://fixture.invalid","fixture","/no-decode");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=plex::NoUpload; art.get("https://fixture.invalid","fixture","/no-upload");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=0; art.clear();
     assert(!art.avatar("https://evil.invalid/avatar","fixture"));
     assert(!art.avatar("http://plex.tv/avatar","fixture"));
-    art.avatar("https://plex.tv/users/fixture/avatar","fixture");settle(art);assert(uploaded==16);art.clear();
+    art.avatar("https://plex.tv/users/fixture/avatar","fixture");settle(art);assert(uploaded==16);auto before_clear=freed;art.clear();assert(freed==before_clear);art.update();assert(freed==uploaded);
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

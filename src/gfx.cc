@@ -894,29 +894,58 @@ VkShaderModule gfx_shader(const uint32_t *code, size_t size)
     return module;
 }
 
+static bool upload_unavailable;
 VkCommandBuffer gfx_one_shot_begin()
 {
+    if(upload_unavailable)return VK_NULL_HANDLE;
     VkCommandBufferAllocateInfo ai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
     ai.commandPool = setup_pool;
     ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     ai.commandBufferCount = 1;
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(gfx.device, &ai, &cmd);
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkResult result=vkAllocateCommandBuffers(gfx.device,&ai,&cmd);
+    if(result!=VK_SUCCESS) {
+        fprintf(stderr,"gfx: upload command allocation failed result=%d\n",result);
+        return VK_NULL_HANDLE;
+    }
     VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &bi);
+    result=vkBeginCommandBuffer(cmd,&bi);
+    if(result!=VK_SUCCESS) {
+        fprintf(stderr,"gfx: upload command begin failed result=%d\n",result);
+        vkFreeCommandBuffers(gfx.device,setup_pool,1,&cmd);
+        return VK_NULL_HANDLE;
+    }
     return cmd;
 }
 
-void gfx_one_shot_end(VkCommandBuffer cmd)
+bool gfx_one_shot_end(VkCommandBuffer cmd, bool *pending)
 {
-    vkEndCommandBuffer(cmd);
+    if(pending)*pending=false;
+    if(!cmd)return false;
+    VkResult result=vkEndCommandBuffer(cmd);
+    if(result!=VK_SUCCESS) {
+        fprintf(stderr,"gfx: upload command end failed result=%d\n",result);
+        vkFreeCommandBuffers(gfx.device,setup_pool,1,&cmd);
+        return false;
+    }
     VkSubmitInfo si = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
     si.commandBufferCount = 1;
     si.pCommandBuffers = &cmd;
-    vkQueueSubmit(gfx.queue, 1, &si, VK_NULL_HANDLE);
-    vkQueueWaitIdle(gfx.queue);
-    vkFreeCommandBuffers(gfx.device, setup_pool, 1, &cmd);
+    result=vkQueueSubmit(gfx.queue,1,&si,VK_NULL_HANDLE);
+    if(result!=VK_SUCCESS) {
+        fprintf(stderr,"gfx: upload submit failed result=%d; uploads disabled, restart required\n",result);
+        upload_unavailable=true;if(pending)*pending=true;
+        return false; // conservatively retain resources if queue acceptance is unknown
+    }
+    result=vkQueueWaitIdle(gfx.queue);
+    if(result!=VK_SUCCESS) {
+        fprintf(stderr,"gfx: upload GPU wait failed result=%d; uploads disabled, restart required\n",result);
+        upload_unavailable=true;if(pending)*pending=true;
+        return false; // one bounded upload batch is retained until device/process teardown
+    }
+    vkFreeCommandBuffers(gfx.device,setup_pool,1,&cmd);
+    return true;
 }
 
 void gfx_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayout to,

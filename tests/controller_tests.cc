@@ -355,6 +355,7 @@ int main() {
     assert(profile_pin && profile_token.empty() && job==None);signout();
     unlink(credential_file.c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
+    ui_shutdown();assert(!artwork && !client && job==None);
     ImGui::DestroyContext();
     puts("Controller UI scenarios passed: focus, D-pad, Cross, Back, repeat, analog, tabs, playback return, async responsiveness");
 }

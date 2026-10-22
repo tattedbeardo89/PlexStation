@@ -396,3 +396,19 @@ libunwind, and pinned PS5_Vulkan f410e67a maps backtrace to that implementation.
 C++ termination now captures up to 24 raw callers before SIGABRT, outside signal
 context. The host unwinding test passed; PS5/unmatched-module unwinding is not
 claimed. SIGSYS/SIGABRT still require physical reproduction/build correlation.
+
+### Texture lifetime and upload failure review
+
+A newly reachable same-frame lifetime defect was confirmed in code: an avatar
+can be queued before a profile switch/developer toggle clears the artwork cache.
+Its descriptors now retire until the next pre-draw update, and UI workers/images
+are drained before renderer teardown. The real artwork-cache test verifies clear
+cannot immediately free current-frame handles; controller tests cover shutdown.
+This is not evidence that artwork caused the older 2458e45 SIGABRT.
+
+One-shot upload command handles/results are now checked. Failed/unconfirmed
+uploads do not publish a texture; unknown queue completion disables further
+custom uploads and retains a bounded batch until teardown. Video plane setup
+checks the same upload availability/idle results without changing decoding or
+audio algorithms. GPU device-loss recovery is explicitly not claimed. Modified
+graphics source passed host syntax; actual GPU error paths require device tests.

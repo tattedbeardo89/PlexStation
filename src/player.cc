@@ -1308,11 +1308,12 @@ void destroy_planes()
 /* New format from VLC: plane textures to match (render thread). */
 bool make_planes(const Format &f)
 {
-    vkDeviceWaitIdle(gfx.device); /* the old textures may still be read */
+    if(vkDeviceWaitIdle(gfx.device)!=VK_SUCCESS)return false; /* retain old planes until completion is known */
     destroy_planes();
     VkFormat vf = f.ten_bit ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM;
     VkFormat vf2 = f.ten_bit ? VK_FORMAT_R16G16_UNORM : VK_FORMAT_R8G8_UNORM;
     VkCommandBuffer cmd = gfx_one_shot_begin();
+    if(!cmd)return false; // resource failure; do not issue commands through an invalid handle
     for (int i = 0; i < PLANES; i++) {
         planes.w[i] = i ? (f.width + 1) / 2 : f.width;
         planes.h[i] = i ? (f.height + 1) / 2 : f.height;
@@ -1330,7 +1331,7 @@ bool make_planes(const Format &f)
                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
-    gfx_one_shot_end(cmd);
+    if(!gfx_one_shot_end(cmd))return false;
     VkDescriptorImageInfo ii[PLANES];
     VkWriteDescriptorSet w[PLANES] = {};
     for (int i = 0; i < PLANES; i++) {
