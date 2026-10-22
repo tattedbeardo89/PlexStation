@@ -89,3 +89,27 @@ There are 12 cached textures, one asynchronous fetch/decode at a time, no
 bulk library image preload, and generation checks on screen/profile changes.
 See PLEX-HOME.md and CRASH-DIAGNOSTICS.md for protocol references, matching debug
 artifacts and the still-unconfirmed physical abort diagnosis.
+
+
+## Media expansion after the physical-testing baseline
+
+The native UI now includes small audio/video/progress/cloud UI adapters, using
+the same render thread, bounded Artwork cache, controller and single async
+metadata worker. Audio-only playback passes :no-video to the original VLC player;
+it never requires a video texture. Music queues are bounded to 2000 lightweight
+items and resolve each track on demand. Artist/album/track metadata is typed.
+
+PlexStation-local listening and durable progress files use stable profile/PMS
+scope and contain no authentication token or playback URL. Atomic writes, owner/
+mode checks and caps protect their storage. Newer known PMS timestamps take
+precedence over stale retries; absence of reliable timestamps/clock correlation
+limits cross-device reconciliation. Switched profile tokens stay memory-only.
+
+Universal streaming decisions distinguish video copy from transcode and reject
+unknown output codecs. Original playback remains available. HLS startup, segment
+authorization and actual PS5 codec/output behavior are acceptance requirements.
+Cloud Watchlist uses the actual provider and validated profile token, then maps
+cloud GUIDs to permitted local media before playback; managed-user cloud access
+is disabled pending isolation verification. See MEDIA-EXPANSION.md for the
+current source/fixture/native/device matrix. Older incomplete-feature statements
+above describe the original foundation and are superseded by that matrix.

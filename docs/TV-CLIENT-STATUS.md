@@ -1,5 +1,9 @@
 # Coordinated stability, profiles and TV interface delivery
 
+This page records the preserved d52e5cd baseline. For subsequent Music,
+Audiobooks, streaming and discovery development, current limitations and test
+results, see [MEDIA-EXPANSION.md](MEDIA-EXPANSION.md).
+
 This is an implemented native client update, with host fixtures and native build
 gates. It is **not a claim of physical PS5 acceptance or complete Plex parity**.
 No screenshot was attached to this request; layout follows the written near-black,

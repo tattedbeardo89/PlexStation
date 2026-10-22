@@ -6,6 +6,8 @@ and native UI code, but **is not yet a complete or verified PS5 application**.
 A real native PS5 build and complete installation artifact are available from
 [native stability, Plex Home and TV UI build 39702538057](https://github.com/tattedbeardo89/PlexStation/actions/runs/39702538057),
 built from `d52e5cd39ad6689f1f917179a6d1761132adde03`.
+This is the preserved physical-testing baseline, tagged
+`baseline/ps5-physical-test-d52e5cd`. New development does not replace its artifacts.
 See [artifact names, implemented scope and device test checklist](docs/TV-CLIENT-STATUS.md).
 The owner confirms launch, Plex authentication, PMS connection and available
 library retrieval on connectivity build 2458e45. Entering Movies then aborts on
@@ -44,11 +46,19 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 - Asynchronous native ImGui library browsing, show/season children, details,
   controller keyboard search/manual entry, paging and version selection.
 - Bounded asynchronous poster fetch/decode and a 12-texture memory cache.
-- Adapter for single-part H.264/HEVC MKV/MP4 Original-quality playback.
+- Original single-part H.264/HEVC MKV/MP4 playback, plus asynchronous PMS
+  copy/transcode decisions, local/remote quality caps and HLS fallback paths.
+- Native Music artists/albums/tracks/playlists, content shelves, audio-only
+  Now Playing, bounded session queues, shuffle/repeat and a mini-player.
+- Profile/server-scoped audiobook library designation, local resume/bookmarks,
+  chapters/track fallback, requested speeds and a session sleep timer.
+- Actual grouped PMS search, multiple-library Home aggregation and genre/year
+  filter values; conditional real Plex Cloud Watchlist with local GUID resolution.
 - Existing VLC decode, Vulkan presentation and timestamped audio foundation.
 - Native pause, seek, embedded audio/subtitle selection and live audio delay
   from -500 to +500 ms in 25 ms steps; persistent global delay preference.
-- Coalesced timeline requests and manual watched/unwatched requests.
+- Coalesced timelines, token-free durable retry/reconciliation, configurable
+  completion thresholds and cancellable next-episode autoplay.
 - Original PlexStation icon/loading assets and independent title metadata.
 
 These are implemented source paths. Native compilation, linking and package
@@ -59,14 +69,19 @@ still require acceptance.
 
 ## Incomplete features
 
-Transcoding/Direct Stream negotiation, automatic bandwidth quality, cloud watchlist,
-music/audiobooks, advanced filters, external subtitles, automatic next episode,
-per-item offsets, completion thresholds, offline progress retries and final
-visual polish remain incomplete. The revised TV PIN/QR flow has host coverage; live Plex account authorization
-and PS5 restart persistence still need verification.
+New media features are source implementations with fixture coverage; live PMS
+stream negotiation, cloud provider access/writes, managed-user permissions,
+physical audio/video/subtitle/seek/speed behavior and native stability require
+acceptance. No codec is claimed audible/bit-perfect on PS5 from compilation.
+The audio callback uses 48 kHz S16 output. Bandwidth measurement/adaptation,
+normalized audiobook narrator/series support, managed-user cloud Watchlist,
+full localization and final visual polish remain incomplete. Bookmarks and
+book-level completion are explicitly PlexStation-local. See the comprehensive
+[media checkpoint status, codec matrix and limits](docs/MEDIA-EXPANSION.md).
 
 ## Documentation
 
+- [Music, Audiobooks, streaming and discovery checkpoints](docs/MEDIA-EXPANSION.md)
 - [Full requested project specification](docs/PROJECT-SPEC.md)
 - [Cloud setup state](docs/CLOUD-SETUP.md)
 - [Architecture and limits](docs/ARCHITECTURE.md)

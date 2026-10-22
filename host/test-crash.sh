@@ -7,3 +7,5 @@ g++ -std=c++17 -O1 -g -fno-exceptions -fno-rtti -fno-omit-frame-pointer -Wall -W
 "$repo/build/termination-trace-tests"
 python3 "$repo/tests/test_symbolization.py"
 python3 "$repo/tests/test_debug_collection.py"
+
+python3 "$repo/tests/test_baseline_archive.py"

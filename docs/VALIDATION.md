@@ -457,3 +457,37 @@ acceptance. No unsupported-syscall diagnosis or firmware compatibility claim is
 inferred from this successful compile. The feature/limitation matrix and exact
 Windows deployment/test sequence are in TV-CLIENT-STATUS.md. Documentation-only
 handoff commits do not alter the built source SHA above.
+
+## Media expansion release-candidate host regression
+
+The physical-testing baseline remains d52e5cd, run 39702538057, with the matching
+source tag baseline/ps5-physical-test-d52e5cd. No development artifact replaces
+that installation. MEDIA-EXPANSION.md records the initial audit, implemented
+feature matrix, protocol references, codec evidence and pending physical tests.
+
+Checkpoint A at b3cc832 passed the real native pipeline in run 39705677578;
+installation, matching debug and diagnostics artifacts are named with full SHA
+b3cc83265d63c84590e8030b268eeb904daa037a. This proves compilation/package gates,
+not audible music, codec support, server attribution or physical stability.
+Checkpoint B run 39793484467 failed before native compilation in the sanitizer
+controller fixture: a new Play command raced an outstanding timeline job. The
+fixture now explicitly drains that work; failure was not bypassed or labelled
+as a native success. Checkpoint C and combined D runs were queued at this record;
+results must be recorded when they actually complete.
+
+Local release-candidate source 1721e591486f4b6c2ab4a737f6713f3384fbb568 passed:
+core (74 checks plus 10 real curl HTTP/TLS scenarios), authentication, Plex Home/
+feed, audio/listening persistence, streaming/episodes/outbox, grouped discovery/
+cloud API fixtures, artwork/cache, production controller UI and pad backend,
+connections/preferences, 10 real native GnuTLS transport scenarios, crash/debug/
+symbolization, strict source and ZIP permission regressions. All nine ASan/UBSan
+suites with leak detection passed: controller, core, Home, Home feed, audio,
+listening, streaming, discovery and artwork. Shared instrumented sources are
+compiled once; no sanitizer was disabled. The baseline-archive identity fixture
+also passed and rejects substituted ELF data.
+
+No live Plex account/provider write or PS5 playback/device test was run. HLS
+segment authorization/session cleanup, actual audio formats/rates/chapters/
+pitch, external subtitles, autoplay, timeline attribution, cloud access and the
+original Movies SIGABRT/unmatched SIGSYS remain acceptance requirements. Host
+fixtures and YAML checks are not native cross-compilation or device acceptance.

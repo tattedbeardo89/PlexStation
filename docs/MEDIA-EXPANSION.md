@@ -249,3 +249,94 @@ presented as a published installation. Local ASan/UBSan subsequently passed all
 nine suites. Common instrumented objects are compiled once without dropping any
 instrumentation, and controller tests run first to expose async fixture issues
 early. Combined native checkpoint results are recorded after actual completion.
+
+## Release-candidate feature / acceptance matrix
+
+| Area | Current implementation | Unverified or incomplete |
+| --- | --- | --- |
+| Music | Artist/album/track metadata, artwork/biography, recent/favorite/playlist shelves, genres/collections where PMS supplies them, audio-only VLC, queue ordering/shuffle/repeat/skip, mini-player | Actual codecs/audio/history on PS5; paused queue reconstruction across restarts; deeper music filter combinations |
+| Audiobooks | Designated music libraries, authors/albums/tracks/playlists, local Continue Listening/completed, sequential tracks, chapters/fallback, speeds, seeks, resume/bookmarks, sleep timer | Normalized narrator/series schema, per-book speed override, complete bookmark browser, cross-app book progress synchronization |
+| Video | Original, explicit server copy/transcode decision, quality caps/fallback, external subtitle adapter, next episode/countdown, completion threshold, per-media offset | Live HLS/session/segment authorization, hardware codecs, forced subtitles, bandwidth adaptation, physical timing/rendering |
+| Cloud Watchlist | Actual conditional cloud list/Add/Remove, cloud GUID mapping to authorized PMS item | Live provider permissions/writes; managed users disabled; unavailable cloud media cannot play locally |
+| Search/filter/Home | Grouped actual PMS hubs, cancellation/paged requests, genre/year choices and sorts, multiple-library supplements | Per-hub pagination varies; audiobook classification requires section identity; aggregation capped at 32 sections/category |
+| Progress | Scoped timeline/scrobble, latest-update coalescing, stale-ack rejection, durable token-free retry, fresh metadata reconciliation | PMS timestamps/clock skew limit reconciliation; completion and session cleanup are best-effort |
+| Isolation/stability | Profile changes stop playback, clear queue/cache/history and reject stale results; bounded metadata/artwork; PIN log privacy; matching symbols/checkpoints retained | Movies SIGABRT and unmatched SIGSYS remain unsolved physical reports; no PS5 acceptance inferred |
+
+## Physical comparison and verification
+
+1. Keep installation/debug artifacts for baseline d52e5cd offline. Record exact
+   installed eboot hash/build. First run the baseline test planned by the owner.
+2. Close PlexStation before deployment. Extract the outer Actions ZIP and inner
+   installation ZIP; upload the entire PPSA85301 folder. Preserve prefs.txt,
+   plexstation-account.json, plexstation-listening.json and
+   plexstation-progress.json. Apply 755 directories/executables, 644 ordinary
+   resources, 600 private credential/listening/progress files, with correct owner.
+3. Recheck launch/auth/profile PIN/PMS fallback/controller, then the original
+   Movies crash sequence. Compare text-only/no-download/ten-item isolation and
+   collect redacted CP/fatal/gfx messages with the matching symbols/build ID.
+4. Music: browse artists/albums, missing artwork, multi-disc and repeated-track
+   playlists; play real MP3/AAC/FLAC/ALAC/WAV/Vorbis/Opus files independently.
+   Check sound without a video track, pause/seek, next/previous, repeat/shuffle,
+   queue edits, mini-player/browsing and a long listening session. Verify PMS
+   history belongs to the correct Home user; do not infer bit-perfect output.
+5. Designate an audiobook library for one profile/server. Test single-file M4B
+   chapters, multi-track MP3/FLAC books, track fallback, restart/resume, all rates,
+   pitch, ±10/30s, bookmark restore, chapter/track timer and app restart. Verify
+   local-only labels, wrong-profile/server isolation and newer PMS progress.
+6. Video: Original first, then each quality cap and a known remux/transcode case.
+   Inspect returned mode and real PMS session, HLS segment authorization, stop
+   cleanup, multiple versions, SRT/WebVTT/ASS, tracks/languages/forced behavior,
+   subtitle delay/size and audio ±offset after seek/restart. Check 1080p/4K output.
+7. Autoplay: actual server episode order including specials, next action, ten-
+   second countdown, Cancel, final episode and restricted/missing episodes.
+8. Disconnect network while playing; inspect saved progress files locally,
+   reconnect, ensure stale retries cannot replace newer server/profile progress.
+   Never share those files without reviewing personal metadata.
+9. Search all media types, large/empty libraries, filters, multiple-library rows,
+   long titles and rapid navigation/cancellation. Check cloud access explicitly;
+   verify Add/Remove in Plex itself and unavailable-item behavior. Managed-user
+   cloud controls must remain unavailable. No local fake Watchlist is used.
+10. Switch profiles during audio/video/pending requests and sign out. Verify old
+    playback stops, queues are cleared, restricted libraries stay inaccessible,
+    private credentials remain protected and original profiles retain preferences.
+
+These are pending physical/live checks, not automated pass claims. Runtime
+requires the existing firmware 13.40 / kstuff Lite / ShadowMountPlus 1.7 Beta 5
+Fix 1 environment, plus the complete packaged fonts/certs/shaders/libc assets.
+No new controller/browser library or replacement jailbreak is introduced.
+
+### Baseline archive workflow
+
+`Archive PS5 physical-testing baseline` downloads the original run 39702538057
+installation, debug and diagnostics via GitHub's read-only Actions token. It
+requires the exact original commit, successful validation report, matching ELF
+hashes and matching installed eboot/libc hashes before publishing
+`PlexStation-physical-baseline-d52e5cd39ad6689f1f917179a6d1761132adde03`.
+No source is regenerated and no executable is rebuilt. Requested retention is
+90 days, subject to repository policy; download for permanent offline retention.
+A fixture checks identity matching and rejects substituted symbols. This workflow
+is only a preservation mechanism; its queued/unrun state is not an archived pass.
+
+## Checkpoint commits and build status
+
+- A Music: `b3cc83265d63c84590e8030b268eeb904daa037a`;
+  [native success 39705677578](https://github.com/tattedbeardo89/PlexStation/actions/runs/39705677578).
+- B Audiobooks: `4fe5b10`;
+  [39793484467](https://github.com/tattedbeardo89/PlexStation/actions/runs/39793484467)
+  failed the sanitizer fixture before native compile; corrected later.
+- C Advanced playback: `25317e7`;
+  [39794750214](https://github.com/tattedbeardo89/PlexStation/actions/runs/39794750214)
+  queued at this record.
+- D Discovery/UI: `1721e591486f4b6c2ab4a737f6713f3384fbb568`;
+  [39796324867](https://github.com/tattedbeardo89/PlexStation/actions/runs/39796324867)
+  queued at this record. Full local regular and nine-suite ASan/UBSan regression passed.
+
+For an owner-triggered build: Actions → Build PlexStation PS5 → Run workflow →
+`feature/plexstation-initial-implementation` → Run workflow. A green successful
+run publishes `PlexStation-PPSA85301-<built-SHA>`,
+`PlexStation-native-debug-<built-SHA>`, and
+`PlexStation-build-diagnostics-<built-SHA>`. A queued run has no installation;
+a failed run publishes diagnostics only. Public GitHub metadata is available in
+this session, but authenticated artifact downloads/dispatch API are unavailable.
+Pushing source already triggers the existing workflow; no native success is
+inferred from a push or passing host test.
