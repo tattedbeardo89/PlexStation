@@ -187,13 +187,13 @@ std::string audio_label(const Item &i) {
 }
 bool audio_frame(uint32_t hit,float) {
     if(audio.active && !audio.now_playing && !video && !settings && !profile_screen)
-        draw_text(390,925,21,(audio.playback_books?"Listening: ":"Music: ")+audio.current.title+" • Touchpad: Now Playing");
+        draw_text(390,925, Theme::Font::Caption,(audio.playback_books?"Listening: ":"Music: ")+audio.current.title+" • Touchpad: Now Playing");
     if((hit & PAD_TOUCHPAD) && audio.queue.current() && !video && !profile_screen){audio.screen=true;audio.now_playing=true;sidebar=false;}
     if(!audio.screen || settings || profile_screen || !available.empty() || reconnect_screen || editor || video)return false;
     if(sidebar)return false;
     if(hit & PAD_OPTIONS){settings=true;settings_page=0;focus=0;return true;}
     if((hit & PAD_LEFT) && !audio.now_playing){sidebar=true;return true;}
-    draw_text(390,165,34,audio.now_playing?"Now Playing":audio.queue_view?"Queue":audio.title);
+    draw_text(390,165, Theme::Font::Heading,audio.now_playing?"Now Playing":audio.queue_view?"Queue":audio.title);
     if(hit & PAD_CIRCLE) {
         if(audio.menu){audio.menu=false;return true;}
         if(audio.now_playing || audio.queue_view){audio.now_playing=false;audio.queue_view=false;return true;}
@@ -202,12 +202,13 @@ bool audio_frame(uint32_t hit,float) {
         return true;
     }
     if(audio.now_playing) {
+        gradient(390,220,1440,550,Theme::alpha(Theme::Accent,30),Theme::alpha(Theme::Background,0));
         if(!diagnostic(TextOnly))poster(400,235,480,480,audio.current,false);
-        draw_text(940,245,36,audio.current.title);draw_text(940,310,29,audio.current.artist);draw_text(940,360,28,audio.current.album);
-        draw_text(940,390,22,"VLC rate: "+std::to_string(player_rate())+"x • output 48 kHz S16 (not bit-perfect)");
-        draw_text(940,425,27,std::to_string(player_time()/1000)+" / "+std::to_string(audio.current.duration/1000)+" s");
+        draw_text(940,245, Theme::Font::Heading,audio.current.title);draw_text(940,310, Theme::Font::Body,audio.current.artist);draw_text(940,360, Theme::Font::Body,audio.current.album);
+        draw_text(940,390, Theme::Font::Caption,"VLC rate: "+std::to_string(player_rate())+"x • output 48 kHz S16 (not bit-perfect)");
+        draw_text(940,425, Theme::Font::Body,std::to_string(player_time()/1000)+" / "+std::to_string(audio.current.duration/1000)+" s");
         float fraction=audio.current.duration>0?std::clamp(static_cast<float>(player_time())/audio.current.duration,0.f,1.f):0;
-        rect(940,480,800,10,IM_COL32(55,55,60,255));rect(940,480,800*fraction,10,IM_COL32(235,171,54,255));
+        rect(940,480,800,10,Theme::Border);rect(940,480,800*fraction,10,Theme::Accent);
         if(audio.playback_books) {
             if(hit & PAD_LEFT)player_seek(std::max<int64_t>(0,player_time()-10000));
             if(hit & PAD_RIGHT)player_seek(player_time()+10000);
@@ -249,7 +250,7 @@ bool audio_frame(uint32_t hit,float) {
 
             }
         }
-        draw_text(390,910,23,audio.playback_books?"Left/Right ±10s • L2/R2 ±30s • Triangle Local Bookmark • Circle Browse":"L1 Previous • R1 Next • Circle Browse • Options Settings");return true;
+        draw_text(390,910, Theme::Font::Caption,audio.playback_books?"Left/Right ±10s • L2/R2 ±30s • Triangle Local Bookmark • Circle Browse":"L1 Previous • R1 Next • Circle Browse • Options Settings");return true;
     }
     if(audio.queue_view) {
         if(hit & PAD_UP)audio.queue_focus=std::max(0,audio.queue_focus-1);
@@ -259,7 +260,7 @@ bool audio_frame(uint32_t hit,float) {
         if((hit & PAD_CROSS) && !audio.queue.order.empty()){audio.queue.cursor=audio.queue_focus;audio.start_pending=true;}
         if(hit & PAD_SQUARE)audio.queue.remove(audio.queue_focus);
         if(hit & PAD_TRIANGLE){if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}audio.queue.clear();}
-        draw_text(390,890,23,"Cross Play • Square Remove (skip current first) • Triangle Clear Queue");return true;
+        draw_text(390,890, Theme::Font::Caption,"Cross Play • Square Remove (skip current first) • Triangle Clear Queue");return true;
     }
     if(audio.menu) {
         const char *labels[]={"Play selected album / playlist / artist / track","Shuffle selected","Add selected track to Queue","Play selected track Next","Now Playing","Queue"};
@@ -281,14 +282,14 @@ bool audio_frame(uint32_t hit,float) {
     if(hit & PAD_DOWN)audio.focus=std::min(std::max(0,static_cast<int>(audio.entries.size())-1),audio.focus+1);
     int first=std::max(0,audio.focus-6);
     for(int j=first;j<static_cast<int>(audio.entries.size()) && j<first+7;++j) {
-        rect(390,235+(j-first)*85,1050,70,j==audio.focus?IM_COL32(168,108,16,255):IM_COL32(27,28,33,255));
-        auto label=audio_label(audio.entries[j]);draw_text(420,250+(j-first)*85,27,label.size()>65?label.substr(0,62)+"...":label);
+        rect(390,235+(j-first)*85,1050,70,j==audio.focus?Theme::Selection:Theme::Surface);
+        auto label=audio_label(audio.entries[j]);draw_text(420,250+(j-first)*85,Theme::Font::Body,label,Theme::Text,990);
     }
     if(!audio.entries.empty() && !diagnostic(TextOnly))poster(1490,235,320,320,audio.entries[std::clamp(audio.focus,0,static_cast<int>(audio.entries.size())-1)],false);
-    if(!audio.parent.summary.empty()) {float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(),20*scale,{1490*scale,590*scale},IM_COL32(220,220,225,255),audio.parent.summary.substr(0,250).c_str(),nullptr,320*scale);}
+    if(!audio.parent.summary.empty()) {float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(),20*scale,{1490*scale,590*scale},Theme::Text,audio.parent.summary.substr(0,250).c_str(),nullptr,320*scale);}
     int64_t total_duration=0;for(const auto &i:audio.entries)total_duration+=std::min<int64_t>(i.duration,INT64_MAX/4000);
-    if(audio.parent.type=="album")draw_text(1490,560,22,"Album: "+std::to_string(total_duration/60000)+" min (loaded tracks)");
-    if(audio.entries.empty())draw_text(420,300,28,job==None?"No accessible content":"Loading audio library...");
+    if(audio.parent.type=="album")draw_text(1490,560, Theme::Font::Caption,"Album: "+std::to_string(total_duration/60000)+" min (loaded tracks)");
+    if(audio.entries.empty())draw_text(420,300, Theme::Font::Body,job==None?"No accessible content":"Loading audio library...");
     if((hit & PAD_R2) && audio.start+200<audio.total)audio_load(audio.path,audio.title,false,audio.start+200);
     if((hit & PAD_L2) && audio.start>=200)audio_load(audio.path,audio.title,false,audio.start-200);
     if((hit & PAD_CROSS) && job==None && !audio.entries.empty()) {
@@ -317,18 +318,18 @@ bool audio_frame(uint32_t hit,float) {
         else if(item.type=="track")audio_queue_load(item);
         else message="This server category is not yet supported";
     }
-    draw_text(390,890,23,"Cross Browse / Play Track • Square Playback Menu • L2/R2 Pages • Left Sidebar");return true;
+    draw_text(390,890, Theme::Font::Caption,"Cross Browse / Play Track • Square Playback Menu • L2/R2 Pages • Left Sidebar");return true;
 }
 
 void audio_settings_frame(uint32_t hit) {
     std::vector<Item> sections;for(const auto &s:home_sections)if(music_section(s))sections.push_back(s);
     if(hit & PAD_UP)focus=std::max(0,focus-1);
     if(hit & PAD_DOWN)focus=std::min(std::max(0,static_cast<int>(sections.size())-1),focus+1);
-    if(sections.empty()){draw_text(400,250,28,"No accessible music libraries to designate");return;}
+    if(sections.empty()){draw_text(400,250, Theme::Font::Body,"No accessible music libraries to designate");return;}
     int first=std::max(0,focus-6);
     for(int n=first;n<static_cast<int>(sections.size()) && n<first+7;++n)row(n,focus,225+(n-first)*90,sections[n].title+(book_section(sections[n])?": Audiobooks":": Music"));
     if(hit & PAD_CROSS){const auto &s=sections[std::clamp(focus,0,static_cast<int>(sections.size())-1)];pref_set((audio_scope()+".books."+encode(s.id)).c_str(),book_section(s)?0:1);}
-    draw_text(390,895,23,"Cross: designate library for this profile/server only; server metadata is unchanged");
+    draw_text(390,895, Theme::Font::Caption,"Cross: designate library for this profile/server only; server metadata is unchanged");
 }
 
 int audio_focus_state() {

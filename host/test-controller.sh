@@ -12,3 +12,4 @@ g++ "${flags[@]}" "$repo/third_party/tinyxml2/tinyxml2.cpp" "$repo/tests/control
 g++ "${flags[@]}" "$repo/third_party/tinyxml2/tinyxml2.cpp" "$repo/tests/pad_backend_tests.cc" -o "$repo/build/pad-backend-tests"
 "$repo/build/pad-backend-tests"
 python3 "$repo/tests/test_package_permissions.py"
+python3 "$repo/tests/test_theme.py"

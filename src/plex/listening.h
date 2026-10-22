@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <ctime>
 #include <cerrno>
+#include <atomic>
+#include <cstdio>
 namespace plex {
 // Only stable identities and local listening positions. Never tokens, URLs or PINs.
 class ListeningStore {
@@ -20,7 +22,12 @@ public:
         struct stat st{};if(fstat(fd,&st)!=0 || !S_ISREG(st.st_mode) || st.st_uid!=geteuid() || (st.st_mode&077)!=0 || st.st_size<0 || st.st_size>524288){close(fd);return false;}
         std::string bytes(static_cast<size_t>(st.st_size),'\0');size_t at=0;
         while(at<bytes.size()){ssize_t n=read(fd,&bytes[at],bytes.size()-at);if(n<=0){close(fd);return false;}at+=n;}
-        close(fd);auto parsed=Json::parse(bytes,nullptr,false);
+        close(fd);
+        static std::atomic<unsigned> parse_reports{0};
+        const bool trace=parse_reports.fetch_add(1)<128;
+        if(trace){fprintf(stderr,"json: operation=persistent-state bytes=%zu parse=begin\n",bytes.size());fflush(stderr);}
+        auto parsed=Json::parse(bytes,nullptr,false);
+        if(trace){fprintf(stderr,"json: operation=persistent-state parse=%s\n",parsed.is_discarded()?"invalid-json":"complete");fflush(stderr);}
         if(parsed.is_discarded() || !parsed.is_object() || parsed.size()>512)return false;
         records=std::move(parsed);writable=true;return true;
     }

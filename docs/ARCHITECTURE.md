@@ -34,7 +34,10 @@ own /app0, with /data/plexstation as its optional media folder.
   in successful native PS5 builds; owner-confirmed authentication on build 2458e45; new profile flows still need acceptance. DNS resolution
   runs on a worker but OS resolver duration remains platform-dependent.
 - `plex/artwork.*`: single asynchronous poster request/decode, server-sized
-  images, max 640x960 decode, max 12 cached GPU textures, LRU eviction. GPU
+  images, max 640x960 poster decode, max 12 cached GPU textures, LRU eviction.
+  Plex Home avatars accept validated Plex HTTPS/relative URLs and bounded safe
+  redirects, decode at most 2048 square and retain at most 256-square RGBA.
+  Credentials are confined to plex.tv; failed images retry after 300 frames. GPU
   upload/free stays on the render thread. Obsolete account generations are
   discarded. This is an in-memory cache, not a persistent disk cache.
 - `plex_ui.cc`: asynchronous metadata tasks, device linking, server selection,
@@ -57,8 +60,8 @@ media-part URL, so unstructured VLC logging is suppressed and player-open
 messages redact URLs. No token is printed by the new client. Raw HTTP is
 explicitly opt-in; automatic discovery accepts it only for local-marked
 connections. Manual HTTP is the user's explicit choice and sends credentials
-unencrypted. Redirects are refused to avoid forwarding authorization to an
-unexpected host. Remote Plex endpoints need environment network access to
+unencrypted. General API redirects are refused. Avatar loading alone follows up to three
+validated Plex image redirects, withholding credentials from CDN hosts. Remote Plex endpoints need environment network access to
 that actual hostname; do not add a global wildcard speculatively.
 
 Only Original-quality single-part H.264/HEVC MKV/MP4 direct-play is implemented.

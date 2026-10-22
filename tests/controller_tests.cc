@@ -411,8 +411,38 @@ int main() {
     diagnostic_flags=SafeHome;connected(Json{{"MediaContainer",{{"Directory",Json::array()}}}});
     assert(job==None && !home_screen && !reconnect_screen && message.find("Safe startup")!=std::string::npos);
     press(PAD_OPTIONS);assert(settings);settings_page=2;focus=10;press(PAD_CROSS);assert(!plex::diagnostic(SafeHome));
+    pref_set("plex_developer_flags_v1",static_cast<int>(SafeHome|DetailedHome));
+    pref_set("plex_safe_home_v1",0);restore_diagnostic_preferences();
+    assert(!diagnostic(SafeHome) && diagnostic(DetailedHome));
+    pref_set("plex_safe_home_v1",1);restore_diagnostic_preferences();assert(diagnostic(SafeHome));
+    pref_set("plex_developer_flags_v1",0);pref_set("plex_safe_home_v1",0);
     diagnostic_flags=0;settings=false;load_home();drain();assert(job==None && home_screen);
     ui_frame_presented();
+    // Production native theme: focus and motion preferences remain controller usable.
+    drain();audio_reset();video=false;profile_screen=false;settings=true;settings_page=6;sidebar=false;focus=0;
+    Theme::reduced_motion=false;press(PAD_CROSS);
+    assert(Theme::reduced_motion && pref_int("plex_reduce_motion_v1",0)==1 && Theme::motion(0)==1);
+    press(PAD_CROSS);assert(!Theme::reduced_motion && Theme::motion(0)==0);
+    for(int scale:{1,2}) {
+        gfx.width=1920*scale;gfx.height=1080*scale;io.DisplaySize={float(gfx.width),float(gfx.height)};
+        Theme::apply(float(scale));
+        for(int view=0;view<4;++view) {
+            settings=view==0;in_detail=view==1;profile_screen=view==2;home_screen=view==3;
+            profile_pin=false;profile_focus=0;focus=0;
+            if(view==2)home_profiles={Profile{"1","fixture-uuid",std::string(100,'A'),"",true,false,false}};
+            if(view==1){detail.type="movie";detail.title=std::string(200,'A');detail.summary=std::string(2000,'B');}
+            frame();assert(custom_focus_valid());
+            assert(ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_NavCursor])==Theme::Focus);
+            const auto *data=ImGui::GetDrawData();assert(data && data->Valid && data->TotalVtxCount>0);
+            for(const auto *list:data->CmdLists) {
+                for(const auto &v:list->VtxBuffer)assert(std::isfinite(v.pos.x) && std::isfinite(v.pos.y));
+                for(const auto &cmd:list->CmdBuffer)assert(cmd.ClipRect.x>=0 && cmd.ClipRect.y>=0 && cmd.ClipRect.z<=gfx.width && cmd.ClipRect.w<=gfx.height);
+            }
+        }
+        settings=true;settings_page=6;profile_screen=false;in_detail=false;home_screen=false;
+    }
+    gfx.width=1920;gfx.height=1080;io.DisplaySize={1920,1080};
+    puts("Native theme draw-list checks passed at 1080p/4K with controller motion preference");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);

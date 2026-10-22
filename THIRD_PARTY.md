@@ -16,6 +16,9 @@ but the PlexStation title uses the new icon and loading images.
 
 New JSON dependency: [nlohmann/json 3.11.3](https://github.com/nlohmann/json/tree/v3.11.3),
 MIT; the complete license is third_party/nlohmann/LICENSE.MIT.
+Local lexer patch: treat an empty locale decimal separator as a dot, matching
+the documented PS5 strtod behavior. Numeric assertions remain enabled; see
+docs/SIGILL-AVATARS-THEME.md and tests/json_numeric_tests.cc.
 The host-only HTTP client links libcurl under its curl license; it is not
 bundled as a binary here. Native PS5 networking uses upstream's GnuTLS
 prerequisite, with certificate and hostname verification enabled.

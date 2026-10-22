@@ -6,6 +6,7 @@
 #include <locale.h>
 namespace plex {
 inline bool json_numeric_selftest() {
+    std::fprintf(stderr,"json: numeric selftest=begin\n");std::fflush(stderr);
     using J=nlohmann::json;
     const auto j=J::parse("[-9223372036854775808,18446744073709551615,0.5,-1.25,1.25e2,1e-3]",nullptr,false);
     const bool ok=j.is_array() && j.size()==6 && j[0].is_number_integer() &&

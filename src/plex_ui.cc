@@ -2,6 +2,7 @@
 // PlexStation controller-first interface; original VLC playback remains in player.cc.
 #include "gfx.h"
 #include "imgui.h"
+#include "theme.h"
 #include "player.h"
 #include "plex/artwork.h"
 #include "plex/client.h"
@@ -191,7 +192,13 @@ Progress progress;
 Item progress_item;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
                             "Watchlist", "Search", "Settings", "Music", "Audiobooks"};
-bool nav_visible(int i) {return (i!=4 || cloud_available()) && (i!=7 || audio_available()) && (i!=8 || audio_available(true));}
+bool nav_visible(int i) {
+    if((i==1 || i==2) && !selected_server.id.empty()) {
+        const char *kind=i==1?"movie":"show";
+        if(std::none_of(home_sections.begin(),home_sections.end(),[&](const Item &section){return section.type==kind;}))return false;
+    }
+    return (i!=4 || cloud_available()) && (i!=7 || audio_available()) && (i!=8 || audio_available(true));
+}
 int nav_step(int i,int direction,bool wrap=false) {
     for(int n=0;n<10;++n) {i+=direction;if(wrap)i=(i+9)%9;else i=std::clamp(i,-1,8);if(i<0 || nav_visible(i))return i;}return 0;
 }
@@ -598,28 +605,64 @@ void stop() {
     sidebar = false;
     focus = 0; // Resume/Play owns focus after leaving playback.
 }
+void restore_diagnostic_preferences() {
+    // Safe Startup has its own authoritative preference; older flag snapshots
+    // may contain its bit after toggling another diagnostic while it was on.
+    diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & (255u & ~static_cast<unsigned>(SafeHome));
+    if(pref_int("plex_safe_home_v1",0))diagnostic_flags.fetch_or(SafeHome);
+}
 void draw_text(float x, float y, float size, const std::string &value,
-               ImU32 color = IM_COL32(236, 236, 239, 255)) {
+               ImU32 color = Theme::Text,float max_width=0) {
     float scale = gfx.height / 1080.f;
-    ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), size * scale, {x * scale, y * scale},
-                                            color, value.c_str());
+    auto *draw=ImGui::GetBackgroundDrawList();
+    const float right=max_width>0?x+max_width:x<330?310.f:1880.f;
+    draw->PushClipRect({x*scale,y*scale},{right*scale,(y+size*1.5f)*scale},true);
+    draw->AddText(ImGui::GetFont(), size * scale, {x * scale, y * scale},color,value.c_str());
+    draw->PopClipRect();
 }
 void rect(float x, float y, float w, float h, ImU32 color) {
-    float s = gfx.height / 1080.f;
-    ImGui::GetBackgroundDrawList()->AddRectFilled({x * s, y * s}, {(x + w) * s, (y + h) * s}, color,
-                                                  12 * s);
+    float s = gfx.height / 1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+    draw->AddRectFilled({x*s,y*s},{(x+w)*s,(y+h)*s},color,Theme::Metric::Radius*s);
+    if(color==Theme::Selection)
+        draw->AddRect({x*s,y*s},{(x+w)*s,(y+h)*s},Theme::focus_color(plat_time()),Theme::Metric::Radius*s,0,Theme::Metric::FocusWidth*s);
+}
+void gradient(float x,float y,float w,float h,ImU32 top,ImU32 bottom) {
+    const float s=gfx.height/1080.f;
+    ImGui::GetBackgroundDrawList()->AddRectFilledMultiColor({x*s,y*s},{(x+w)*s,(y+h)*s},top,top,bottom,bottom);
+}
+void scene_background(bool sidebar_visible=false) {
+    rect(0,0,1920,1080,Theme::Background);
+    gradient(sidebar_visible?330:0,0,sidebar_visible?1590:1920,430,Theme::alpha(Theme::Accent,24),Theme::alpha(Theme::Background,0));
 }
 void row(int index, int selected, float y, const std::string &label, bool enabled = true) {
-    rect(390, y, 1440, 70,
-         index == selected && enabled ? IM_COL32(168, 108, 16, 255) : IM_COL32(27, 28, 33, 255));
-    draw_text(420, y + 16, 29, label);
+    rect(390,y,1440,Theme::Metric::RowHeight,index==selected && enabled?Theme::Selection:Theme::Surface);
+    draw_text(420,y+16,Theme::Font::Body,label,enabled?Theme::Text:Theme::Secondary,1380);
+}
+void navigation_icon(int index,float x,float y,ImU32 color) {
+    const float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+    auto point=[&](float a,float b){return ImVec2((x+a)*scale,(y+b)*scale);};
+    auto line=[&](float a,float b,float c,float d){draw->AddLine(point(a,b),point(c,d),color,2*scale);};
+    if(index==0) {draw->AddTriangle(point(-12,0),point(0,-12),point(12,0),color,2*scale);draw->AddRect(point(-8,0),point(8,13),color,0,0,2*scale);}
+    else if(index==3 || index==5 || index==6) {
+        draw->AddCircle(point(0,0),index==5?8*scale:11*scale,color,20,2*scale);
+        if(index==3){line(0,-7,0,0);line(0,0,6,4);}
+        if(index==5)line(6,7,14,15);
+        if(index==6){draw->AddCircle(point(0,0),4*scale,color,16,2*scale);for(int n=0;n<8;++n){float a=n*3.14159265f/4;line(11*std::cos(a),11*std::sin(a),15*std::cos(a),15*std::sin(a));}}
+    } else if(index==7) {line(5,-12,5,8);line(5,-12,13,-9);draw->AddCircleFilled(point(0,10),6*scale,color,16);}
+    else if(index==4) {line(-8,-12,8,-12);line(-8,-12,-8,13);line(8,-12,8,13);line(-8,13,0,6);line(0,6,8,13);}
+    else {
+        draw->AddRect(point(-12,-10),point(12,12),color,3*scale,0,2*scale);
+        if(index==8)line(0,-10,0,12);
+        else if(index==2){line(-6,16,6,16);line(0,12,0,16);}
+        else for(int n=0;n<3;++n){line(-8,-6+n*7,-5,-6+n*7);line(5,-6+n*7,8,-6+n*7);}
+    }
 }
 bool custom_focus_valid() {
     if(profile_screen)return profile_pin ? pin_focus>=0 && pin_focus<10 : profile_focus>=0 && profile_focus<static_cast<int>(home_profiles.size());
     if(video)return !tracks || (track_focus>=0 && track_focus<2);
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 12 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 11);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 12 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 12);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?5:3);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
@@ -665,40 +708,40 @@ struct InputDiagnostic {
                  valid ? "OK" : "EMPTY/INVALID", io.NavActive ? "active" : "draw-list focus");
         float scale = gfx.height / 1080.f;
         auto *draw = ImGui::GetForegroundDrawList();
-        draw->AddRectFilled({380*scale, 5*scale}, {1900*scale, 39*scale}, IM_COL32(0,0,0,210));
-        draw->AddText(ImGui::GetFont(), 19*scale, {390*scale, 10*scale}, IM_COL32(235,220,150,255), line);
+        draw->AddRectFilled({380*scale, 5*scale}, {1900*scale, 39*scale}, Theme::alpha(Theme::Background,230));
+        draw->AddText(ImGui::GetFont(), Theme::Font::Caption*scale, {390*scale, 10*scale}, Theme::Secondary, line);
     }
 };
-void centered(float y, float size, const std::string &text, float center = 960) {
-    float width = ImGui::GetFont()->CalcTextSizeA(size, 10000, 0, text.c_str()).x;
-    draw_text(center - width / 2, y, size, text);
+void centered(float y, float size, const std::string &text, float center = 960,float max_width=1760,ImU32 color=Theme::Text) {
+    float width=std::min(max_width,ImGui::GetFont()->CalcTextSizeA(size,10000,0,text.c_str()).x);
+    draw_text(center-width/2,y,size,text,color,max_width);
 }
 void poster(float x,float y,float width,float height,const Item &item,bool selected) {
     float scale=gfx.height/1080.f;
-    rect(x-5,y-5,width+10,height+10,selected ? IM_COL32(230,166,47,255) : IM_COL32(32,34,41,255));
+    rect(x-5,y-5,width+10,height+10,selected?Theme::focus_color(plat_time()):Theme::Border);
     auto texture=item.type=="episode" ? artwork->landscape(base,server_token,item.thumb) : artwork->get(base,server_token,item.thumb);
     if(texture) {
-        float ratio=item.type=="episode" ? 16.f/9 : 2.f/3;
+        float ratio=item.type=="episode" ? 16.f/9 : (item.type=="album" || item.type=="artist" || item.type=="track") ? 1.f : 2.f/3;
         float image_width=std::min(width,height*ratio);
         float image_height=image_width/ratio;
         float left=x+(width-image_width)*.5f;
         float top=y+(height-image_height)*.5f;
-        ImGui::GetBackgroundDrawList()->AddImage(texture,{left*scale,top*scale},{(left+image_width)*scale,(top+image_height)*scale});
+        ImGui::GetBackgroundDrawList()->AddImageRounded(texture,{left*scale,top*scale},{(left+image_width)*scale,(top+image_height)*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,Theme::Metric::ImageRadius*scale);
     }
-    else {rect(x,y,width,height,IM_COL32(38,40,48,255));draw_text(x+12,y+height*.45f,22,item.thumb.empty()?"No poster":"Artwork unavailable");}
-    if(item.watched) {rect(x+width-48,y+8,40,32,IM_COL32(160,105,20,245));draw_text(x+width-38,y+10,22,"✓");}
+    else {rect(x,y,width,height,Theme::Surface);draw_text(x+12,y+height*.45f,Theme::Font::Caption,item.thumb.empty()?"No poster":"Artwork unavailable",Theme::Secondary,width-24);}
+    if(item.watched) {rect(x+width-48,y+8,40,32,Theme::alpha(Theme::Success,245));draw_text(x+width-38,y+10,Theme::Font::Caption,"✓");}
     if(item.duration>0 && item.offset>0) {
         float progress=std::clamp(static_cast<float>(item.offset)/item.duration,0.f,1.f);
-        rect(x,y+height-8,width,8,IM_COL32(60,60,65,255));rect(x,y+height-8,width*progress,8,IM_COL32(235,170,40,255));
+        rect(x,y+height-8,width,8,Theme::Border);rect(x,y+height-8,width*progress,8,Theme::Accent);
     }
 }
 void home_frame(uint32_t hit,float dt) {
     home_draw_ready=true;
     if(!feed_rows.empty() && !grid_checkpoint) {checkpoint(15,"first Home carousel",feed_rows.size());grid_checkpoint=true;}
     if(feed_rows.empty()) {
-        draw_text(390,250,32,search_screen?"No search results":job==HomeFeed ? "Loading your Home..." : "No Home items are available");
-        draw_text(390,330,25,search_screen?"Cross: refine search • L2/R2: search pages":"Open Movies or TV Shows to browse your libraries. Cross: refresh Home");
-        if(!feed_error.empty())draw_text(390,420,23,feed_error);
+        draw_text(390,250, Theme::Font::Heading,search_screen?"No search results":job==HomeFeed ? "Loading your Home..." : "No Home items are available");
+        draw_text(390,330, Theme::Font::Caption,search_screen?"Cross: refine search • L2/R2: search pages":"Open Movies or TV Shows to browse your libraries. Cross: refresh Home");
+        if(!feed_error.empty())draw_text(390,420, Theme::Font::Caption,feed_error,Theme::Error);
         if(hit & PAD_LEFT)sidebar=true;
         if((hit & PAD_CROSS) && job==None){if(search_screen){editor=1;edit_text=search_query;edit_focus=0;}else load_home();}
         return;
@@ -713,32 +756,43 @@ void home_frame(uint32_t hit,float dt) {
     if(hit & PAD_LEFT) {if(column>0)--column;else sidebar=true;}
     if(hit & PAD_RIGHT)column=std::min(static_cast<int>(selected.entries.size())-1,column+1);
     if(plex::diagnostic(TextOnly)) {
-        draw_text(390,180,32,selected.title);
+        draw_text(390,180, Theme::Font::Heading,selected.title);
         int first=std::max(0,column-4);
         for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*85,selected.entries[i].title);
         if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
         return;
     }
-    float amount=std::clamp(dt*14,0.f,1.f);
-    float target=static_cast<float>(std::max(0,feed_focus-1));feed_vertical+=(target-feed_vertical)*amount;
+    float amount=Theme::motion(dt);
+    float target=static_cast<float>(feed_focus);feed_vertical+=(target-feed_vertical)*amount;
     float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
-    draw->PushClipRect({365*scale,155*scale},{1890*scale,938*scale},true);
+    if(!selected.entries.empty()) {
+        const auto &featured=selected.entries[column];
+        rect(390,160,1440,175,Theme::Sidebar);
+        auto backdrop=artwork->landscape(base,server_token,featured.art.empty()?featured.thumb:featured.art);
+        if(backdrop)draw->AddImageRounded(backdrop,{390*scale,160*scale},{1830*scale,335*scale},ImVec2(0,0),ImVec2(1,1),Theme::alpha(Theme::White,110),Theme::Metric::Radius*scale);
+        gradient(390,160,1440,175,Theme::alpha(Theme::Background,90),Theme::alpha(Theme::Background,240));
+        draw_text(420,182,Theme::Font::Caption,selected.continuing?"CONTINUE WATCHING":"YOUR LIBRARY",Theme::Focus,1300);
+        draw_text(420,220,Theme::Font::Heading,featured.title,Theme::Text,1300);
+        draw_text(420,277,Theme::Font::Caption,featured.summary.empty()?"Cross: open details • D-pad: browse your media":featured.summary,Theme::Secondary,1300);
+    }
+    draw->PushClipRect({365*scale,355*scale},{1890*scale,938*scale},true);
     for(int r=std::max(0,feed_focus-2);r<static_cast<int>(feed_rows.size()) && r<=feed_focus+2;++r) {
-        auto &hub=feed_rows[r];float y=170+(r-feed_vertical)*390;
-        if(y>938 || y+390<155)continue;
-        draw_text(390,y,31,hub.title);
+        auto &hub=feed_rows[r];float y=370+(r-feed_vertical)*390;
+        if(y>938 || y+390<355)continue;
+        draw_text(390,y, Theme::Font::Heading,hub.title);
         float dest=static_cast<float>(std::max(0,feed_columns[r]-4));feed_scroll[r]+=(dest-feed_scroll[r])*amount;
         for(int c=std::max(0,static_cast<int>(feed_scroll[r]));c<static_cast<int>(hub.entries.size()) && c<static_cast<int>(feed_scroll[r])+5;++c) {
             auto &item=hub.entries[c];float x=390+(c-feed_scroll[r])*280;
             if(plex::diagnostic(TextOnly))row(c,feed_columns[r],y+55+(c%3)*80,item.title);
             else {
                 poster(x,y+60,240,245,item,!sidebar && r==feed_focus && c==feed_columns[r]);
-                auto title=item.title;if(title.size()>27)title=title.substr(0,24)+"...";
-                draw_text(x,y+315,22,title);
+                draw->PushClipRect({x*scale,(y+315)*scale},{(x+240)*scale,(y+362)*scale},true);
+                draw->AddText(ImGui::GetFont(),Theme::Font::Caption*scale,{x*scale,(y+315)*scale},Theme::Text,item.title.c_str(),nullptr,240*scale);
+                draw->PopClipRect();
                 std::string secondary=item.type=="episode" ? item.series+(item.season>0 ? " S"+std::to_string(item.season) : "")+(item.episode>0 ? " E"+std::to_string(item.episode) : "") : item.year ? std::to_string(item.year) : "";
                 if(hub.continuing && item.duration>item.offset)secondary+="  "+std::to_string((item.duration-item.offset)/60000)+" min left";
                 if(secondary.size()>40)secondary=secondary.substr(0,37)+"...";
-                draw_text(x,y+347,18,secondary,IM_COL32(165,167,177,255));
+                draw_text(x,y+365,Theme::Font::Caption,secondary,Theme::Secondary,240);
             }
         }
     }
@@ -751,10 +805,10 @@ void home_frame(uint32_t hit,float dt) {
 #include "plex_cloud_ui.h"
 
 void profile_screen_frame(uint32_t hit) {
-    rect(0,0,1920,1080,IM_COL32(12,13,17,255));
-    centered(130,58,profile_pin ? "Enter profile PIN" : "Who's Watching?");
-    if(!profile_error.empty())centered(880,25,profile_error);
-    if(job!=None)centered(820,28,deferred_profiles ? "Finishing previous user request..." : "Authorizing profile...");
+    scene_background();
+    centered(130, Theme::Font::Activation,profile_pin ? "Enter profile PIN" : "Who's Watching?");
+    if(!profile_error.empty())centered(880, Theme::Font::Caption,profile_error,960,1760,Theme::Error);
+    if(job!=None)centered(820,Theme::Font::Body,deferred_profiles ? "Finishing previous user request..." : "Authorizing profile...");
     if(hit & PAD_CIRCLE) {
         if(job!=None) {deferred_profiles=true;return;}
         if(profile_pin) {profile_pin=false;erase_pin();profile_error.clear();}
@@ -763,8 +817,8 @@ void profile_screen_frame(uint32_t hit) {
     }
     if((hit & PAD_OPTIONS) && job==None) {signout();return;}
     if(profile_pin) {
-        centered(260,36,requested_profile.name);
-        centered(330,50,std::string(pin_digits.size(),'*')+std::string(4-pin_digits.size(),'_'));
+        centered(260, Theme::Font::Heading,requested_profile.name);
+        centered(330, Theme::Font::Hero,std::string(pin_digits.size(),'*')+std::string(4-pin_digits.size(),'_'));
         if(job==None) {
             if(hit & PAD_LEFT)pin_focus=std::max(0,pin_focus-1);
             if(hit & PAD_RIGHT)pin_focus=std::min(9,pin_focus+1);
@@ -773,13 +827,13 @@ void profile_screen_frame(uint32_t hit) {
             if((hit & PAD_SQUARE) && !pin_digits.empty())pin_digits.pop_back();
             if((hit & PAD_CROSS) && pin_digits.size()<4) {pin_digits+=static_cast<char>('0'+pin_focus);if(pin_digits.size()==4)choose_profile();}
         }
-        for(int i=0;i<10;++i) {float x=590+(i%5)*150,y=440+(i/5)*130;rect(x,y,115,95,i==pin_focus?IM_COL32(180,120,20,255):IM_COL32(32,34,40,255));draw_text(x+40,y+25,42,std::to_string(i));}
-        centered(740,24,"Cross: digit   Square: erase   Circle: cancel");return;
+        for(int i=0;i<10;++i) {float x=590+(i%5)*150,y=440+(i/5)*130;rect(x,y,115,95,i==pin_focus?Theme::Selection:Theme::Surface);draw_text(x+40,y+25, Theme::Font::Key,std::to_string(i));}
+        centered(740, Theme::Font::Caption,"Cross: digit   Square: erase   Circle: cancel");return;
     }
     if(home_profiles.empty()) {
-        centered(390,30,"Loading Plex Home profiles");
+        centered(390, Theme::Font::Body,"Loading Plex Home profiles");
         if(job==None && (hit & PAD_CROSS)) {profile_error.clear();auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
-        centered(550,25,"Cross: retry   Options: sign out");return;
+        centered(550, Theme::Font::Caption,"Cross: retry   Options: sign out");return;
     }
     if(job==None) {
         if(hit & PAD_LEFT)profile_focus=std::max(0,profile_focus-1);
@@ -791,27 +845,27 @@ void profile_screen_frame(uint32_t hit) {
     int count=std::min(5,static_cast<int>(home_profiles.size())-first);
     for(int i=first;i<first+count;++i) {
         float x=960-count*150+(i-first)*300;
-        rect(x,310,260,300,i==profile_focus?IM_COL32(165,110,20,255):IM_COL32(30,32,39,255));
+        rect(x,310,260,300,i==profile_focus?Theme::Selection:Theme::Surface);
         auto avatar=artwork->avatar(home_profiles[i].avatar,account);
         if(avatar) {
-            float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32_WHITE,80*scale);
-        } else {centered(390,70,"●",x+130);centered(470,18,artwork->busy()?"Loading avatar…":"Avatar unavailable",x+130);}
-        centered(510,29,home_profiles[i].name,x+130);
-        if(home_profiles[i].protected_user)centered(560,23,"PIN protected",x+130);
+            float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,80*scale);
+        } else {centered(390, Theme::Font::Avatar,"●",x+130);centered(470,Theme::Font::Caption,artwork->busy()?"Loading avatar…":"Avatar unavailable",x+130);}
+        centered(510,Theme::Font::Body,home_profiles[i].name,x+130,240);
+        if(home_profiles[i].protected_user)centered(560, Theme::Font::Caption,"PIN protected",x+130);
     }
-    centered(720,26,"D-pad / Stick: choose   Cross: select   Options: sign out");
+    centered(720, Theme::Font::Body,"D-pad / Stick: choose   Cross: select   Options: sign out");
     if((hit & PAD_CROSS) && job==None) {requested_profile=home_profiles[profile_focus];profile_error.clear();choose_profile();}
 }
 void login_screen(uint32_t hit, double now) {
-    rect(0, 0, 1920, 1080, IM_COL32(12,13,17,255));
-    draw_text(80, 75, 38, "PlexStation", IM_COL32(235,171,54,255));
-    centered(170, 52, "Sign in to Plex");
-    rect(220, 265, 1480, 625, IM_COL32(24,26,32,255));
+    scene_background();
+    draw_text(80, 75, Theme::Font::Brand, "PlexStation", Theme::Accent);
+    centered(170, Theme::Font::Hero, "Sign in to Plex");
+    rect(220, 265, 1480, 625, Theme::Sidebar);
     if (account_loading) {
-        centered(365, 38, job == ValidateAccount ? "Connecting to Plex" : "Authorization successful");
-        centered(460, 30, account_error.empty() ? "Loading Plex servers..." : "Connection failed");
-        if (!account_error.empty()) centered(545, 25, account_error);
-        if (!credentials_saved) centered(610, 25, "Sign-in could not be saved. Check storage permissions.");
+        centered(365, Theme::Font::Brand, job == ValidateAccount ? "Connecting to Plex" : "Authorization successful");
+        centered(460, Theme::Font::Body, account_error.empty() ? "Loading Plex servers..." : "Connection failed");
+        if (!account_error.empty()) centered(545, Theme::Font::Caption, account_error,960,1760,Theme::Error);
+        if (!credentials_saved) centered(610, Theme::Font::Caption, "Sign-in could not be saved. Check storage permissions.");
         if (!account_error.empty() && job == None) {
             row(0,0,710,"Retry connection (Cross)");
             if (hit & PAD_CROSS) {
@@ -828,13 +882,13 @@ void login_screen(uint32_t hit, double now) {
         }
     } else if (auth.state == AuthState::Waiting) {
         if (auth.short_code()) {
-            centered(325, 30, "1. Open https://plex.tv/link on your phone or computer", 790);
-            centered(390, 29, "2. Enter this activation code", 790);
-            centered(465, 110, auth.current.code, 790);
+            centered(325, Theme::Font::Body, "1. Open https://plex.tv/link on your phone or computer", 790);
+            centered(390, Theme::Font::Body, "2. Enter this activation code", 790);
+            centered(465, Theme::Font::DeviceCode, auth.current.code, 790);
         } else {
-            centered(365, 34, "Scan the QR code to authorize PlexStation", 790);
-            centered(440, 27, "Browser sign-in: app.plex.tv/auth", 790);
-            centered(500, 25, "Use the QR code to open this exact sign-in session", 790);
+            centered(365, Theme::Font::Heading, "Scan the QR code to authorize PlexStation", 790);
+            centered(440, Theme::Font::Body, "Browser sign-in: app.plex.tv/auth", 790);
+            centered(500, Theme::Font::Caption, "Use the QR code to open this exact sign-in session", 790);
         }
         if (have_qr) {
             int n = qrcodegen_getSize(qr);
@@ -843,15 +897,15 @@ void login_screen(uint32_t hit, double now) {
             int cell = std::max(1, static_cast<int>(350 * scale / (n + 8)));
             float x = 1350 * scale, y = 340 * scale;
             auto *draw = ImGui::GetBackgroundDrawList();
-            draw->AddRectFilled({x,y},{x+(n+8)*cell,y+(n+8)*cell},IM_COL32(255,255,255,255));
+            draw->AddRectFilled({x,y},{x+(n+8)*cell,y+(n+8)*cell},Theme::White);
             for (int row = 0; row < n; ++row) for (int col = 0; col < n; ++col)
                 if (qrcodegen_getModule(qr,col,row))
                     draw->AddRectFilled({x+(col+4)*cell,y+(row+4)*cell},
-                        {x+(col+5)*cell,y+(row+5)*cell},IM_COL32(0,0,0,255));
+                        {x+(col+5)*cell,y+(row+5)*cell},Theme::Black);
         }
-        centered(660, 31, "Waiting for authorization");
-        centered(720, 26, "Expires in " + std::to_string(auth.remaining(now)) + " seconds");
-        centered(775, 24, "PlexStation will continue automatically after approval");
+        centered(660, Theme::Font::Heading, "Waiting for authorization");
+        centered(720, Theme::Font::Body, "Expires in " + std::to_string(auth.remaining(now)) + " seconds");
+        centered(775, Theme::Font::Caption, "PlexStation will continue automatically after approval");
         if (hit & PAD_CIRCLE) { auth.cancel(); have_qr=false; }
     } else {
         bool busy = job == PinStart || job == PinPoll;
@@ -859,9 +913,9 @@ void login_screen(uint32_t hit, double now) {
             auth.state == AuthState::Expired ? "Authentication expired" :
             auth.state == AuthState::Failed ? "Connection or authentication failed" :
             auth.state == AuthState::Cancelled ? "Linking cancelled" : "Your media, on your television.";
-        centered(380, 36, status);
-        if (!auth.error.empty()) centered(475, 25, auth.error);
-        if (busy) centered(560, 26, "Waiting for the current request to finish...");
+        centered(380, Theme::Font::Heading, status);
+        if (!auth.error.empty()) centered(475, Theme::Font::Caption, auth.error,960,1760,Theme::Error);
+        if (busy) centered(560, Theme::Font::Body, "Waiting for the current request to finish...");
         else {
             row(0,0,640, auth.state == AuthState::Idle ? "Sign in with Plex (Cross)" : "Retry / Get a new activation code (Cross)");
             if (hit & PAD_CROSS) {
@@ -872,7 +926,7 @@ void login_screen(uint32_t hit, double now) {
         }
         if (hit & PAD_CIRCLE) { auth.cancel(); have_qr=false; }
     }
-    centered(950, 25, "Cross: Sign in / Retry     Circle: Cancel / Back");
+    centered(950, Theme::Font::Caption, "Cross: Sign in / Retry     Circle: Cancel / Back");
 }
 } // namespace
 bool ui_init() {
@@ -904,15 +958,18 @@ bool ui_init() {
     allow_http = pref_int("plex_allow_http", 0) != 0;
     // A new schema starts hidden even if an older diagnostic build opted in.
     controller_overlay = pref_int("plex_controller_overlay_v2",0)!=0;
-    diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & 255u;
-    if(pref_int("plex_safe_home_v1",0))diagnostic_flags.fetch_or(SafeHome);
+    restore_diagnostic_preferences();
     account_id.clear();primary_id.clear();profile_token.clear();profile_screen=false;
     auto &io = ImGui::GetIO();
+    Theme::reduced_motion=pref_int("plex_reduce_motion_v1",0)!=0;
+    Theme::apply(gfx.height/1080.f);
     auto font = std::string(plat_data_dir()) + "/fonts/Inter-Regular.ttf";
     if (access(font.c_str(), R_OK) == 0)
-        io.Fonts->AddFontFromFileTTF(font.c_str(), 28);
-    else
-        io.Fonts->AddFontDefault();
+        io.Fonts->AddFontFromFileTTF(font.c_str(), Theme::Font::Body*gfx.height/1080.f);
+    else {
+        ImFontConfig config;config.SizePixels=Theme::Font::Body*gfx.height/1080.f;
+        io.Fonts->AddFontDefault(&config);
+    }
     if (!account.empty()) {
         account_loading = true;
         auto token = account;
@@ -981,7 +1038,7 @@ void ui_frame(const PadState &pad, float dt) {
                 else
                     player_set_subtitle_track(cycle(subs, player_subtitle_track()));
             }
-            draw_text(100, 120, 32,
+            draw_text(100, 120, Theme::Font::Heading,
                       track_focus == 0 ? "> Audio track (Cross to cycle)"
                                        : "> Subtitle track (Cross to cycle)");
             std::string name = "None";
@@ -990,7 +1047,7 @@ void ui_frame(const PadState &pad, float dt) {
             for (auto &t : list)
                 if (t.id == id)
                     name = t.name;
-            draw_text(100, 170, 28, name);
+            draw_text(100, 170, Theme::Font::Body, name);
         }
         if (video && player_ended()) {
             if (player_failed())
@@ -1002,14 +1059,14 @@ void ui_frame(const PadState &pad, float dt) {
             progress.due(static_cast<int64_t>(now * 1000), player_paused() ? "paused" : "playing"))
             queue_progress(player_paused() ? "paused" : "playing", player_time());
         if (video && !video_info && (now < overlay_until || tracks)) {
-            rect(70, 780, 1780, 230, IM_COL32(10, 10, 14, 230));
-            draw_text(100, 800, 36, playing.title);
-            draw_text(100, 855, 27,
+            rect(70, 780, 1780, 230, Theme::alpha(Theme::Background,240));
+            draw_text(100, 800, Theme::Font::Heading, playing.title);
+            draw_text(100, 855, Theme::Font::Body,
                       std::to_string(player_time() / 1000) + " / " +
                           std::to_string(player_length() / 1000) +
                           " s   "+stream_plan.server_mode);
-            draw_text(100, 900, 26, "Cross Pause | Left/Right Seek | Options Tracks | Square Playback Info | Circle Stop");
-            draw_text(100, 945, 25,
+            draw_text(100, 900, Theme::Font::Body, "Cross Pause | Left/Right Seek | Options Tracks | Square Playback Info | Circle Stop");
+            draw_text(100, 945, Theme::Font::Caption,
                       "L1/R1 Audio sync: " + std::to_string(player_audio_delay()) +
                           " ms (+ delays audio); Triangle resets");
         }
@@ -1029,36 +1086,36 @@ void ui_frame(const PadState &pad, float dt) {
     artwork->update();
     if (account.empty() || account_loading) { login_screen(hit, now); return; }
     if(profile_screen) {profile_screen_frame(hit);return;}
-    rect(0, 0, 1920, 1080, IM_COL32(12, 13, 17, 255));
-    rect(0, 0, 330, 1080, IM_COL32(20, 21, 26, 255));
-    draw_text(45, 55, 38, "PlexStation", IM_COL32(235, 171, 54, 255));
-    if(sidebar && nav==-1)rect(25,100,280,44,IM_COL32(120,78,16,255));
-    draw_text(45,112,22,active_profile.name.empty() ? "Profile" : active_profile.name);
+    scene_background(true);
+    rect(0, 0, Theme::Metric::SidebarWidth, 1080, Theme::Sidebar);
+    draw_text(45, 55, Theme::Font::Brand, "PlexStation", Theme::Accent);
+    if(sidebar && nav==-1)rect(25,100,280,44,Theme::Selection);
+    draw_text(45,112,Theme::Font::Caption,active_profile.name.empty() ? "Profile" : active_profile.name,Theme::Secondary,210);
     for (int i=0,slot=-1;i<9;++i) {
         if(!nav_visible(i))continue;
         ++slot;
-        if (sidebar && nav == i)
-            rect(25, 150 + slot * 78, 280, 65, IM_COL32(120, 78, 16, 255));
-        float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();float y=182+slot*78;
-        ImU32 color=nav==i ? IM_COL32(235,171,54,255) : IM_COL32(160,162,174,255);
-        if(i==0) {draw->AddTriangle({43*scale,y*scale},{55*scale,(y-12)*scale},{67*scale,y*scale},color,2*scale);draw->AddRect({47*scale,y*scale},{63*scale,(y+13)*scale},color,0,0,2*scale);}
-        else if(i==5) {draw->AddCircle({53*scale,(y-2)*scale},8*scale,color,12,2*scale);draw->AddLine({59*scale,(y+5)*scale},{68*scale,(y+14)*scale},color,2*scale);}
-        else {draw->AddRect({44*scale,(y-12)*scale},{66*scale,(y+12)*scale},color,3*scale,0,2*scale);for(int line=0;line<std::min(i,3);++line)draw->AddLine({48*scale,(y-6+line*6)*scale},{62*scale,(y-6+line*6)*scale},color,scale);}
-        draw_text(83,166+slot*78,28,navigation[i]);
+        if (nav == i) {
+            rect(25,150+slot*78,280,65,sidebar?Theme::Selection:Theme::alpha(Theme::Selection,140));
+            rect(25,162+slot*78,4,41,Theme::Accent);
+        }
+        float y=182+slot*78;
+        ImU32 color=nav==i ? Theme::Accent : Theme::Secondary;
+        navigation_icon(i,55,y,color);
+        draw_text(83,166+slot*78,i==3?Theme::Font::Caption:Theme::Font::Body,navigation[i],nav==i?Theme::Text:Theme::Secondary,215);
     }
-    draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? (search_screen?"Search":home_title) : page_title);
-    if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{270*scale,105*scale},{306*scale,141*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32_WHITE,18*scale);}}
+    draw_text(390, 65, Theme::Font::Title, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? (search_screen?"Search":home_title) : page_title);
+    if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{270*scale,105*scale},{306*scale,141*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,18*scale);}}
     if (job != None)
-        draw_text(390, 135, 26, "Loading…");
+        draw_text(390, 135, Theme::Font::Body, "Loading…",Theme::Blue);
     if (!message.empty())
-        draw_text(390, 950, 25, message, IM_COL32(240, 185, 90, 255));
+        draw_text(390, 950, Theme::Font::Caption, message, Theme::Warning);
     if(next_countdown_frame(hit,now))return;
     if(audio_frame(hit,dt))return;
     if(manual_confirm_http) {
-        draw_text(390,230,34,"Approve unencrypted local HTTP?");
-        draw_text(390,310,26,"Traffic and credentials are not encrypted on this connection.");
-        draw_text(390,370,26,"HTTPS is recommended. No automatic downgrade is performed.");
-        draw_text(390,470,27,"Cross: approve and test   Circle: cancel");
+        draw_text(390,230,Theme::Font::Heading,"Approve unencrypted local HTTP?");
+        draw_text(390,310, Theme::Font::Body,"Traffic and credentials are not encrypted on this connection.");
+        draw_text(390,370, Theme::Font::Body,"HTTPS is recommended. No automatic downgrade is performed.");
+        draw_text(390,470, Theme::Font::Body,"Cross: approve and test   Circle: cancel");
         if(hit & PAD_CIRCLE) manual_confirm_http=false;
         else if((hit & PAD_CROSS) && job==None) {
             allow_http=true; pref_set("plex_allow_http",1); manual_confirm_http=false; test_manual();
@@ -1066,22 +1123,22 @@ void ui_frame(const PadState &pad, float dt) {
         return;
     }
     if(connection_diagnostics) {
-        rect(360,50,1510,960,IM_COL32(12,13,17,255));
-        draw_text(390,70,38,"Server Connection Diagnostics");
+        rect(360,50,1510,960,Theme::Background);
+        draw_text(390,70,Theme::Font::Brand,"Server Connection Diagnostics");
         if(hit & PAD_UP) diagnostic_focus=std::max(0,diagnostic_focus-1);
         if(hit & PAD_DOWN) diagnostic_focus=std::min(std::max(0,static_cast<int>(connection_attempts.size())-1),diagnostic_focus+1);
         if(!connection_attempts.empty()) {
             const auto &d=connection_attempts[diagnostic_focus];
-            draw_text(390,175,28,std::to_string(diagnostic_focus+1)+" / "+std::to_string(connection_attempts.size())+"   "+d.endpoint);
-            draw_text(390,240,27,d.route+"   "+d.protocol+"   port "+std::to_string(d.port));
-            draw_text(390,325,25,"TCP: "+d.tcp);
-            draw_text(390,405,25,"TLS: "+d.tls);
-            draw_text(390,485,25,"Identity: "+d.identity);
-            draw_text(390,565,25,"Libraries: "+d.libraries);
-            draw_text(390,660,25,"Result: "+d.result);
-        } else draw_text(390,250,28,"No completed endpoint attempts yet.");
-        if(job==Select || job==Manual) draw_text(390,750,25,"Testing permitted endpoints on the network worker...");
-        draw_text(390,845,25,manual_tested ? "Cross: save verified endpoint and connect   Circle: back" : "Up/Down: endpoint attempts   Circle: back");
+            draw_text(390,175,Theme::Font::Body,std::to_string(diagnostic_focus+1)+" / "+std::to_string(connection_attempts.size())+"   "+d.endpoint);
+            draw_text(390,240, Theme::Font::Body,d.route+"   "+d.protocol+"   port "+std::to_string(d.port));
+            draw_text(390,325, Theme::Font::Caption,"TCP: "+d.tcp);
+            draw_text(390,405, Theme::Font::Caption,"TLS: "+d.tls);
+            draw_text(390,485, Theme::Font::Caption,"Identity: "+d.identity);
+            draw_text(390,565, Theme::Font::Caption,"Libraries: "+d.libraries);
+            draw_text(390,660, Theme::Font::Caption,"Result: "+d.result);
+        } else draw_text(390,250,Theme::Font::Body,"No completed endpoint attempts yet.");
+        if(job==Select || job==Manual) draw_text(390,750, Theme::Font::Caption,"Testing permitted endpoints on the network worker...");
+        draw_text(390,845, Theme::Font::Caption,manual_tested ? "Cross: save verified endpoint and connect   Circle: back" : "Up/Down: endpoint attempts   Circle: back");
         if(hit & PAD_CIRCLE) {connection_diagnostics=false; manual_tested=false;}
         else if(manual_tested && (hit & PAD_CROSS) && job==None) {
             save_account_pref("plex_manual_uri",next_base); save_account_pref("plex_manual_server_id",connection_target.id);
@@ -1091,10 +1148,10 @@ void ui_frame(const PadState &pad, float dt) {
         return;
     }
     if(reconnect_screen) {
-        draw_text(390,230,36,job==Select ? "Connecting to Server" : "Could not connect to your server");
-        draw_text(390,310,28,connection_target.name);
-        draw_text(390,430,25,job==Select ? "Circle: cancel   Square: change server" : "Cross: retry   Square: change server   Circle: server picker");
-        draw_text(390,500,25,"Triangle: endpoint diagnostics");
+        draw_text(390,230, Theme::Font::Heading,job==Select ? "Connecting to Server" : "Could not connect to your server");
+        draw_text(390,310,Theme::Font::Body,connection_target.name);
+        draw_text(390,430, Theme::Font::Caption,job==Select ? "Circle: cancel   Square: change server" : "Cross: retry   Square: change server   Circle: server picker");
+        draw_text(390,500, Theme::Font::Caption,"Triangle: endpoint diagnostics");
         if(hit & PAD_TRIANGLE) {connection_diagnostics=true; diagnostic_focus=0;}
         if(hit & (PAD_CIRCLE|PAD_SQUARE)) {
             if(job==Select) {discard_connection=true; change_after_connection=!!(hit & PAD_SQUARE); message="Cancelling connection...";}
@@ -1108,10 +1165,10 @@ void ui_frame(const PadState &pad, float dt) {
         editor=2; edit_text=account_pref("plex_manual_uri","https://"); edit_focus=0; return;
     }
     if (editor) {
-        draw_text(390, 180, 30,
+        draw_text(390, 180, Theme::Font::Body,
                   editor == 1 ? "Search your server"
                               : "Manual server: [http(s)://]host[:port] (default HTTPS / 32400)");
-        draw_text(390, 245, 28, edit_text);
+        draw_text(390, 245, Theme::Font::Body, edit_text);
         if (hit & PAD_LEFT)
             edit_focus = std::max(0, edit_focus - 1);
         if (hit & PAD_RIGHT)
@@ -1127,10 +1184,10 @@ void ui_frame(const PadState &pad, float dt) {
         for (int i = 0; i < static_cast<int>(alphabet.size()); ++i) {
             float x = 390 + (i % 10) * 100, y = 330 + (i / 10) * 70;
             rect(x, y, 80, 55,
-                 i == edit_focus ? IM_COL32(170, 115, 25, 255) : IM_COL32(35, 37, 43, 255));
-            draw_text(x + 25, y + 10, 28, std::string(1, alphabet[i]));
+                 i == edit_focus ? Theme::Selection : Theme::Surface);
+            draw_text(x + 25, y + 10, Theme::Font::Body, std::string(1, alphabet[i]));
         }
-        draw_text(390, 870, 24, editor==1 ? "Cross: type • Square: erase • Triangle: submit • Circle: cancel" : "Cross: type • Square: erase • Triangle: test before saving • Circle: cancel");
+        draw_text(390, 870, Theme::Font::Caption, editor==1 ? "Cross: type • Square: erase • Triangle: submit • Circle: cancel" : "Cross: type • Square: erase • Triangle: test before saving • Circle: cancel");
         if (hit & PAD_CIRCLE)
             editor = 0;
         if ((hit & PAD_TRIANGLE) && job == None) {
@@ -1157,10 +1214,10 @@ void ui_frame(const PadState &pad, float dt) {
         float height=ImGui::GetFont()->CalcTextSizeA(28*scale,10000,1350*scale,detail.summary.c_str()).y/scale;
         if(hit & PAD_UP)description_scroll=std::max(0.f,description_scroll-70);
         if(hit & PAD_DOWN)description_scroll=std::min(std::max(0.f,height-650),description_scroll+70);
-        rect(360,155,1510,780,IM_COL32(16,18,24,255));
+        rect(360,155,1510,780,Theme::Sidebar);
         draw->PushClipRect({390*scale,190*scale},{1800*scale,870*scale},true);
-        draw->AddText(ImGui::GetFont(),28*scale,{390*scale,(200-description_scroll)*scale},IM_COL32(235,235,240,255),detail.summary.c_str(),nullptr,1350*scale);draw->PopClipRect();
-        draw_text(390,890,24,"Up/Down: scroll   Circle/Square: close");
+        draw->AddText(ImGui::GetFont(),Theme::Font::Body*scale,{390*scale,(200-description_scroll)*scale},Theme::Text,detail.summary.c_str(),nullptr,1350*scale);draw->PopClipRect();
+        draw_text(390,890, Theme::Font::Caption,"Up/Down: scroll   Circle/Square: close");
         if(hit & (PAD_CIRCLE|PAD_SQUARE))full_description=false;
         return;
     }
@@ -1170,7 +1227,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
         if(hit & PAD_DOWN)tools_focus=std::min(std::max(0,static_cast<int>(filter_values.size())-1),tools_focus+1);
         int first=std::max(0,tools_focus-6);for(int n=first;n<static_cast<int>(filter_values.size()) && n<first+7;++n)row(n,tools_focus,210+(n-first)*90,filter_values[n].first);
-        if(filter_values.empty())draw_text(410,280,28,"No filter values supplied by this library");
+        if(filter_values.empty())draw_text(410,280,Theme::Font::Body,"No filter values supplied by this library");
         if((hit & PAD_CROSS) && !filter_values.empty()){browser_filters[filter_field]=filter_values[tools_focus].second;filter_picker=false;load(library_query(page_path,browser_filters,browser_sort),page_title,false);}
         return;
     }
@@ -1294,6 +1351,12 @@ void ui_frame(const PadState &pad, float dt) {
             }
             return;
         }
+        if(settings_page==6) {
+            row(0,0,210,Theme::reduced_motion?"Reduced motion: On":"Reduced motion: Off");
+            draw_text(390,320,Theme::Font::Body,"Use instant carousel movement and steady focus outlines.");
+            if(hit & PAD_CROSS){Theme::reduced_motion=!Theme::reduced_motion;pref_set("plex_reduce_motion_v1",Theme::reduced_motion?1:0);}
+            return;
+        }
         if(settings_page==1) {
             row(0,0,210,"Change Server");
             if((hit & PAD_CROSS) && job==None) {force_picker=true; refresh();}
@@ -1302,7 +1365,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
-            focus = std::min(10, focus + 1);
+            focus = std::min(11, focus + 1);
         if (hit & PAD_CROSS) {
             if (focus == 0)
                 global_delay = audio_offset(global_delay, 1);
@@ -1327,15 +1390,16 @@ void ui_frame(const PadState &pad, float dt) {
                 edit_text = account_pref("plex_manual_uri","https://");
                 edit_focus = 0;
             }
-            if(focus==10) {settings_page=5;focus=0;}
+            if(focus==11) {settings_page=6;focus=0;}
+            else if(focus==10) {settings_page=5;focus=0;}
             else if(focus==9) {settings_page=4;focus=0;}
             else if(focus==8) {settings_page=3;focus=0;}
             else if(focus==6 || focus==7) {settings_page=focus==6 ? 1 : 2; focus=0;}
             pref_set(account_key("plex_audio_delay").c_str(), global_delay);
             pref_set("plex_allow_http", allow_http ? 1 : 0);
         }
-        const std::string labels[]={"Default audio delay +25 ms ("+std::to_string(global_delay)+" ms)","Default audio delay -25 ms",allow_http?"Local HTTP: allowed":"Local HTTP: disabled","Refresh servers","Sign out","Manual server address","Server","Developer Options","Profiles","Audio / Audiobook Libraries","Playback / Quality / Subtitles"};
-        int first=std::max(0,focus-7);for(int n=first;n<11 && n<first+8;++n)row(n,focus,180+(n-first)*90,labels[n]);
+        const std::string labels[]={"Default audio delay +25 ms ("+std::to_string(global_delay)+" ms)","Default audio delay -25 ms",allow_http?"Local HTTP: allowed":"Local HTTP: disabled","Refresh servers","Sign out","Manual server address","Server","Developer Options","Profiles","Audio / Audiobook Libraries","Playback / Quality / Subtitles","Appearance / Motion"};
+        int first=std::max(0,focus-7);for(int n=first;n<12 && n<first+8;++n)row(n,focus,180+(n-first)*90,labels[n]);
     } else if (!available.empty()) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
@@ -1351,20 +1415,25 @@ void ui_frame(const PadState &pad, float dt) {
         if(!plex::diagnostic(TextOnly)) {
             poster(1560,220,250,340,detail,false);
             auto backdrop=artwork->landscape(base,server_token,detail.art);
-            if(backdrop) {float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();draw->AddImage(backdrop,{385*scale,155*scale},{1510*scale,540*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32(255,255,255,35));}
+            if(backdrop) {float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();draw->AddImageRounded(backdrop,{385*scale,155*scale},{1510*scale,540*scale},ImVec2(0,0),ImVec2(1,1),Theme::alpha(Theme::White,150),Theme::Metric::Radius*scale);gradient(385,155,1125,385,Theme::alpha(Theme::Background,100),Theme::Background);}
         }
-        draw_text(390, 220, 25,
+        draw_text(390, 220, Theme::Font::Caption,
                   (detail.year ? std::to_string(detail.year)+" • " : "")+(detail.duration>0 ? std::to_string(detail.duration/60000)+" min" : ""));
         float scale = gfx.height / 1080.f;
         ImGui::GetBackgroundDrawList()->AddText(
-            ImGui::GetFont(), 28 * scale, {390 * scale, 280 * scale}, IM_COL32(225, 225, 230, 255),
+            ImGui::GetFont(), Theme::Font::Body * scale, {390 * scale, 280 * scale}, Theme::Text,
             (detail.summary.size()>500 ? detail.summary.substr(0,500)+"... (Square: read more)" : detail.summary).c_str(), nullptr, 1100 * scale);
         row(0, focus, 640, detail.type=="show" ? "Browse seasons" : detail.type=="season" ? "Browse episodes" : detail.offset > 0 ? "Resume" : "Play");
-        std::string tags=detail.content_rating;
-        for(const auto &genre:detail.genres) {if(!tags.empty())tags+=" • ";tags+=genre;}
-        draw_text(390,570,22,tags.size()>110 ? tags.substr(0,107)+"..." : tags);
+        float chip_x=390;
+        auto chip=[&](const std::string &label) {
+            if(label.empty() || chip_x>1390)return;
+            float width=std::min(180.f,ImGui::GetFont()->CalcTextSizeA(Theme::Font::Caption,10000,0,label.c_str()).x+24);
+            rect(chip_x,570,width,34,Theme::Sidebar);
+            draw_text(chip_x+12,575,Theme::Font::Caption,label,Theme::Secondary,width-24);chip_x+=width+12;
+        };
+        chip(detail.content_rating);for(const auto &genre:detail.genres)chip(genre);
         std::string cast="Cast: ";for(const auto &name:detail.cast){if(cast.size()>180)break;if(cast.size()>6)cast+=", ";cast+=name;}
-        if(!detail.cast.empty())draw_text(390,610,20,cast.size()>130 ? cast.substr(0,127)+"..." : cast);
+        if(!detail.cast.empty())draw_text(390,610, Theme::Font::Caption,cast.size()>130 ? cast.substr(0,127)+"..." : cast);
         row(1, focus, 725, detail.watched ? "Mark unwatched" : "Mark watched");
         row(2,focus,810,detail.type=="show" || detail.type=="season" ? "Read description" : detail.media.is_array() && !detail.media.empty() ? "Playback version: "+std::to_string(version+1)+" / "+std::to_string(detail.media.size())+" (Cross cycles)" : "No playable versions provided");
         if (hit & PAD_UP)
@@ -1407,8 +1476,8 @@ void ui_frame(const PadState &pad, float dt) {
                 auto label = listing[i].title;
                 if (label.size() > 22)
                     label = label.substr(0, 19) + "…";
-                draw_text(x + 7, y + 285, 23, label);
-                draw_text(x+7,y+315,18,listing[i].type=="episode" ? (listing[i].season>0 ? "S"+std::to_string(listing[i].season)+" " : "")+(listing[i].episode>0 ? "E"+std::to_string(listing[i].episode) : "Episode") : listing[i].year ? std::to_string(listing[i].year) : "");
+                draw_text(x + 7, y + 285, Theme::Font::Caption, label);
+                draw_text(x+7,y+315,Theme::Font::Caption,listing[i].type=="episode" ? (listing[i].season>0 ? "S"+std::to_string(listing[i].season)+" " : "")+(listing[i].episode>0 ? "E"+std::to_string(listing[i].episode) : "Episode") : listing[i].year ? std::to_string(listing[i].year) : "");
             }
         } else {
             int first = std::max(0, focus - 7);
@@ -1426,13 +1495,13 @@ void ui_frame(const PadState &pad, float dt) {
         if ((hit & PAD_L2) && page_start >= (plex::diagnostic(TenItems)?10:60))
             load(page_path, page_title, false, page_start - (plex::diagnostic(TenItems)?10:60));
         if (page_total > 60)
-            draw_text(390, 920, 22,
+            draw_text(390, 920, Theme::Font::Caption,
                       "Square Sort • L2/R2 Pages • " + std::to_string(page_start + 1) + "–" +
                           std::to_string(page_start + listing.size()) + " of " +
                           std::to_string(page_total));
     }
-    draw_text(390, 985, 21,"Triangle: connection diagnostics • Square: library sort/filter or manual server");
-    draw_text(390, 1020, 23,
+    draw_text(390, 985, Theme::Font::Caption,"Triangle: connection diagnostics • Square: library sort/filter or manual server");
+    draw_text(390, 1020, Theme::Font::Caption,
               "D-pad / Stick Navigate • Cross Select • Circle Back • L1/R1 Sections • Options Settings");
 }
 bool ui_video_rect(float *x, float *y, float *w, float *h) {

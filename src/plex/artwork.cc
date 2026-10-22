@@ -7,6 +7,13 @@
 #include <chrono>
 #include <cstdio>
 namespace plex {
+namespace {
+std::atomic<unsigned> avatar_reports{0};
+void avatar_checkpoint(const char *phase,int status,size_t count) {
+    if(avatar_reports.fetch_add(1,std::memory_order_relaxed)>=128)return;
+    fprintf(stderr,"avatar: phase=%s status=%d count=%zu\n",phase,status,count);fflush(stderr);
+}
+}
 void Artwork::update() {
     // Called before this frame draws any images. Previous frame commands may
     // still reference retired descriptors; library_free_image waits for the GPU.
@@ -50,7 +57,8 @@ ImTextureID Artwork::landscape(const std::string &base,const std::string &token,
 namespace {
 // Restrict credentials and redirects to Plex's known HTTPS image origins.
 bool avatar_url(std::string &url) {
-    if(url.empty() || url.size()>4096 || url.find_first_of("\r\n#\\")!=std::string::npos)return false;
+    if(url.empty() || url.size()>4096 || url.find_first_of("#\\")!=std::string::npos ||
+       std::any_of(url.begin(),url.end(),[](unsigned char c){return c<=32 || c>=127;}))return false;
     if(url.front()=='/' && url.rfind("//",0)!=0)url="https://plex.tv"+url;
     bool allowed=false;
     for(const char *prefix:{"https://plex.tv/","https://images.plex.tv/","https://resources-cdn.plexapp.com/"})
@@ -75,7 +83,7 @@ bool avatar_url(std::string &url) {
 ImTextureID Artwork::avatar(const std::string &url,const std::string &token) {
     if(diagnostic(TextOnly) || diagnostic(NoDownloads))return 0;
     auto normalized=url;
-    if(!avatar_url(normalized))return 0;
+    if(!avatar_url(normalized)){avatar_checkpoint("url-rejected",0,0);return 0;}
     Request q{"GET",normalized,{},""};
     if(normalized.rfind("https://plex.tv/",0)==0)q.headers["X-Plex-Token"]=token;
     q.connect_timeout_ms=3000;q.timeout_ms=5000;
@@ -107,24 +115,28 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
             if(!next.empty() && next.front()=='/' && next.rfind("//",0)!=0) {
                 auto slash=current.url.find('/',8);next=current.url.substr(0,slash)+next;
             }
-            if(!avatar_url(next))break;
+            if(!avatar_url(next)){avatar_checkpoint("redirect-rejected",reply.status,0);break;}
             const auto original_token=request.headers.find("X-Plex-Token");
             current.url=next;current.headers.clear();
             if(next.rfind("https://plex.tv/",0)==0 && original_token!=request.headers.end())
                 current.headers["X-Plex-Token"]=original_token->second;
             reply=network(current);
         }
-        if(avatar_image) {fprintf(stderr,"avatar: fetch=%s status=%d bytes=%zu\n",reply.error.empty()?"complete":"failed",reply.status,reply.body.size());fflush(stderr);}
+        if(avatar_image)avatar_checkpoint(reply.error.empty()?"fetch-complete":"fetch-failed",reply.status,reply.body.size());
         checkpoint(12,"artwork downloaded",reply.body.size());
         if(!decode) return out;
         if (reply.status != 200 || !reply.error.empty() || reply.body.empty() ||
-            reply.body.size() > 4 * 1024 * 1024)
+            reply.body.size() > 4 * 1024 * 1024) {
+            if(avatar_image)avatar_checkpoint("http-or-size-rejected",reply.status,reply.body.size());
             return out;
+        }
         const auto *bytes = reinterpret_cast<const unsigned char *>(reply.body.data());
         int w, h, c;
         if (!stbi_info_from_memory(bytes, reply.body.size(), &w, &h, &c) || w <= 0 || h <= 0 ||
-            w > (avatar_image?2048:640) || h > (avatar_image?2048:960))
+            w > (avatar_image?2048:640) || h > (avatar_image?2048:960)) {
+            if(avatar_image)avatar_checkpoint("header-or-dimensions-rejected",0,reply.body.size());
             return out;
+        }
         checkpoint(13,"image decode");
         unsigned char *decoded = stbi_load_from_memory(bytes, reply.body.size(), &w, &h, &c, 4);
         if (decoded && w>0 && h>0 && w<=(avatar_image?2048:640) && h<=(avatar_image?2048:960)) {
@@ -141,8 +153,9 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
                 out.width = w;out.height = h;
                 out.rgba.assign(decoded, decoded + static_cast<size_t>(w) * h * 4);
             }
-            if(avatar_image)fprintf(stderr,"avatar: decode=complete size=%dx%d\n",out.width,out.height);
+            if(avatar_image)avatar_checkpoint("decode-complete",0,out.rgba.size());
         }
+        if(avatar_image && out.rgba.empty())avatar_checkpoint("decode-failed",0,0);
         stbi_image_free(decoded);
         return out;
     });

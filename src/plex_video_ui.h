@@ -44,12 +44,12 @@ void video_plan_ready(const Result &result) {
     StreamPlan plan;plan.playback={static_cast<Mode>(number(result.data,"mode")),text(result.data,"url"),""};plan.session=text(result.data,"session");plan.server_mode=text(result.data,"label");apply_video_plan(plan);
 }
 void video_tools(uint32_t hit) {
-    rect(80,90,1750,910,IM_COL32(16,18,23,245));
+    rect(80,90,1750,910,Theme::alpha(Theme::Background,245));
     const auto &info=player_video_info();
-    draw_text(110,115,36,"Playback Information / Controls");
-    draw_text(110,175,26,stream_plan.server_mode);
-    draw_text(110,215,24,"Observed VLC: "+info.codec+" / "+info.audio_codec+" • "+std::to_string(info.width)+"x"+std::to_string(info.height)+" • "+std::to_string(info.fps)+" fps • "+std::to_string(info.audio_channels)+" channels");
-    draw_text(110,255,24,info.hardware?"Decoder reports hardware active":"No hardware-active report (codec alone does not establish hardware decoding)");
+    draw_text(110,115, Theme::Font::Heading,"Playback Information / Controls");
+    draw_text(110,175, Theme::Font::Body,stream_plan.server_mode);
+    draw_text(110,215, Theme::Font::Caption,"Observed VLC: "+info.codec+" / "+info.audio_codec+" • "+std::to_string(info.width)+"x"+std::to_string(info.height)+" • "+std::to_string(info.fps)+" fps • "+std::to_string(info.audio_channels)+" channels");
+    draw_text(110,255, Theme::Font::Caption,info.hardware?"Decoder reports hardware active":"No hardware-active report (codec alone does not establish hardware decoding)");
     if(hit & PAD_UP)video_info_focus=std::max(0,video_info_focus-1);
     if(hit & PAD_DOWN)video_info_focus=std::min(8,video_info_focus+1);
     const char *labels[]={"Audio offset +25 ms (save for this media)","Audio offset -25 ms (save for this media)","Reset media offset","Subtitle delay +100 ms","Subtitle delay -100 ms","Subtitle size +10%","Load next external subtitle","Subtitles Off","Next Episode (server order)"};
@@ -91,7 +91,7 @@ void video_options_frame(uint32_t hit) {
         if(focus==2){const char *langs[]={"","en","es","fr","ja"};int n=(pref_int(account_key("plex_language_choice").c_str(),0)+1)%5;pref_set(account_key("plex_language_choice").c_str(),n);player_set_languages(langs[n],langs[n]);}
         if(focus==3){bool off=pref_int(account_key("plex_subs_off").c_str(),0)==0;pref_set(account_key("plex_subs_off").c_str(),off?1:0);player_set_languages(player_audio_language(),off?"off":"");}
     }
-    draw_text(390,850,23,"Automatic uses a fixed local/remote policy; no measured bandwidth or 4K decode claim.");
+    draw_text(390,850, Theme::Font::Caption,"Automatic uses a fixed local/remote policy; no measured bandwidth or 4K decode claim.");
 }
 
 void clear_next(){next_candidate={};next_requested=true;autoplay_deadline=0;video_retry_pending=false;}
@@ -104,9 +104,9 @@ void next_ready(const Result &r){if(r){auto entries=items(r.data);if(!entries.em
 void offer_autoplay(double now){if(pref_int(account_key("plex_autoplay").c_str(),0) && !next_candidate.id.empty())autoplay_deadline=now+10;}
 bool next_countdown_frame(uint32_t hit,double now){
     if(autoplay_deadline<=0 || video || profile_screen || settings)return false;
-    rect(390,230,1420,430,IM_COL32(25,27,33,255));draw_text(430,280,34,"Next Episode: "+next_candidate.title);
-    draw_text(430,370,28,"Starting in "+std::to_string(std::max(0,static_cast<int>(autoplay_deadline-now)))+" seconds");
-    draw_text(430,470,26,"Cross: play now • Circle: cancel autoplay");
+    rect(390,230,1420,430,Theme::Surface);draw_text(430,280, Theme::Font::Heading,"Next Episode: "+next_candidate.title);
+    draw_text(430,370, Theme::Font::Body,"Starting in "+std::to_string(std::max(0,static_cast<int>(autoplay_deadline-now)))+" seconds");
+    draw_text(430,470, Theme::Font::Body,"Cross: play now • Circle: cancel autoplay");
     if(hit & PAD_CIRCLE){autoplay_deadline=0;return true;}
     if((hit & PAD_CROSS) || now>=autoplay_deadline){if(job==None && !progress_pending){detail=next_candidate;autoplay_deadline=0;request_video();}}
     return true;

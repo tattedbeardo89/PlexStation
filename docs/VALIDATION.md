@@ -533,3 +533,31 @@ controller/package permissions, artwork, connection framing, crash tools and
 strict native source syntax. The complete ASan/UBSan runner passed all existing
 suites plus both numeric locale variants. These are host results; native build
 and physical acceptance are reported separately.
+
+### Native diagnostic checkpoint and theme follow-up (2026-10-22)
+
+Native run 39845185729 (db9f21d) succeeded: host regressions, actual PS5 compile,
+complete package, matching debug collection and ZIP permission gates passed.
+This is an instrumentation-only checkpoint and predates the numeric correction;
+it must not be represented as the fixed parser binary. The intermediate queued
+c476647 run was superseded by GitHub concurrency when the newer bfb5eee commit
+was pushed; this was cancellation, not a compiler result. Run 39846419456 builds
+bfb5eee with the numeric fix and avatar changes independently of the theme.
+
+The native theme uses shared palette/type/spacing/radius/motion tokens and the
+existing ImGui/Vulkan rendering path. Controller fixtures exercise settings,
+profiles, long-title details and Home at 1080p and 4K, checking valid focus,
+finite geometry and bounded clipping, plus persisted reduced motion and safe
+startup restoration. Source policy checks prevent individual linked Plex UI
+files from adding hardcoded colors. These checks do not prove PS5 visual quality
+or device stability. A final native build and physical acceptance remain separate.
+
+Final local follow-up: all nine existing ASan/UBSan suites plus normal and
+empty-separator numeric suites passed. Normal core/curl/native-GnuTLS transport,
+artwork, controller/package/theme-boundary and strict native-source checks
+passed. Music/listening, authentication, Home, streaming and discovery suites
+also passed with the shared theme changes present. The targeted controller
+fixture covers real UI draw lists at 1080p/4K, rapid navigation, media return,
+async cancellation, profile authorization and startup preference restoration.
+No physical playback, avatars, Home crash resolution or firmware acceptance is
+inferred from these host checks.

@@ -107,3 +107,9 @@ are implemented in the current source. See [delivery status and physical
 checklist](docs/TV-CLIENT-STATUS.md), [Plex Home API/isolation](docs/PLEX-HOME.md)
 and [crash diagnosis and matching debug symbols](docs/CRASH-DIAGNOSTICS.md).
 These source implementations do not establish live Plex or PS5 acceptance.
+
+The f511344 first-fault investigation, numeric-locale parser correction,
+Plex Home avatar pipeline and native navy/indigo theme are documented in
+[the stability and theme testing guide](docs/SIGILL-AVATARS-THEME.md).
+Host/native build validation and physical PS5 acceptance are separate;
+see [validation](docs/VALIDATION.md) before interpreting compatibility claims.
