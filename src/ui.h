@@ -21,3 +21,6 @@ bool ui_sensitive_input();
 
 /* Release UI textures/workers while the renderer/device are still alive. */
 void ui_shutdown();
+
+/* After a frame is submitted, for Home diagnostics only. */
+void ui_frame_presented();

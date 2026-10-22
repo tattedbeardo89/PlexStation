@@ -357,6 +357,7 @@ Result Client::select(const Server &s, bool allow_http, std::string &selected,
             continue;
         }
         last=identity(c.uri,s.token,s.id);
+        home_checkpoint(4,"server identity verification",last?0:(last.status?last.status:-1));
         report.tcp=(last.tcp_connected || last.status>0) ? "connected" : last.error;
         report.tls=!parsed.tls ? "not encrypted (approved)" :
             (last.tls_verified || last.status>0) ? "verified" : last.tcp_connected ? last.error : "not attempted";
@@ -380,7 +381,10 @@ Result Client::select(const Server &s, bool allow_http, std::string &selected,
     return last;
 }
 Result Client::sections(const std::string &b, const std::string &t) {
-    return call("GET", b, "/library/sections", t);
+    home_checkpoint(5,"authenticated library discovery started");
+    auto result=call("GET", b, "/library/sections", t);
+    home_checkpoint(6,"authenticated library discovery completed",result?0:(result.status?result.status:-1));
+    return result;
 }
 Result Client::browse(const std::string &b, const std::string &t, const std::string &path,
                       int start, int size) {

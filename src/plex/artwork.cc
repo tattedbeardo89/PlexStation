@@ -23,6 +23,7 @@ void Artwork::update() {
     if (!diagnostic(NoUpload) && !diagnostic(TextOnly) && !image.rgba.empty()) {
         checkpoint(14,"gpu texture create",image.rgba.size());
         texture = library_upload_rgba(image.rgba.data(), image.width, image.height);
+        if(home_active)home_checkpoint(12,"first Home texture upload",texture?0:-1);
     }
     if (entries.size() >= 12) {
         auto old = std::min_element(entries.begin(), entries.end(),
@@ -68,6 +69,7 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
     auto epoch = generation;
     bool decode=!diagnostic(NoDecode);
     checkpoint(11,"artwork schedule");
+    if(home_active)home_checkpoint(10,"first Home artwork scheduled");
     pending = std::async(std::launch::async, [network, request, key, epoch, decode] {
         Decoded out;
         out.key = key;
@@ -84,6 +86,7 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
             w > 640 || h > 960)
             return out;
         checkpoint(13,"image decode");
+        if(home_active)home_checkpoint(11,"first Home image decode");
         unsigned char *decoded = stbi_load_from_memory(bytes, reply.body.size(), &w, &h, &c, 4);
         if (decoded && w>0 && h>0 && w<=640 && h<=960) {
             out.width = w;

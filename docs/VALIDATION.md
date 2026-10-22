@@ -491,3 +491,20 @@ segment authorization/session cleanup, actual audio formats/rates/chapters/
 pitch, external subtitles, autoplay, timeline attribution, cloud access and the
 original Movies SIGABRT/unmatched SIGSYS remain acceptance requirements. Host
 fixtures and YAML checks are not native cross-compilation or device acceptance.
+
+## f511344 post-server SIGILL checkpoint A
+
+Owner confirms launch, restored authentication, actual Home username/profile
+selection and PMS listing on f511344; selecting PMS then fails. Matching binary
+inspection run 39844239411 verified original package/debug hashes. Conditional
+0x400000 load bias maps the repeated raw RIP 0x004f93d7 to crash_handler's UD2
+after its exit call; zero bias maps inside an instruction, not a reliable call
+site. Console hash/load marker and original crash header are pending. Neither
+the first fault nor a physical fix is claimed. SIGILL, earlier Movies SIGABRT
+and unmatched SIGSYS remain separate until correlated with original headers.
+
+Host core (74 checks + ten curl scenarios), real native GnuTLS transport,
+production controller/UI safe-startup, returning-exit bridge, debug collection/
+symbolization and strict source checks passed for the checkpoint A changes.
+Native/ASan workflow gates will be recorded only after actual completion.
+See SIGILL-AVATARS-THEME.md for exact hashes, instruction evidence and FTP steps.

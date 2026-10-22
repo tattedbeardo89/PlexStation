@@ -207,6 +207,7 @@ int main(void)
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
         }
         gfx_end_frame(cmd);
+        ui_frame_presented();
         double t_end = plat_time();
 
         if (gfx.frame_number == 1)

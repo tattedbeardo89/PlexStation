@@ -405,6 +405,14 @@ int main() {
     assert(audio_scope()==old_scope);audio_drain();audio_reset();audio_home(true);audio_drain();audio_queue_load(song);audio_drain();assert(last_opened_start==45000);
     clear_profile();assert(!audio.active && !audio.queue.current() && !audio.screen);
     drain();
+    // Safe startup reaches Developer Options before any Home request.
+    account="owner";account_id="owner/profile:child";profile_screen=false;account_loading=false;
+    connection_target.id="safe-server";connection_target.token="child-pms";next_base="https://audio.invalid";
+    diagnostic_flags=SafeHome;connected(Json{{"MediaContainer",{{"Directory",Json::array()}}}});
+    assert(job==None && !home_screen && !reconnect_screen && message.find("Safe startup")!=std::string::npos);
+    press(PAD_OPTIONS);assert(settings);settings_page=2;focus=10;press(PAD_CROSS);assert(!plex::diagnostic(SafeHome));
+    diagnostic_flags=0;settings=false;load_home();drain();assert(job==None && home_screen);
+    ui_frame_presented();
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);

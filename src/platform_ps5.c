@@ -28,6 +28,8 @@
 #define APP_DIR "/app0"
 #define LOG_PATH APP_DIR "/plexstation.log"
 /* Where the eboot is loaded, and a bound on its code for backtraces. */
+#include "crash_termination.h"
+extern unsigned plex_home_last_checkpoint(void);
 #define EBOOT_BASE 0x400000ULL
 #define EBOOT_END 0x10000000ULL
 
@@ -84,12 +86,14 @@ static void write_str(const char *s)
 /* The PS5's context is FreeBSD's with the machine context 0x30 bytes further
  * on: rbp at +0x88, rip at +0xe0, rsp at +0xf8. Look addresses up with
  * llvm-addr2line -f -C -e builds/llvm-pie-<sha>.elf 0x<eboot+>. */
+static void exit_returned(void){write_str("*** fatal exit bridge returned; terminal wait, not application recovery\n");}
+
 static void crash_handler(int sig, siginfo_t *info, void *context)
 {
     static volatile sig_atomic_t in_handler;
     char buf[200];
     if (in_handler)
-        _exit(128 + sig);
+        crash_terminate(128+sig,_exit,exit_returned);
     in_handler = 1;
     char crash_path[300];
     snprintf(crash_path, sizeof(crash_path), "%s/vlc-crash.txt", app_dir);
@@ -97,12 +101,12 @@ static void crash_handler(int sig, siginfo_t *info, void *context)
     write_str("*** build " PLEX_BUILD_COMMIT " title PPSA85301; context offsets require device validation\n");
     snprintf(buf,sizeof(buf),"*** pid=%d\n",(int)getpid());write_str(buf);
     const uint64_t *ctx = (const uint64_t *)context;
-    uint64_t rip = ctx[0xe0 / 8], rsp = ctx[0xf8 / 8];
+    uint64_t rip = ctx ? ctx[0xe0 / 8] : 0, rsp = ctx ? ctx[0xf8 / 8] : 0;
     bool executable_rip = rip>=EBOOT_BASE && rip<EBOOT_END;
     snprintf(buf, sizeof(buf),
              "\n*** PlexStation crashed: signal %d, fault address %p, thread %p\n"
              "*** raw rip %#lx (fixed-base subtraction %#lx; not a validated module offset) rsp %#lx\n",
-             sig, info->si_addr, (void *)pthread_self(), (unsigned long)rip,
+             sig, info ? info->si_addr : NULL, (void *)pthread_self(), (unsigned long)rip,
              (unsigned long)(rip - EBOOT_BASE), (unsigned long)rsp);
     write_str(buf);
     snprintf(buf,sizeof(buf),"*** signal code %d (no syscall identification inferred)\n",info ? info->si_code : 0);
@@ -113,18 +117,20 @@ static void crash_handler(int sig, siginfo_t *info, void *context)
     else
         snprintf(toast,sizeof(toast),"PlexStation crashed: signal %d outside assumed eboot range; see crash log",sig);
     write_str(executable_rip ? "*** RIP is in assumed eboot range; confirm load base before symbolizing\n" : "*** RIP is OUTSIDE assumed eboot range; do not symbolize subtraction as eboot\n");
-    plat_notify(toast);
+    /* Avoid notification runtime calls while handling a native fatal signal. */
+    (void)toast;
     // Raw stack scanning can recursively fault; preserve register/phase evidence
     // instead of dereferencing an unvalidated stack address in a signal handler.
     /* The log lines still in the buffer (the last 200 ms), after the report:
      * the report is already safe if this blocks (a crash inside stdio). */
     write_str("*** log lines still buffered at the crash:\n");
-    fflush(stderr);
+    snprintf(buf,sizeof(buf),"*** last Home checkpoint H%02u; original signal is recorded above\n",plex_home_last_checkpoint());write_str(buf);
+    /* Buffered stdio may hold a lock on the faulting thread; direct writes above survive. */
     if (crash_fd >= 0)
         fsync(crash_fd);
     if (crash_file_fd >= 0)
         fsync(crash_file_fd);
-    _exit(128 + sig);
+    crash_terminate(128+sig,_exit,exit_returned);
 }
 
 /* " name " of each import left unresolved: optional calls check it first. */
@@ -248,7 +254,8 @@ static void report_unresolved_imports(void)
     if (missing) {
         char toast[512];
         snprintf(toast, sizeof(toast), "VLC-PS5: %d unresolved imports: %s", missing, list);
-        plat_notify(toast);
+        /* Avoid notification runtime calls while handling a native fatal signal. */
+    (void)toast;
     }
 }
 

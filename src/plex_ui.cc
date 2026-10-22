@@ -214,17 +214,22 @@ void load(const std::string &path, const std::string &title, bool push = true, i
 }
 void connect_server(const Server &s) {
     if(job!=None) return;
+    home_reset();home_checkpoint(3,"server selection accepted");
     connection_target=s; next_attempts.clear(); next_base.clear(); manual_tested=false;
     connection_diagnostics=false; reconnect_screen=true; discard_connection=false;
     message.clear(); bool http=allow_http;
     submit(Select,[s,http]{return client->select(s,http,next_base,&next_attempts);});
 }
 void connected(const Json &data) {
+    home_checkpoint(6,"authenticated libraries received",0,items(data,false).size());
+    home_active=false;
     reset_cloud();
     clear_next();audio_reset();
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
+    fprintf(stderr,"home:init persistent progress begin\n");fflush(stderr);
     load_outbox();
+    fprintf(stderr,"home:init persistent progress completed\n");fflush(stderr);
     artwork->clear(); history.clear(); detail={}; playing={};
     progress_pending=false; progress={};
     available.clear(); settings=false; settings_page=0; in_detail=false; sidebar=false; focus=0; nav=0;
@@ -233,12 +238,14 @@ void connected(const Json &data) {
     page_start=0; page_total=listing.size();
     home_sections=listing; home_screen=true;feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_vertical=0;
     if(listing.empty()) message="Connected; no accessible libraries were returned.";
-    load_home();
+    if(diagnostic(SafeHome)){home_screen=false;message="Safe startup: automatic Home loading paused. Options opens Developer Options.";}
+    else load_home();
 }
 void load_home() {
     if(job!=None || base.empty())return;
     search_screen=false;home_title="Home";
     auto b=base,t=server_token;auto sections=home_sections;
+    home_active=true;home_draw_ready=false;home_checkpoint(7,"Home hubs requested");
     auto epoch=++feed_generation;feed_error.clear();home_screen=true;
     submit(HomeFeed,[b,t,sections,epoch] {return home_feed(*client,b,t,sections,[epoch]{return feed_generation.load()==epoch;});});
 }
@@ -248,6 +255,7 @@ void refresh() {
     submit(Resources, [token] { return client->resources(token); });
 }
 void clear_profile() {
+    home_active=false;home_draw_ready=false;
     reset_cloud();
     clear_next();
     retire_stream();
@@ -270,6 +278,7 @@ void show_profiles() {
     if(home_profiles.empty() && home_enabled) {auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
 }
 void activate_profile() {
+    home_checkpoint(2,"active profile identity validated");
     active_profile=requested_profile;
     account_id=profile_scope(primary_id,active_profile);
     // Only the validated original owner may inherit its pre-profile preference.
@@ -287,6 +296,7 @@ void activate_profile() {
     account_loading=true;refresh();
 }
 void choose_profile() {
+    home_checkpoint(1,"profile selection received");
     if(job!=None)return;
     if(requested_profile.protected_user && !valid_pin(pin_digits)) {profile_pin=true;pin_focus=0;erase_pin();return;}
     if(!home_enabled) {profile_token=account;activate_profile();return;}
@@ -418,9 +428,11 @@ void finish_job() {
         return;
     }
     if(done==HomeFeed) {
+        home_checkpoint(8,"Home hub response ready",result?0:(result.status?result.status:-1));
         if(!result) {feed_error=result.error;return;}
         feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);
         grid_checkpoint=false;feed_focus=0;feed_vertical=0;home_screen=true;
+        home_checkpoint(9,"Home UI populated",0,feed_rows.size());
         auto warnings=result.data.find("warnings");
         if(warnings!=result.data.end() && warnings->is_array() && !warnings->empty() && (*warnings)[0].is_string())feed_error=(*warnings)[0].get<std::string>();
         return;
@@ -607,7 +619,7 @@ bool custom_focus_valid() {
     if(video)return !tracks || (track_focus>=0 && track_focus<2);
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 11);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 12 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 11);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?5:3);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
@@ -681,6 +693,7 @@ void poster(float x,float y,float width,float height,const Item &item,bool selec
     }
 }
 void home_frame(uint32_t hit,float dt) {
+    home_draw_ready=true;
     if(!feed_rows.empty() && !grid_checkpoint) {checkpoint(15,"first Home carousel",feed_rows.size());grid_checkpoint=true;}
     if(feed_rows.empty()) {
         draw_text(390,250,32,search_screen?"No search results":job==HomeFeed ? "Loading your Home..." : "No Home items are available");
@@ -891,7 +904,8 @@ bool ui_init() {
     allow_http = pref_int("plex_allow_http", 0) != 0;
     // A new schema starts hidden even if an older diagnostic build opted in.
     controller_overlay = pref_int("plex_controller_overlay_v2",0)!=0;
-    diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & 63u;
+    diagnostic_flags=static_cast<unsigned>(pref_int("plex_developer_flags_v1",0)) & 255u;
+    if(pref_int("plex_safe_home_v1",0))diagnostic_flags.fetch_or(SafeHome);
     account_id.clear();primary_id.clear();profile_token.clear();profile_screen=false;
     auto &io = ImGui::GetIO();
     auto font = std::string(plat_data_dir()) + "/fonts/Inter-Regular.ttf";
@@ -1165,7 +1179,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(hit & PAD_CIRCLE)library_tools=false;
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
         if(hit & PAD_DOWN)tools_focus=std::min(9,tools_focus+1);
-        int first=std::max(0,tools_focus-6);for(int i=first;i<10 && i<first+7;++i)row(i,tools_focus,210+(i-first)*90,labels[i]);
+        int first=std::max(0,tools_focus-6);for(int i=first;i<12 && i<first+7;++i)row(i,tools_focus,210+(i-first)*90,labels[i]);
         if((hit & PAD_CROSS) && job==None) {
             library_tools=false;
             if(tools_focus==5){editor=1;edit_text.clear();edit_focus=0;}
@@ -1261,19 +1275,21 @@ void ui_frame(const PadState &pad, float dt) {
             return;
         }
         if(settings_page==2) {
-            const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information"};
+            const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information","Safe Startup (skip automatic Home)","Detailed Home Initialization Tracing"};
             if(hit & PAD_UP) focus=std::max(0,focus-1);
-            if(hit & PAD_DOWN) focus=std::min(9,focus+1);
+            if(hit & PAD_DOWN) focus=std::min(11,focus+1);
             int first=std::max(0,focus-6);
-            for(int i=first;i<10 && i<first+7;++i) {
-                bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : false;
-                row(i,focus,190+(i-first)*90,std::string(labels[i])+(i<=6 ? (enabled ? ": On" : ": Off") : ""));
+            for(int i=first;i<12 && i<first+7;++i) {
+                bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : i==10 ? plex::diagnostic(SafeHome) : i==11 ? plex::diagnostic(DetailedHome) : false;
+                row(i,focus,190+(i-first)*90,std::string(labels[i])+(i<=6 || i>=10 ? (enabled ? ": On" : ": Off") : ""));
             }
             if(hit & PAD_CROSS) {
                 if(focus==0) {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay_v2",controller_overlay?1:0);}
                 else if(focus<=6) {diagnostic_flags.fetch_xor(1u<<(focus-1));pref_set("plex_developer_flags_v1",static_cast<int>(diagnostic_flags.load()));artwork->clear();diagnostic_lines=0;}
                 else if(focus==7) {connection_diagnostics=true;diagnostic_focus=0;}
                 else if(focus==8) message="Library CP01-CP15; artwork cached="+std::to_string(artwork->cached())+" worker="+(artwork->busy()?"busy":"idle")+"; logs: plexstation.log / vlc-crash.txt.";
+                else if(focus==10){diagnostic_flags.fetch_xor(SafeHome);pref_set("plex_safe_home_v1",plex::diagnostic(SafeHome)?1:0);}
+                else if(focus==11){diagnostic_flags.fetch_xor(DetailedHome);pref_set("plex_developer_flags_v1",static_cast<int>(diagnostic_flags.load()));}
                 else message=std::string("PlexStation ")+PLEX_BUILD_COMMIT+"; PPSA85301; native VLC; hardware verification pending";
             }
             return;
@@ -1443,3 +1459,6 @@ void ui_shutdown() {
     if(artwork){artwork->clear();artwork->update();artwork.reset();}
     client.reset();plat_pad_set_private(false);
 }
+
+extern "C" unsigned plex_home_last_checkpoint(){return plex::home_last.load();}
+void ui_frame_presented(){if(plex::home_draw_ready.exchange(false))plex::home_checkpoint(13,"Home frame submitted; display acceptance pending");}

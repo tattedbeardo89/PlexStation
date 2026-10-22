@@ -9,3 +9,5 @@ python3 "$repo/tests/test_symbolization.py"
 python3 "$repo/tests/test_debug_collection.py"
 
 python3 "$repo/tests/test_baseline_archive.py"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I"$repo/src" "$repo/tests/crash_exit_tests.c" -o "$repo/build/crash-exit-tests"
+"$repo/build/crash-exit-tests"
