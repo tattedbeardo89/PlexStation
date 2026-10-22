@@ -265,11 +265,16 @@ Result Client::call(const std::string &method, const std::string &base, const st
     }
     if (r.body.empty())
         return {Json::object(), "", r.status};
+    const char *parse_operation=library_request?"library":path.find("/hubs")!=std::string::npos?"home-hubs":path.find("/home/users")!=std::string::npos?"home-profiles":path.find("/metadata")!=std::string::npos?"media-metadata":path.find("/resources")!=std::string::npos?"server-discovery":path.find("/pins")!=std::string::npos?"account-link":"api";
     if(library_request) checkpoint(6,"json parse start");
     bool too_deep=false;
+    fprintf(stderr,"json: operation=%s bytes=%zu parse=begin\n", parse_operation,r.body.size());
+    fflush(stderr);
     auto j = Json::parse(r.body,[&](int depth,Json::parse_event_t,Json &) {
         if(depth>48) {too_deep=true; return false;} return true;
     }, false);
+    fprintf(stderr,"json: operation=%s parse=%s\n",parse_operation,too_deep?"depth-limit":j.is_discarded()?"invalid-json":"complete");
+    fflush(stderr);
     if(too_deep) return {{},"Server metadata nesting exceeds the safe limit",r.status};
     if (j.is_discarded())
         return {{}, path=="/identity" ? failure_message(Failure::IdentityMalformed) : "Server returned invalid JSON",

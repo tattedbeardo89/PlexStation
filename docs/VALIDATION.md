@@ -508,3 +508,14 @@ production controller/UI safe-startup, returning-exit bridge, debug collection/
 symbolization and strict source checks passed for the checkpoint A changes.
 Native/ASan workflow gates will be recorded only after actual completion.
 See SIGILL-AVATARS-THEME.md for exact hashes, instruction evidence and FTP steps.
+
+### Numeric parser first-fault follow-up (2026-10-22)
+
+Owner logs confirm f511344 SIGABRT in JSON scan_number:8661. A host fault
+injection using the original header and an empty locale decimal separator
+reproduced that exact assertion (process SIGABRT). The patched production header
+passes normal and empty-separator numeric tests with assertions enabled and
+native no-exception/no-RTTI flags. Strict native source, Home and real native
+transport checks passed locally. A new native startup fixture checks numeric
+parsing before authenticated requests. Physical PS5 acceptance remains pending;
+see SIGILL-AVATARS-THEME.md for evidence, secondary signal distinction and tests.

@@ -12,7 +12,7 @@ with zipfile.ZipFile(root/'installation/PlexStation-PPSA85301.zip') as z:
 lines=['Matching build '+commit,'Original run 39797264696','Reported raw RIP '+hex(rip),
        'Packaged eboot SHA256 '+manifest['installed_eboot_sha256'],
        'Runtime libc SHA256 '+manifest['runtime_libc_sha256'],
-       'Console executable hash/load map not supplied; all candidate mappings remain conditional.']
+       'Owner package hash matches; FTP-installed executable hash is not independently verified.']
 def run(args):
     result=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False)
     return result.stdout
@@ -23,6 +23,13 @@ for name in ['llvm-pie.elf','eboot.elf']:
     for i in range(count):
         kind,flags,_,vma,_,_,memsz,_=struct.unpack_from('<IIQQQQQQ',data,off+i*size)
         if kind==1 and flags&1:ranges.append((vma,vma+memsz))
+    if name=='llvm-pie.elf':
+        symbols=run(['llvm-nm','--defined-only',str(elf)]).splitlines()
+        matches=[int(row.split()[0],16) for row in symbols if len(row.split())>=3 and row.split()[-1]=='plat_init']
+        assert len(matches)==1
+        bias=0x4f8510-matches[0]
+        lines.append('Owner marker plat_init=0x4f8510; matching ELF plat_init='+hex(matches[0])+'; marker-derived bias='+hex(bias))
+        lines.append('Marker-derived SIGILL ELF address='+hex(rip-bias))
     lines.append(name+' executable PT_LOAD ranges: '+repr([(hex(a),hex(b)) for a,b in ranges]))
     for bias in [0,0x400000]:
         address=rip-bias

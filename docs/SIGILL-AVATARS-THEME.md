@@ -71,3 +71,52 @@ plat_init marker only; never share account files, PINs, URLs or raw responses.
 
 Original SIGILL resolution, first-fault identification and physical runtime
 acceptance remain pending. Avatar and theme checkpoints follow independent A.
+
+## Original first-fault evidence and numeric parser correction
+
+The owner subsequently retrieved BOTH original f511344 crash records: signal 6,
+raw RIP 0x8000b90c0, and the identical nlohmann/json 3.11.3 `scan_number`
+end-pointer assertion at json.hpp:8661 after authenticated library discovery.
+This supersedes the earlier signal-12 inference from exit_value alone. The
+unmatched historical SIGSYS report remains uncorrelated. The shared-module
+abort address cannot be symbolized from the application ELF. SIGILL at the
+handler's UD2 is consistent with a secondary termination failure, not evidence
+that Home itself executed a privileged instruction.
+
+The package SHA supplied by the owner matches the inspected debug manifest.
+Their runtime plat_init marker is 0x4f8510; the inspection script now records the
+matching ELF symbol and derives the load bias directly. Installed console bytes
+remain independently unverified until an FTP copy is hashed.
+
+The pinned SDK b83202be73e930050e00de0f1b4d9ec46c0391bf,
+platform/src/locale.c, explicitly documents PS5 `localeconv()->decimal_point`
+being empty while exported `strtod` accepts a dot. JSON 3.11.3 handles a null
+separator but not an empty one: its lexer inserts a NUL into decimal tokens,
+then asserts because strtod cannot consume the full buffer. Running the exact
+unmodified production header with an empty-separator locale shim reproduces
+SIGABRT and the same assertion at line 8661. This is a confirmed parser defect
+under the documented runtime behavior; a native self-test will verify the
+current console's behavior before authenticated requests.
+
+The local vendored-header change treats an empty separator like the existing
+null-separator case (dot). Assertions, overflow checks, malformed-input
+rejection, compiler/toolchain pins and TLS checks remain enabled. All production
+JSON parsing sites share this header: Client::call (Home hubs, discovery,
+profiles, metadata), account decoding, and ListeningStore loading. No parser is
+replaced. Numeric serialization round trips are included in regression coverage.
+
+`host/test-json-numeric.sh` exercises normal and empty-separator configurations
+with the native no-exceptions/no-RTTI flags, integers and unsigned limits,
+floating values, exponents, subnormal/max-double boundaries, integer overflow,
+float overflow/underflow and malformed syntax. Both variants also run under
+ASan/UBSan. `json_numeric_selftest()` runs immediately after plat_init and before
+graphics/network/authentication; only fixture results and separator category are
+logged. A failed test stops startup with a useful message rather than continuing
+into Home. Client parse begin/end diagnostics use fixed operation labels and
+byte counts, never numeric token contents, account data, URLs or response bodies.
+
+On PS5, first confirm `json: numeric selftest=pass` and review separator and dot
+conversion categories. Then test remembered-server reconnect, server-to-Home,
+Movies entry, text-only isolation and artwork-enabled browsing. Preserve the
+complete logs if a failure occurs. Host reproduction and a successful native
+build do not constitute physical crash-resolution verification.

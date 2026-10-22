@@ -23,6 +23,7 @@
 #include "ui.h"
 #include "controller.h"
 #include "plex/termination_trace.h"
+#include "plex/json_selftest.h"
 #include "network.h"
 #include "web.h"
 
@@ -61,6 +62,10 @@ static bool imgui_init()
 int main(void)
 {
     plat_init();
+    if (!plex::json_numeric_selftest()) {
+        plat_notify("PlexStation: numeric runtime self-test failed (see plexstation.log)");
+        return 1;
+    }
     std::set_terminate([] {fprintf(stderr,"fatal: C++ terminate; inspect the last library checkpoint (no exception contents logged)\n");fflush(stderr);plex::termination_trace();abort();});
     /* "start:" lines: if a run stops, the last one says how far it got. */
     fprintf(stderr, "start: PlexStation starting\n");

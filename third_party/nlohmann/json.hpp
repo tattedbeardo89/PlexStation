@@ -7516,7 +7516,10 @@ class lexer : public lexer_base<BasicJsonType>
     {
         const auto* loc = localeconv();
         JSON_ASSERT(loc != nullptr);
-        return (loc->decimal_point == nullptr) ? '.' : *(loc->decimal_point);
+        // PlexStation: PS5 localeconv reports an empty separator although strtod
+        // accepts '.'. Never insert a NUL into the numeric token buffer.
+        return (loc->decimal_point == nullptr || loc->decimal_point[0] == '\0')
+               ? '.' : *(loc->decimal_point);
     }
 
     /////////////////////

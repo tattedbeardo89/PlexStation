@@ -20,3 +20,10 @@ for kind in controller plex home home_feed audio listening streaming discovery a
   g++ "${flags[@]}" "$repo/tests/${kind}_tests.cc" "${common[@]}" "${extra[@]}" -o "$repo/build/${kind}-tests-asan"
   ASAN_OPTIONS=detect_leaks=1 "$repo/build/${kind}-tests-asan"
 done
+
+for mode in normal empty; do
+  extra=()
+  if [[ $mode == empty ]]; then extra+=(-DEMPTY_DECIMAL -Wl,--wrap=localeconv); fi
+  g++ "${flags[@]}" "${extra[@]}" "$repo/tests/json_numeric_tests.cc" -o "$repo/build/json-numeric-$mode-asan"
+  ASAN_OPTIONS=detect_leaks=1 "$repo/build/json-numeric-$mode-asan"
+done
