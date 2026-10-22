@@ -6,7 +6,7 @@ inline Result next_episode(Client &client,const std::string &base,const std::str
     if(current.type!="episode" || current.grandparent_id.empty())return {{},"Series identity unavailable; choose the next episode manually",0};
     bool found=false;std::string previous_first;
     for(int start=0;start<2000;start+=200) {
-        auto page=client.browse(base,token,"/library/metadata/"+encode(current.grandparent_id)+"/allLeaves?sort=parentIndex:asc,index:asc",start,200);
+        auto page=client.browse(base,token,"/library/metadata/"+encode(current.grandparent_id)+"/allLeaves",start,200);
         if(!page)return page;
         auto entries=items(page.data);if(entries.empty())break;
         if(entries.front().id==previous_first)return {{},"Server did not advance episode pagination",0};

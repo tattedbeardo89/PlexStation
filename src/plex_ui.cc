@@ -13,6 +13,9 @@
 #include "plex/streaming.h"
 #include "plex/episodes.h"
 #include "plex/progress_outbox.h"
+#include "plex/search.h"
+#include "plex/cloud.h"
+#include "plex/music_feed.h"
 #include "plex/auth.h"
 #include "qrcodegen/qrcodegen.h"
 #include "prefs.h"
@@ -63,7 +66,10 @@ bool controller_overlay=false;
 int settings_page=0;
 uint64_t screen_generation=0, pending_generation=0;
 bool grid_checkpoint=false;
-bool home_screen=false, library_tools=false;
+bool home_screen=false, library_tools=false, search_screen=false;
+std::string home_title="Home",search_query;int search_start=0;
+std::map<std::string,std::string> browser_filters;std::string browser_sort,filter_field;
+std::vector<std::pair<std::string,std::string>> filter_values;bool filter_picker=false;
 std::vector<Item> home_sections;
 std::vector<Hub> feed_rows;
 std::vector<int> feed_columns;
@@ -114,8 +120,9 @@ enum Job {
     Browse,
     Details,
     Timeline,
-    AudioBrowse, AudioQueueLoad, AudioResolve, AudioScrobble,
-    VideoPlan, Cleanup, NextEpisode,
+    AudioBrowse, AudioQueueLoad, AudioResolve, AudioScrobble, AudioFeed,
+    VideoPlan, Cleanup, NextEpisode, GlobalSearch, FilterValues,
+    CloudProbe,CloudList,CloudResolve,CloudChange,
     Watch
 };
 Job job = None;
@@ -132,6 +139,14 @@ void load_home();
 void activate_profile();
 void choose_profile();
 void show_profiles();
+bool cloud_available();
+void reset_cloud();
+void service_cloud();
+void request_cloud_check();
+void show_cloud(int start=0);
+void finish_cloud(int kind,const Result &result);
+void change_cloud(bool add);
+void open_media(const Item &item);
 void restore_video_preferences();
 void load_outbox();
 void record_progress(const Item &,const std::string &,int64_t);
@@ -140,6 +155,7 @@ void timeline_complete(const Result &);
 void retry_progress();
 void request_video(bool force=false);
 void service_next();
+void service_video_retry();
 void clear_next();
 void next_ready(const Result &r);
 void offer_autoplay(double now);
@@ -150,6 +166,7 @@ void retire_stream();
 void service_cleanup();
 void video_tools(uint32_t hit);
 void video_options_frame(uint32_t hit);
+void open_audio_item(const Item &item);
 void audio_reset();
 void audio_leave_browse();
 int audio_focus_state();
@@ -174,7 +191,7 @@ Progress progress;
 Item progress_item;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
                             "Watchlist", "Search", "Settings", "Music", "Audiobooks"};
-bool nav_visible(int i) {return i!=4 && (i!=7 || audio_available()) && (i!=8 || audio_available(true));}
+bool nav_visible(int i) {return (i!=4 || cloud_available()) && (i!=7 || audio_available()) && (i!=8 || audio_available(true));}
 int nav_step(int i,int direction,bool wrap=false) {
     for(int n=0;n<10;++n) {i+=direction;if(wrap)i=(i+9)%9;else i=std::clamp(i,-1,8);if(i<0 || nav_visible(i))return i;}return 0;
 }
@@ -203,6 +220,7 @@ void connect_server(const Server &s) {
     submit(Select,[s,http]{return client->select(s,http,next_base,&next_attempts);});
 }
 void connected(const Json &data) {
+    reset_cloud();
     clear_next();audio_reset();
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
@@ -219,6 +237,7 @@ void connected(const Json &data) {
 }
 void load_home() {
     if(job!=None || base.empty())return;
+    search_screen=false;home_title="Home";
     auto b=base,t=server_token;auto sections=home_sections;
     auto epoch=++feed_generation;feed_error.clear();home_screen=true;
     submit(HomeFeed,[b,t,sections,epoch] {return home_feed(*client,b,t,sections,[epoch]{return feed_generation.load()==epoch;});});
@@ -229,6 +248,7 @@ void refresh() {
     submit(Resources, [token] { return client->resources(token); });
 }
 void clear_profile() {
+    reset_cloud();
     clear_next();
     retire_stream();
     audio_reset();
@@ -290,7 +310,7 @@ void signout() {
         player_stop();
         video = false;
     }
-    clear_next();retire_stream();audio_reset();
+    reset_cloud();clear_next();retire_stream();audio_reset();
     artwork->clear();
     profile_token.clear();primary_id.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
     account.clear(); account_id.clear(); reconnect_screen=false; force_picker=false; settings_page=0;
@@ -333,12 +353,22 @@ void finish_job() {
     Job done = job;
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
-    if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve) && pending_generation!=screen_generation) return;
+    if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioFeed) && pending_generation!=screen_generation) return;
     if(done==VideoPlan){if(pending_generation==screen_generation)video_plan_ready(result);return;}
+    if(done==CloudProbe || done==CloudList || done==CloudResolve || done==CloudChange){if(pending_generation==screen_generation)finish_cloud(done,result);return;}
+    if(done==GlobalSearch){if(pending_generation==screen_generation){if(result){feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=true;page_title="Search";}else message=result.error;}return;}
+    if(done==FilterValues){
+        filter_values.clear();filter_picker=false;
+        if(!result){message=result.error;return;}
+        auto mc=result.data.find("MediaContainer");if(mc!=result.data.end() && mc->is_object()){
+            auto dirs=mc->find("Directory");if(dirs!=mc->end() && dirs->is_array())for(const auto &d:*dirs){auto key=text(d,"key"),title=text(d,"title");if(!key.empty() && key.size()<256 && !title.empty() && title.size()<256)filter_values.push_back({title,key});if(filter_values.size()==200)break;}
+        }
+        filter_picker=true;tools_focus=0;return;
+    }
     if(done==Timeline){timeline_complete(result);return;}
     if(done==Cleanup)return;
     if(done==NextEpisode){if(pending_generation==screen_generation)next_ready(result);return;}
-    if(done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioScrobble) {audio_finish(done,result);return;}
+    if(done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioScrobble || done==AudioFeed) {audio_finish(done,result);return;}
     if ((done == PinStart || done == PinPoll) && auth_request_generation != auth.generation)
         return; // A cancelled request must never authorize a later session.
     if (cancel_bootstrap && (done == ValidateAccount || done == HomeUsers || done == Resources)) {
@@ -521,6 +551,8 @@ void finish_job() {
 }
 void open_media(const Item &item) {
     if(job!=None)return;
+    if(item.type=="track" || item.type=="album" || item.type=="artist" || item.type=="playlist"){open_audio_item(item);return;}
+    if(item.type=="collection"){load("/library/collections/"+encode(item.id)+"/children",item.title);return;}
     if(item.type=="movie" || item.type=="episode" || item.type=="show" || item.type=="season") {
         details_target=item.id;
         auto b=base,t=server_token,path="/library/metadata/"+encode(item.id);
@@ -531,8 +563,10 @@ void open_item() {
     if (job != None || listing.empty() || focus<0 || focus>=static_cast<int>(listing.size()))
         return;
     Item item = listing[focus];
+    if(page_path=="cloud-watchlist"){auto b=base,t=server_token;submit(CloudResolve,[b,t,item]{return resolve_cloud(*client,b,t,item);});return;}
     if (page_path == "/library/sections") {
         diagnostic_lines=0; checkpoint(1,"library selection");
+        browser_filters.clear();browser_sort.clear();
         load("/library/sections/" + encode(item.id) + "/all", item.title);
     } else if(item.type=="show" || item.type=="season" || item.type=="movie" || item.type=="episode")open_media(item);
     else message="This media type is not supported by the current playback adapter.";
@@ -575,7 +609,7 @@ bool custom_focus_valid() {
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
     if(settings)return focus>=0 && focus<(settings_page==2 ? 10 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 11);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
-    if(in_detail)return focus>=0 && focus<3;
+    if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?5:3);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
     if(home_screen) {
         if(feed_rows.empty())return true; // the refresh action owns focus
@@ -649,11 +683,11 @@ void poster(float x,float y,float width,float height,const Item &item,bool selec
 void home_frame(uint32_t hit,float dt) {
     if(!feed_rows.empty() && !grid_checkpoint) {checkpoint(15,"first Home carousel",feed_rows.size());grid_checkpoint=true;}
     if(feed_rows.empty()) {
-        draw_text(390,250,32,job==HomeFeed ? "Loading your Home..." : "No Home items are available");
-        draw_text(390,330,25,"Open Movies or TV Shows to browse your libraries. Cross: refresh Home");
+        draw_text(390,250,32,search_screen?"No search results":job==HomeFeed ? "Loading your Home..." : "No Home items are available");
+        draw_text(390,330,25,search_screen?"Cross: refine search • L2/R2: search pages":"Open Movies or TV Shows to browse your libraries. Cross: refresh Home");
         if(!feed_error.empty())draw_text(390,420,23,feed_error);
         if(hit & PAD_LEFT)sidebar=true;
-        if((hit & PAD_CROSS) && job==None)load_home();
+        if((hit & PAD_CROSS) && job==None){if(search_screen){editor=1;edit_text=search_query;edit_focus=0;}else load_home();}
         return;
     }
     if(feed_columns.size()!=feed_rows.size())feed_columns.assign(feed_rows.size(),0);
@@ -701,6 +735,7 @@ void home_frame(uint32_t hit,float dt) {
 #include "plex_video_ui.h"
 #include "plex_audio_ui.h"
 #include "plex_progress_ui.h"
+#include "plex_cloud_ui.h"
 
 void profile_screen_frame(uint32_t hit) {
     rect(0,0,1920,1080,IM_COL32(12,13,17,255));
@@ -877,9 +912,11 @@ void ui_frame(const PadState &pad, float dt) {
     uint32_t hit = controller.update(pad, dt);
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
+    service_video_retry();
     retry_progress();
     service_cleanup();
     service_next();
+    service_cloud();
     audio_tick(now);
     auth.tick(now);
     if (auth.poll_due(now) && job == None) {
@@ -944,7 +981,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (video && player_ended()) {
             if (player_failed())
                 message = "Playback failed; check decoder and server connectivity";
-            if(player_failed() && !stream_fallback){stream_fallback=true;player_stop();video=false;detail=playing;request_video(true);}
+            if(player_failed() && !stream_fallback){stream_fallback=true;player_stop();video=false;detail=playing;video_retry_pending=true;}
             else {bool ended_well=!player_failed();stop();if(ended_well)offer_autoplay(now);}
         }
         if (video &&
@@ -995,7 +1032,7 @@ void ui_frame(const PadState &pad, float dt) {
         else {draw->AddRect({44*scale,(y-12)*scale},{66*scale,(y+12)*scale},color,3*scale,0,2*scale);for(int line=0;line<std::min(i,3);++line)draw->AddLine({48*scale,(y-6+line*6)*scale},{62*scale,(y-6+line*6)*scale},color,scale);}
         draw_text(83,166+slot*78,28,navigation[i]);
     }
-    draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? "Home" : page_title);
+    draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? (search_screen?"Search":home_title) : page_title);
     if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{270*scale,105*scale},{306*scale,141*scale});}}
     if (job != None)
         draw_text(390, 135, 26, "Loading…");
@@ -1085,7 +1122,8 @@ void ui_frame(const PadState &pad, float dt) {
         if ((hit & PAD_TRIANGLE) && job == None) {
             if (editor == 3) {audio_load("/search?type=10&query="+encode(edit_text),"Music Search");editor=0;}
             else if (editor == 1) {
-                load("/search?query=" + encode(edit_text), "Search");
+                search_query=edit_text;search_start=0;auto b=base,t=server_token,q=edit_text;
+                submit(GlobalSearch,[b,t,q]{return global_search(*client,b,t,q);});
                 editor = 0;
             } else {
                 manual_candidate=manual_endpoint(edit_text);
@@ -1113,16 +1151,34 @@ void ui_frame(const PadState &pad, float dt) {
         return;
     }
     if(in_detail && (hit & PAD_SQUARE)) {full_description=true;description_scroll=0;return;}
+    if(filter_picker){
+        if(hit & PAD_CIRCLE){filter_picker=false;return;}
+        if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
+        if(hit & PAD_DOWN)tools_focus=std::min(std::max(0,static_cast<int>(filter_values.size())-1),tools_focus+1);
+        int first=std::max(0,tools_focus-6);for(int n=first;n<static_cast<int>(filter_values.size()) && n<first+7;++n)row(n,tools_focus,210+(n-first)*90,filter_values[n].first);
+        if(filter_values.empty())draw_text(410,280,28,"No filter values supplied by this library");
+        if((hit & PAD_CROSS) && !filter_values.empty()){browser_filters[filter_field]=filter_values[tools_focus].second;filter_picker=false;load(library_query(page_path,browser_filters,browser_sort),page_title,false);}
+        return;
+    }
     if(library_tools) {
-        const char *labels[]={"Title A–Z","Recently Added","Release Date (newest)","Unwatched Only","All Items","Search"};
+        const char *labels[]={"Title A–Z","Recently Added","Release Date (newest)","Unwatched Only","All Items","Search","Genre","Release Year","Rating (highest)","Duration (shortest)"};
         if(hit & PAD_CIRCLE)library_tools=false;
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
-        if(hit & PAD_DOWN)tools_focus=std::min(5,tools_focus+1);
-        for(int i=0;i<6;++i)row(i,tools_focus,210+i*100,labels[i]);
+        if(hit & PAD_DOWN)tools_focus=std::min(9,tools_focus+1);
+        int first=std::max(0,tools_focus-6);for(int i=first;i<10 && i<first+7;++i)row(i,tools_focus,210+(i-first)*90,labels[i]);
         if((hit & PAD_CROSS) && job==None) {
             library_tools=false;
             if(tools_focus==5){editor=1;edit_text.clear();edit_focus=0;}
-            else {const char *queries[]={"?sort=titleSort:asc","?sort=addedAt:desc","?sort=originallyAvailableAt:desc","?unwatched=1",""};load(page_path.substr(0,page_path.find('?'))+queries[tools_focus],page_title,false);}
+            else if(tools_focus==6 || tools_focus==7){
+                auto end=page_path.find("/all");if(end==std::string::npos || page_path.rfind("/library/sections/",0)!=0){message="Open a library to use its server filter values";return;}
+                filter_field=tools_focus==6?"genre":"year";auto path=page_path.substr(0,end)+"/"+filter_field;auto b=base,t=server_token;
+                submit(FilterValues,[b,t,path]{return client->call("GET",b,path,t);});
+            } else {
+                if(tools_focus==3)browser_filters["unwatched"]="1";
+                else if(tools_focus==4)browser_filters.clear();
+                else {const char *sorts[]={"titleSort:asc","addedAt:desc","originallyAvailableAt:desc"};browser_sort=tools_focus<3?sorts[tools_focus]:tools_focus==8?"rating:desc":"duration:asc";}
+                load(library_query(page_path,browser_filters,browser_sort),page_title,false);
+            }
         }
         return;
     }
@@ -1152,6 +1208,7 @@ void ui_frame(const PadState &pad, float dt) {
         hit |= PAD_CROSS; // Same section activation as the sidebar.
     }
     if (hit & PAD_CIRCLE) {
+        video_retry_pending=false;
         ++screen_generation; ++feed_generation;
         if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : settings_page==3 ? 8 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
         else if (in_detail) { in_detail = false; sidebar = false; }
@@ -1297,8 +1354,10 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
         if (hit & PAD_DOWN)
-            focus = std::min(2, focus + 1);
+            focus = std::min(cloud_available() && !cloud_id(detail).empty()?4:2, focus + 1);
+        if(cloud_available() && !cloud_id(detail).empty()){row(3,focus,885,"Add to Plex Cloud Watchlist");row(4,focus,965,"Remove from Plex Cloud Watchlist");}
         if ((hit & PAD_CROSS) && job == None) {
+            if(focus==3 || focus==4){change_cloud(focus==3);return;}
             if (focus == 0) {
                 if(detail.type=="show" || detail.type=="season")load("/library/metadata/"+encode(detail.id)+"/children",detail.title);
                 else play();
@@ -1313,7 +1372,10 @@ void ui_frame(const PadState &pad, float dt) {
                 submit(Watch, [b, t, i] { return client->watched(b, t, i, !i.watched); });
             }
         }
-    } else if(home_screen) {home_frame(hit,dt);}
+    } else if(home_screen) {
+        if(search_screen && (hit & (PAD_L2|PAD_R2)) && job==None){search_start=std::max(0,search_start+((hit & PAD_R2)?12:-12));auto b=base,t=server_token,q=search_query;auto start=search_start;submit(GlobalSearch,[b,t,q,start]{return global_search(*client,b,t,q,start);});}
+        home_frame(hit,dt);
+    }
     else {
         if (!sidebar && (hit & PAD_UP))
             focus = std::max(0, focus - (grid ? 5 : 1));
@@ -1342,6 +1404,7 @@ void ui_frame(const PadState &pad, float dt) {
         // Preserve the existing sort command, freeing R1 for section navigation.
         if ((hit & PAD_SQUARE) && !page_path.empty())
             {library_tools=true;tools_focus=0;}
+        if(page_path=="cloud-watchlist"){if((hit & PAD_R2) && page_start+60<page_total)show_cloud(page_start+60);if((hit & PAD_L2) && page_start>=60)show_cloud(page_start-60);return;}
         if ((hit & PAD_R2) && static_cast<int64_t>(page_start) + (plex::diagnostic(TenItems)?10:60) < page_total)
             load(page_path, page_title, false, page_start + (plex::diagnostic(TenItems)?10:60));
         if ((hit & PAD_L2) && page_start >= (plex::diagnostic(TenItems)?10:60))

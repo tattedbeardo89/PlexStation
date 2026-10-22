@@ -47,7 +47,7 @@ struct Item {
     Json media;
     std::string series, content_rating, released;
     std::vector<std::string> genres, cast;
-    std::string artist, album, parent_id, grandparent_id;
+    std::string artist, album, parent_id, grandparent_id, section_id, guid;
     int disc=0, track=0;
     int64_t added=0, last_played=0;
 };

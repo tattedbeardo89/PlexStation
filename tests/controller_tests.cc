@@ -384,7 +384,7 @@ int main() {
     },device);
     auto audio_drain=[&] {for(int n=0;n<20;++n){frame();if(job!=None){pending.wait();finish_job();}if(!audio.start_pending && !progress_pending && job==None)return;}assert(false);};
     audio_home();assert(audio.screen && audio.entries.size()==1 && !video);
-    press(PAD_CROSS);assert(audio.entries.size()==10);
+    press(PAD_CROSS);assert(audio.entries.size()==11);
     Item song;song.id="101";song.type="track";song.title="Song";
     audio_queue_load(song);audio_drain();
     assert(audio.active && !video && audio.now_playing && last_opened_url.find("child-pms")!=std::string::npos);
@@ -394,7 +394,7 @@ int main() {
     press(PAD_TOUCHPAD);assert(audio.now_playing);
     // Designation is profile/server scoped and never changes PMS metadata.
     audio_settings_frame(PAD_CROSS);assert(audio_available(true) && !audio_available());
-    audio_home(true);audio_queue_load(song);audio_drain();
+    audio_home(true);audio_drain();audio_queue_load(song);audio_drain();
     assert(audio.playback_books && audio.active && !video);
     paused=false;audio.focus=8;press(PAD_CROSS);assert(test_rate==1.10f);
     position=70000;audio.focus=12;press(PAD_CROSS);assert(position==50000);
@@ -402,7 +402,7 @@ int main() {
     clock_now=audio.sleep.deadline+1;frame();assert(paused && audio.sleep.deadline==0);
     position=45000;book_save();auto saved=listening.get(audio_scope(),audio.book.id);assert(number(saved,"position")==45000);
     auto old_scope=audio_scope();account_id="other-profile";assert(listening.get(audio_scope(),audio.book.id).empty());assert(!audio_available(true));account_id="owner/profile:child";
-    assert(audio_scope()==old_scope);audio_drain();audio_reset();audio_home(true);audio_queue_load(song);audio_drain();assert(last_opened_start==45000);
+    assert(audio_scope()==old_scope);audio_drain();audio_reset();audio_home(true);audio_drain();audio_queue_load(song);audio_drain();assert(last_opened_start==45000);
     clear_profile();assert(!audio.active && !audio.queue.current() && !audio.screen);
     drain();
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);

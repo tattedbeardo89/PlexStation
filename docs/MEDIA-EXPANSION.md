@@ -188,3 +188,64 @@ Inspected Python-PlexAPI commit `dea7cad9227ec976fa93c363c43c01b3cee305af`,
 plexapi/base.py and myplex.py for stream parameters and cloud Watchlist semantics.
 These references are source evidence, not live protocol verification against
 the owner's server. No Plex credentials or live server were available here.
+
+## Checkpoint D implementation — discovery and UI integration
+
+Supplemental Home rows aggregate all accessible matching movie/TV libraries up
+to a documented safe cap of 32 sections/category; server-provided aggregate hubs
+remain preferred. Stable ratingKey deduplication retains distinct editions with
+different IDs. Only the best 12 bounded normalized candidates remain in memory.
+Audio queues likewise retain bounded identity/display/progress fields; playback
+versions/streams are resolved afresh for each track instead of storing complete
+Media trees for 2000 tracks.
+
+Global Search requests real PMS search hubs, grouped into nonempty media types,
+including artists/albums/tracks/collections. Audio results route to native audio
+screens; known section IDs respect audiobook designation. Search uses async work,
+stale-result rejection and paged requests. PMS versions may not implement the
+same per-hub pagination; refine the query if paging does not advance. Audiobooks
+are Plex music metadata; separate author/book type classification is not guessed
+when the response lacks library identity. Cloud-wide catalog search is not added.
+
+Library Square menu adds actual server-supplied genre/year choices, rating and
+duration sorts, while preserving title/added/release, unwatched/all and Search.
+PMS errors remain explicit. Music retains album/artist/track/genre browsing and
+search; comprehensive type-specific filter combinations and normalized audiobook
+narrator/series filters remain incomplete.
+
+Music/Audiobook libraries also offer a Home shelf: actual recent tracks/albums/
+artists, permitted playlists/favorites, and local Continue Listening for books.
+Empty/unsupported content rows are omitted. Existing carousels/artwork/focus are
+reused. Music browsing retains a compact Now Playing entry and Touchpad shortcut.
+Album menu Play/Shuffle uses the current parent album, not just the focused track;
+track listings display disc/track/duration and loaded album duration. Artist
+biography is wrapped when present. Playlist order and duplicates remain intact.
+
+### Actual cloud Watchlist, conditionally available
+
+Settings → Playback / Quality / Subtitles → Check Plex Cloud Watchlist access
+uses the **active validated profile token** against discover.provider.plex.tv.
+Only a successful provider MediaContainer response enables Watchlist navigation.
+Managed profiles remain disabled pending provider isolation acceptance; no owner
+fallback is used. Primary credentials are never substituted for denied access.
+Reading/paging and explicit Add/Remove detail actions use the real cloud API.
+Mutations require an actual `plex://movie/...` or `plex://show/...` cloud GUID;
+local ratingKeys are not mislabeled as cloud IDs. Provider 401/403/unsupported
+responses are explicit limitations, not a fabricated local list.
+
+Cloud items resolve by Plex GUID through the freshly authorized selected PMS
+before local details/playback; unavailable items show a useful error. Add/Remove
+are explicit user actions. Actual provider availability, GUID mapping, profile
+attribution and writes are **not live-verified**. Local playlists/collections are
+separate features and are never presented as Plex Cloud Watchlist.
+
+### Intermediate CI limitation and corrected fixture
+
+Audiobook run 39793484467 at 4fe5b10 failed its sanitizer controller gate before
+native compilation. The fixture issued a book-play command while a previous
+track timeline still owned the async worker; under ASan it was correctly deferred.
+The fixture now drains prior work before issuing that command. No failed run is
+presented as a published installation. Local ASan/UBSan subsequently passed all
+nine suites. Common instrumented objects are compiled once without dropping any
+instrumentation, and controller tests run first to expose async fixture issues
+early. Combined native checkpoint results are recorded after actual completion.

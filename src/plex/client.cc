@@ -86,19 +86,21 @@ std::vector<Item> items(const Json &j,bool include_media) {
             for(const auto &tag:*list) {auto label=display_text(text(tag,"tag"),80);if(!label.empty())out.push_back(label);if(out.size()==12)break;}
         };
         tags("Genre",x.genres);tags("Role",x.cast);
-        x.thumb = text(v, "thumb");
-        x.art = text(v, "art");
+        x.thumb = display_text(text(v, "thumb"),4096);
+        x.art = display_text(text(v, "art"),4096);
         x.year = static_cast<int>(std::clamp<int64_t>(number(v,"year"),0,9999));
         x.duration = std::max<int64_t>(0,number(v,"duration"));
         x.offset = std::max<int64_t>(0,number(v,"viewOffset"));
         x.watched = number(v, "viewCount") > 0;
         x.artist=display_text(text(v,"grandparentTitle",text(v,"originalTitle")),256);
         x.album=display_text(text(v,"parentTitle"),256);
-        x.parent_id=text(v,"parentRatingKey");x.grandparent_id=text(v,"grandparentRatingKey");
+        x.section_id=display_text(text(v,"librarySectionID"),128);x.guid=display_text(text(v,"guid"),256);
+        if(x.guid.rfind("plex://",0)!=0){auto guids=v.find("Guid");if(guids!=v.end() && guids->is_array())for(const auto &g:*guids){auto id=text(g,"id");if(id.rfind("plex://",0)==0){x.guid=display_text(id,256);break;}}}
+        x.parent_id=display_text(text(v,"parentRatingKey"),128);x.grandparent_id=display_text(text(v,"grandparentRatingKey"),128);
         x.disc=static_cast<int>(std::clamp<int64_t>(number(v,"parentIndex"),0,10000));
         x.track=static_cast<int>(std::clamp<int64_t>(number(v,"index"),0,100000));
         x.added=std::max<int64_t>(0,number(v,"addedAt"));x.last_played=std::max<int64_t>(0,number(v,"lastViewedAt"));
-        if(x.thumb.empty())x.thumb=text(v,"parentThumb",text(v,"grandparentThumb"));
+        if(x.thumb.empty())x.thumb=display_text(text(v,"parentThumb",text(v,"grandparentThumb")),4096);
         x.season = number(v, "parentIndex");
         x.episode = number(v, "index");
         if (include_media && v.contains("Media") && v["Media"].is_array()) {

@@ -26,16 +26,13 @@ inline Result audio_listing(Client &c,const std::string &b,const std::string &t,
     for(int start=0;start<2000;start+=200) {
         if(!current())return {{},"Audio request cancelled",0};
         auto r=c.browse(b,t,path,start,200);if(!r)return r;
-        auto list=items(r.data,true);const auto &mc=r.data["MediaContainer"];
+        auto list=items(r.data,false);const auto &mc=r.data["MediaContainer"];
         auto total=number(mc,"totalSize",number(mc,"size",list.size()));
         if(total>2000 && complete)return {{},"Queue exceeds safe 2000-track limit; select a smaller album/playlist",0};
-        // Keep original bounded metadata including media; UI extraction remains typed.
-        const char *field=mc.contains("Metadata")?"Metadata":"Directory";
-        auto raw=mc.find(field);if(raw!=mc.end() && raw->is_array())for(const auto &v:*raw) {
-            auto id=text(v,"ratingKey",text(v,"key"));
-            // Playlist duplicates are intentional and must retain their position.
+        // Queues keep only bounded display/identity/progress data. Resolve each track's media on demand.
+        for(const auto &i:list) {
             if(metadata.size()>=2000)break;
-            if(complete || seen.insert(id).second)metadata.push_back(v);
+            if(complete || seen.insert(i.id).second)metadata.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"grandparentTitle",i.artist},{"parentTitle",i.album},{"parentRatingKey",i.parent_id},{"grandparentRatingKey",i.grandparent_id},{"parentIndex",i.disc},{"index",i.track},{"duration",i.duration},{"viewOffset",i.offset},{"lastViewedAt",i.last_played},{"thumb",i.thumb}});
         }
         if(!complete || start+static_cast<int>(list.size())>=total || list.empty())
             return {Json{{"MediaContainer",{{"Metadata",std::move(metadata)},{"totalSize",total}}}},"",200};

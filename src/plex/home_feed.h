@@ -4,6 +4,7 @@
 #include "home.h"
 #include <algorithm>
 #include <cctype>
+#include <set>
 namespace plex {
 struct Hub {std::string id,title;bool continuing=false;std::vector<Item> entries;};
 inline std::vector<Hub> home_rows(const Json &data) {
@@ -62,17 +63,32 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
         }
     }
     auto has=[&](const std::string &part) {for(const auto &r:rows){auto id=text(r,"id");std::transform(id.begin(),id.end(),id.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});if(id.find(part)!=std::string::npos)return true;}return false;};
-    std::string movie,show;
-    for(const auto &s:sections){if(s.type=="movie" && movie.empty())movie=s.id;if(s.type=="show" && show.empty())show=s.id;}
     auto add=[&](const std::string &id,const std::string &title,const std::string &path) {
         if(rows.size()>=12 || !current())return;
         auto r=get(path);if(r)row(id,title,r.data);
     };
-    if(!movie.empty()) {
-        if(!has("recentlyaddedmovies"))add("recentlyAddedMovies","Recently Added Movies","/library/sections/"+encode(movie)+"/recentlyAdded?type=1&X-Plex-Container-Size=12");
-        if(!has("recentlyreleased"))add("recentlyReleasedMovies","Recently Released Movies","/library/sections/"+encode(movie)+"/all?type=1&sort=originallyAvailableAt:desc&X-Plex-Container-Size=12");
-    }
-    if(!show.empty() && !has("recentlyaddedtv"))add("recentlyAddedTV","Recently Added TV","/library/sections/"+encode(show)+"/recentlyAdded?type=4&X-Plex-Container-Size=12");
+    auto aggregate=[&](const std::string &id,const std::string &title,const std::string &type,const std::string &suffix,bool released=false){
+        Json merged=Json::array();std::set<std::string> seen;int queried=0;
+        for(const auto &section:sections) {
+            if(section.type!=type || !current())continue;
+            if(++queried>32){warnings.push_back("Supplemental Home aggregation capped at 32 sections per category");break;}
+            auto response=get("/library/sections/"+encode(section.id)+suffix+"&X-Plex-Container-Size=12");if(!response)continue;
+            auto mc=response.data.find("MediaContainer");if(mc==response.data.end() || !mc->is_object())continue;
+            int count=0;for(const auto &i:items(response.data,false)){
+                if(++count>12)break;
+                if(!seen.insert(i.id).second)continue;
+                merged.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"addedAt",i.added},{"originallyAvailableAt",i.released}});
+            }
+            std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
+            if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
+        }
+        std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
+        if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
+        row(id,title,Json{{"MediaContainer",{{"Metadata",std::move(merged)}}}});
+    };
+    if(!has("recentlyaddedmovies"))aggregate("recentlyAddedMovies","Recently Added Movies","movie","/recentlyAdded?type=1");
+    if(!has("recentlyreleased"))aggregate("recentlyReleasedMovies","Recently Released Movies","movie","/all?type=1&sort=originallyAvailableAt:desc",true);
+    if(!has("recentlyaddedtv"))aggregate("recentlyAddedTV","Recently Added TV","show","/recentlyAdded?type=4");
     if(!has("ondeck"))add("onDeck","On Deck / Next Episodes","/library/onDeck?X-Plex-Container-Size=12");
     if(!current())return {{},"Home loading cancelled",0};
     for(auto &row:extra_rows) {if(rows.size()==12)break;rows.push_back(std::move(row));}

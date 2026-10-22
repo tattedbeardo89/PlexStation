@@ -2,7 +2,7 @@
 struct CleanupTask {std::string base,token,path;};
 std::vector<CleanupTask> cleanups;
 StreamPlan stream_plan;
-bool stream_fallback=false,video_info=false;
+bool stream_fallback=false,video_info=false,video_retry_pending=false;
 int video_info_focus=0;
 uint64_t stream_serial=0;
 Item next_candidate;bool next_requested=false;double autoplay_deadline=0;
@@ -75,14 +75,16 @@ void video_tools(uint32_t hit) {
 }
 void video_options_frame(uint32_t hit) {
     if(hit & PAD_UP)focus=std::max(0,focus-1);
-    if(hit & PAD_DOWN)focus=std::min(5,focus+1);
+    if(hit & PAD_DOWN)focus=std::min(6,focus+1);
     auto local=static_cast<Quality>(std::clamp(pref_int(account_key("plex_quality_local").c_str(),0),0,6));
     auto remote=static_cast<Quality>(std::clamp(pref_int(account_key("plex_quality_remote").c_str(),0),0,6));
     row(0,focus,230,std::string("Local quality: ")+quality_name(local));row(1,focus,330,std::string("Remote quality: ")+quality_name(remote));
     row(2,focus,430,"Audio/subtitle languages: default / English / Spanish / French / Japanese");row(3,focus,530,"Subtitle policy: selected file default / Off (forced remains player-dependent)");
     row(4,focus,630,std::string("Automatically play next episode: ")+(pref_int(account_key("plex_autoplay").c_str(),0)?"On":"Off"));
     row(5,focus,730,"Completion threshold: "+std::to_string(std::clamp(pref_int(account_key("plex_complete_pct").c_str(),95),50,100))+"%");
+    row(6,focus,810,"Check Plex Cloud Watchlist access");
     if(hit & PAD_CROSS) {
+        if(focus==6)request_cloud_check();
         if(focus==4)pref_set(account_key("plex_autoplay").c_str(),pref_int(account_key("plex_autoplay").c_str(),0)?0:1);
         if(focus==5){int n=std::clamp(pref_int(account_key("plex_complete_pct").c_str(),95),50,100);pref_set(account_key("plex_complete_pct").c_str(),n>=100?50:n+5);}
         if(focus<2)pref_set(account_key(focus==0?"plex_quality_local":"plex_quality_remote").c_str(),(static_cast<int>(focus==0?local:remote)+1)%7);
@@ -92,7 +94,7 @@ void video_options_frame(uint32_t hit) {
     draw_text(390,850,23,"Automatic uses a fixed local/remote policy; no measured bandwidth or 4K decode claim.");
 }
 
-void clear_next(){next_candidate={};next_requested=true;autoplay_deadline=0;}
+void clear_next(){next_candidate={};next_requested=true;autoplay_deadline=0;video_retry_pending=false;}
 void service_next(){
     if(!video || playing.type!="episode" || next_requested || job!=None || progress_pending)return;
     next_requested=true;auto b=base,t=server_token;auto item=playing;
@@ -119,3 +121,5 @@ void restore_video_preferences(){
     const char *langs[]={"","en","es","fr","ja"};int n=std::clamp(pref_int(account_key("plex_language_choice").c_str(),0),0,4);
     player_set_languages(langs[n],pref_int(account_key("plex_subs_off").c_str(),0)?"off":langs[n]);
 }
+
+void service_video_retry(){if(video_retry_pending && job==None && !progress_pending){video_retry_pending=false;request_video(true);}}

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Included inside the native UI namespace: uses its existing async/auth/artwork infrastructure.
-struct AudioPage {std::string path,title;std::vector<Item> entries;int focus=0,start=0,total=0;};
+struct AudioPage {std::string path,title;std::vector<Item> entries;int focus=0,start=0,total=0;Item parent{};};
 struct AudioUI {
     bool screen=false, active=false, now_playing=false, queue_view=false, menu=false, start_pending=false;
     bool books=false, playback_books=false, complete_album=false, shuffle_after=false;
     Item book;
-    int speed=1, sleep_choice=0;
+    int speed=1, sleep_choice=0, sleep_chapter=-1;
     int64_t resume_position=0;
     bool rate_pending=false,force_transcode=false;
     std::string stream_session;
@@ -88,10 +88,11 @@ void audio_queue_load(const Item &item,bool shuffle=false) {
 void audio_finish(int kind,const Result &result) {
     if(!result){message=result.error;audio.start_pending=false;return;}
     if(kind==AudioScrobble)return;
+    if(kind==AudioFeed){feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=false;home_title=audio.books?"Audiobooks":"Music";audio.screen=false;sidebar=false;return;}
     if(kind==AudioBrowse) {
         if(audio.request_push) {
             if(audio.history.size()>=16)audio.history.erase(audio.history.begin());
-            audio.history.push_back({audio.path,audio.title,audio.entries,audio.focus,audio.start,audio.total});
+            audio.history.push_back({audio.path,audio.title,audio.entries,audio.focus,audio.start,audio.total,audio.parent});
         }
         audio.path=audio.request_path;audio.title=audio.request_title;audio.start=audio.request_start;
         audio.entries=items(result.data,false);audio.focus=0;audio.parent={};
@@ -158,7 +159,7 @@ void audio_tick(double now) {
     if(audio.active) {
         if(audio.rate_pending && !player_buffering()){player_set_rate(book_speed(audio.speed));audio.rate_pending=false;}
         if(audio.playback_books && now>=audio.save_at){book_save();audio.save_at=now+10;}
-        if(audio.sleep.due(now,player_ended() && !player_failed())) {
+        if(audio.sleep.due(now,player_ended() && !player_failed()) || (audio.sleep.end_track && audio.sleep_chapter>=0 && player_chapter()>audio.sleep_chapter)) {
             book_save();queue_progress("paused",player_time());
             if(player_ended()){player_stop();audio.active=false;audio.sleep.clear();return;}
             if(!player_paused())player_toggle_pause();
@@ -185,8 +186,8 @@ std::string audio_label(const Item &i) {
         (!i.artist.empty()?" • "+i.artist:"")+(i.duration>0?"  "+std::to_string(i.duration/60000)+":"+(i.duration/1000%60<10?"0":"")+std::to_string(i.duration/1000%60):"");
 }
 bool audio_frame(uint32_t hit,float) {
-    if(audio.active && !audio.screen && !video && !settings && !profile_screen)
-        draw_text(390,895,23,"Music: "+audio.current.title+" • Touchpad: Now Playing");
+    if(audio.active && !audio.now_playing && !video && !settings && !profile_screen)
+        draw_text(390,925,21,(audio.playback_books?"Listening: ":"Music: ")+audio.current.title+" • Touchpad: Now Playing");
     if((hit & PAD_TOUCHPAD) && audio.queue.current() && !video && !profile_screen){audio.screen=true;audio.now_playing=true;sidebar=false;}
     if(!audio.screen || settings || profile_screen || !available.empty() || reconnect_screen || editor || video)return false;
     if(sidebar)return false;
@@ -196,7 +197,7 @@ bool audio_frame(uint32_t hit,float) {
     if(hit & PAD_CIRCLE) {
         if(audio.menu){audio.menu=false;return true;}
         if(audio.now_playing || audio.queue_view){audio.now_playing=false;audio.queue_view=false;return true;}
-        if(!audio.history.empty()) {auto p=std::move(audio.history.back());audio.history.pop_back();audio.path=p.path;audio.title=p.title;audio.entries=std::move(p.entries);audio.focus=p.focus;audio.start=p.start;audio.total=p.total;}
+        if(!audio.history.empty()) {auto p=std::move(audio.history.back());audio.history.pop_back();audio.path=p.path;audio.title=p.title;audio.entries=std::move(p.entries);audio.focus=p.focus;audio.start=p.start;audio.total=p.total;audio.parent=std::move(p.parent);}
         else sidebar=true;
         return true;
     }
@@ -224,7 +225,7 @@ bool audio_frame(uint32_t hit,float) {
         if(hit & PAD_UP)audio.focus=std::max(0,audio.focus-1);
         if(hit & PAD_DOWN)audio.focus=std::min(audio.playback_books?15:7,audio.focus+1);
         int first=std::max(0,audio.focus-3);
-        for(int j=first;j<(audio.playback_books?16:8) && j<first+4;++j)row(j,audio.focus,550+(j-first)*80,std::string(labels[j])+(j==4?audio.queue.repeat==Repeat::Off?": Off":audio.queue.repeat==Repeat::All?": All":": One":j==8?": "+std::to_string(book_speed(audio.speed))+"x":j==9?": "+std::string(audio.sleep_choice==0?"Off":audio.sleep_choice==5?"End of Track":(std::to_string(audio.sleep_choice*15)+" min")):""));
+        for(int j=first;j<(audio.playback_books?16:8) && j<first+4;++j)row(j,audio.focus,550+(j-first)*80,std::string(labels[j])+(j==4?audio.queue.repeat==Repeat::Off?": Off":audio.queue.repeat==Repeat::All?": All":": One":j==8?": "+std::to_string(book_speed(audio.speed))+"x":j==9?": "+std::string(audio.sleep_choice==0?"Off":audio.sleep_choice==5?"End of Chapter / Track":(std::to_string(audio.sleep_choice*15)+" min")):""));
         if(hit & PAD_R1)audio_next();
         if(hit & PAD_L1){if(player_time()>3000)player_seek(0);else audio_next(true);}
         if(hit & PAD_CROSS) {
@@ -238,7 +239,7 @@ bool audio_frame(uint32_t hit,float) {
             case 6:retire_audio_stream();book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;break;
             case 7:audio.start_pending=true;break;
             case 8:audio.speed=(audio.speed+1)%7;player_set_rate(book_speed(audio.speed));pref_set((audio_scope()+".speed").c_str(),audio.speed);break;
-            case 9:audio.sleep_choice=(audio.sleep_choice+1)%6;audio.sleep.set(audio.sleep_choice==5?-1:audio.sleep_choice*15,plat_time());pref_set((audio_scope()+".sleep").c_str(),audio.sleep_choice);break;
+            case 9:audio.sleep_choice=(audio.sleep_choice+1)%6;audio.sleep.set(audio.sleep_choice==5?-1:audio.sleep_choice*15,plat_time());audio.sleep_chapter=audio.sleep_choice==5 && !player_chapters().empty()?player_chapter():-1;pref_set((audio_scope()+".sleep").c_str(),audio.sleep_choice);break;
             case 10: {auto chapters=player_chapters();int c=player_chapter();if(c>=0 && c+1<static_cast<int>(chapters.size()))player_set_chapter(c+1);else audio_next();break;}
             case 11: {int c=player_chapter();if(c>0)player_set_chapter(c-1);else audio_next(true);break;}
             case 12: {int c=player_chapter();if(c>=0)player_set_chapter(c);else player_seek(0);break;}
@@ -267,7 +268,7 @@ bool audio_frame(uint32_t hit,float) {
         for(int j=0;j<6;++j)row(j,audio.menu_focus,230+j*100,labels[j]);
         if((hit & PAD_CROSS) && !audio.entries.empty()) {
             auto item=audio.entries[std::clamp(audio.focus,0,static_cast<int>(audio.entries.size())-1)];
-            if(audio.menu_focus<2)audio_queue_load(item,audio.menu_focus==1);
+            if(audio.menu_focus<2)audio_queue_load(audio.parent.type=="album" || audio.parent.type=="artist"?audio.parent:item,audio.menu_focus==1);
             if(audio.menu_focus==2 || audio.menu_focus==3) {if(!audio.queue.add(item,audio.menu_focus==3))message="Select a track to enqueue (maximum 2000)";}
             if(audio.menu_focus==4)audio.now_playing=true;
             if(audio.menu_focus==5)audio.queue_view=true;
@@ -284,7 +285,9 @@ bool audio_frame(uint32_t hit,float) {
         auto label=audio_label(audio.entries[j]);draw_text(420,250+(j-first)*85,27,label.size()>65?label.substr(0,62)+"...":label);
     }
     if(!audio.entries.empty() && !diagnostic(TextOnly))poster(1490,235,320,320,audio.entries[std::clamp(audio.focus,0,static_cast<int>(audio.entries.size())-1)],false);
-    if(!audio.parent.summary.empty())draw_text(1490,590,20,audio.parent.summary.substr(0,130));
+    if(!audio.parent.summary.empty()) {float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(),20*scale,{1490*scale,590*scale},IM_COL32(220,220,225,255),audio.parent.summary.substr(0,250).c_str(),nullptr,320*scale);}
+    int64_t total_duration=0;for(const auto &i:audio.entries)total_duration+=std::min<int64_t>(i.duration,INT64_MAX/4000);
+    if(audio.parent.type=="album")draw_text(1490,560,22,"Album: "+std::to_string(total_duration/60000)+" min (loaded tracks)");
     if(audio.entries.empty())draw_text(420,300,28,job==None?"No accessible content":"Loading audio library...");
     if((hit & PAD_R2) && audio.start+200<audio.total)audio_load(audio.path,audio.title,false,audio.start+200);
     if((hit & PAD_L2) && audio.start>=200)audio_load(audio.path,audio.title,false,audio.start-200);
@@ -292,8 +295,9 @@ bool audio_frame(uint32_t hit,float) {
         auto item=audio.entries[audio.focus];
         if(audio.path=="sections") {
             // Directory choices are local navigation to real server endpoints, not invented content.
-            audio.history.push_back({audio.path,audio.title,audio.entries,audio.focus,audio.start,audio.total});
+            audio.history.push_back({audio.path,audio.title,audio.entries,audio.focus,audio.start,audio.total,audio.parent});
             audio.path="music/"+item.id;audio.title=item.title;audio.entries.clear();audio.focus=0;
+            Item shelf;shelf.type="audio-shelf";shelf.id=item.id;shelf.title=audio.books?"Audiobook Home":"Music Home";audio.entries.push_back(shelf);
             const char *names[]={"Artists","Albums","Tracks","Recently Added Albums","Recently Played Tracks","Playlists","Collections","Genres","Favorite Tracks","Search Music"};
             const char *suffix[]={"/all?type=8&sort=titleSort","/all?type=9&sort=titleSort","/all?type=10&sort=titleSort","/recentlyAdded?type=9","/all?type=10&sort=lastViewedAt:desc&lastViewedAt>>=0","/playlists","/collections","/genre?type=9","/all?type=10&userRating>=8","search"};
             if(audio.books) {
@@ -302,6 +306,10 @@ bool audio_frame(uint32_t hit,float) {
             }
             for(int j=0;j<10;++j) {Item choice;choice.title=audio.books && j==0?"Authors":audio.books && j==1?"Books":names[j];choice.type="audio-route";choice.key=j==5?"/playlists?playlistType=audio":"/library/sections/"+encode(item.id)+suffix[j];choice.id=item.id;audio.entries.push_back(choice);}
         } else if(item.type=="local-listening") {audio.entries=listening.books(audio_scope(),item.id=="completed"?1:0);audio.path="local-listening";audio.title=item.title;audio.focus=0;}
+        else if(item.type=="audio-shelf"){
+            auto b=base,t=server_token;bool books=audio.books;auto local=listening.books(audio_scope());
+            submit(AudioFeed,[b,t,item,books,local]{return music_feed(*client,b,t,item,books,local);});
+        }
         else if(item.type=="audio-route") {if(item.key.find("search")!=std::string::npos){editor=3;edit_text.clear();edit_focus=0;}else audio_load(item.key,item.title); }
         else if(item.type=="artist" || item.type=="album")audio_load("/library/metadata/"+encode(item.id)+"/children",item.title);
         else if(item.type=="playlist")audio_load("/playlists/"+encode(item.id)+"/items",item.title);
@@ -329,4 +337,13 @@ int audio_focus_state() {
     if(audio.menu)return audio.menu_focus>=0 && audio.menu_focus<6;
     if(audio.queue_view)return audio.queue.order.empty() || (audio.queue_focus>=0 && audio.queue_focus<static_cast<int>(audio.queue.order.size()));
     return audio.entries.empty() || (audio.focus>=0 && audio.focus<static_cast<int>(audio.entries.size()));
+}
+
+void open_audio_item(const Item &item){
+    if(job!=None)return;
+    bool books=false;for(const auto &section:home_sections)if(section.id==item.section_id)books=book_section(section);
+    audio_home(books);
+    if(item.type=="track")audio_queue_load(item);
+    else if(item.type=="playlist")audio_load("/playlists/"+encode(item.id)+"/items",item.title);
+    else audio_load("/library/metadata/"+encode(item.id)+"/children",item.title);
 }
