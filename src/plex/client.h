@@ -20,6 +20,7 @@ struct Reply {
     std::string body, error;
     Failure failure = Failure::None;
     bool tcp_connected = false, tls_verified = false;
+    std::string location = {};
 };
 using Transport = std::function<Reply(const Request &)>;
 struct Result {

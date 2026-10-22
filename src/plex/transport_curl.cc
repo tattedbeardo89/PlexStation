@@ -2,6 +2,8 @@
 #include "client.h"
 #include <curl/curl.h>
 #include <mutex>
+#include <algorithm>
+#include <cctype>
 namespace plex {
 namespace {
 struct Body {
@@ -13,6 +15,22 @@ size_t receive(char *p, size_t s, size_t n, void *user) {
     if (size > 8 * 1024 * 1024 - b.data.size())
         return 0;
     b.data.append(p, size);
+    return size;
+}
+size_t receive_header(char *p,size_t s,size_t n,void *user) {
+    const size_t size=s*n;
+    if(size>65536)return 0;
+    std::string line(p,size);
+    auto colon=line.find(':');
+    if(colon==std::string::npos)return size;
+    auto key=line.substr(0,colon);
+    std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return std::tolower(c);});
+    if(key=="location") {
+        auto &location=*static_cast<std::string *>(user);
+        if(!location.empty())return 0;
+        auto start=line.find_first_not_of(" \t",colon+1), end=line.find_last_not_of(" \t\r\n");
+        if(start!=std::string::npos && end>=start)location=line.substr(start,end-start+1);
+    }
     return size;
 }
 } // namespace
@@ -42,6 +60,8 @@ Transport curl_transport() {
         curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, receive);
         curl_easy_setopt(c, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, receive_header);
+        curl_easy_setopt(c, CURLOPT_HEADERDATA, &r.location);
         if (!q.body.empty() || q.method == "POST") {
             curl_easy_setopt(c, CURLOPT_POSTFIELDS, q.body.data());
             curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, static_cast<long>(q.body.size()));

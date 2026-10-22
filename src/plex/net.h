@@ -83,7 +83,7 @@ inline std::string manual_endpoint(std::string input) {
 // Incremental, bounded HTTP/1 framing: return as soon as the framed body is
 // complete. Never wait for a keep-alive peer to close a complete response.
 enum class Decode { More, Complete, Invalid, Encoding, TooLarge };
-inline Decode decode_http(const std::string &wire, bool eof, int &status, std::string &body) {
+inline Decode decode_http(const std::string &wire, bool eof, int &status, std::string &body, std::string *location=nullptr) {
     constexpr size_t limit=8*1024*1024;
     auto end=wire.find("\r\n\r\n");
     if(end==std::string::npos) return wire.size()>65536 ? Decode::Invalid : eof ? Decode::Invalid : Decode::More;
@@ -101,10 +101,11 @@ inline Decode decode_http(const std::string &wire, bool eof, int &status, std::s
         std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return std::tolower(c);});
         auto a=value.find_first_not_of(" \t"), b=value.find_last_not_of(" \t");
         value=a==std::string::npos ? "" : value.substr(a,b-a+1);
-        if(headers.count(key) && (key=="content-length" || key=="transfer-encoding" || key=="content-encoding")) return Decode::Invalid;
+        if(headers.count(key) && (key=="content-length" || key=="transfer-encoding" || key=="content-encoding" || key=="location")) return Decode::Invalid;
         if(key=="content-encoding") std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c){return std::tolower(c);});
         headers[key]=value; p=next+2;
     }
+    if(location) *location=headers.count("location")?headers["location"]:"";
     if(headers.count("content-encoding") && headers["content-encoding"]!="identity") return Decode::Encoding;
     if(status>=100 && status<200) return Decode::Invalid; // no informational response expected
     if(status==204 || status==304) {body.clear(); return Decode::Complete;}

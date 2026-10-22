@@ -794,8 +794,8 @@ void profile_screen_frame(uint32_t hit) {
         rect(x,310,260,300,i==profile_focus?IM_COL32(165,110,20,255):IM_COL32(30,32,39,255));
         auto avatar=artwork->avatar(home_profiles[i].avatar,account);
         if(avatar) {
-            float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale});
-        } else centered(390,70,"●",x+130);
+            float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32_WHITE,80*scale);
+        } else {centered(390,70,"●",x+130);centered(470,18,artwork->busy()?"Loading avatar…":"Avatar unavailable",x+130);}
         centered(510,29,home_profiles[i].name,x+130);
         if(home_profiles[i].protected_user)centered(560,23,"PIN protected",x+130);
     }
@@ -1047,7 +1047,7 @@ void ui_frame(const PadState &pad, float dt) {
         draw_text(83,166+slot*78,28,navigation[i]);
     }
     draw_text(390, 65, 46, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? (search_screen?"Search":home_title) : page_title);
-    if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImage(avatar,{270*scale,105*scale},{306*scale,141*scale});}}
+    if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{270*scale,105*scale},{306*scale,141*scale},ImVec2(0,0),ImVec2(1,1),IM_COL32_WHITE,18*scale);}}
     if (job != None)
         draw_text(390, 135, 26, "Loading…");
     if (!message.empty())

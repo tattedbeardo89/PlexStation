@@ -120,3 +120,36 @@ conversion categories. Then test remembered-server reconnect, server-to-Home,
 Movies entry, text-only isolation and artwork-enabled browsing. Preserve the
 complete logs if a failure occurs. Host reproduction and a successful native
 build do not constitute physical crash-resolution verification.
+
+### Verified marker mapping
+
+[Inspection run 39845804159](https://github.com/tattedbeardo89/PlexStation/actions/runs/39845804159)
+verified the exact ELF `plat_init=0xf8510`. Compared with the owner's runtime
+marker 0x4f8510, this yields load bias **0x400000** and maps debugger RIP
+0x4f93d7 to **crash_handler+0x3a7, ELF 0xf93d7, UD2**. Thus the marker resolves
+the earlier ambiguous mapping. The original SIGABRT assertion is the initiating
+failure identified by the application log; the later handler trap is secondary.
+This mapping is tied to the owner-reported build/marker and verified package;
+an FTP hash would additionally verify the deployed console file.
+
+## Checkpoint B: real Plex Home avatars
+
+Avatar loading now accepts Plex-origin relative paths, validates HTTPS origins,
+and follows at most three redirects across the existing Plex image allowlist.
+Transport implementations expose Location without enabling global redirect
+following. Authentication headers are supplied only to plex.tv; token query
+parameters are removed, including rejecting encoded query keys for propagation.
+CDN requests never receive the account token header. Unexpected destinations,
+HTTP downgrade, duplicate Location headers, oversized/corrupt images and
+unsuccessful HTTP responses remain rejected. Logs report fixed outcome, HTTP
+status and byte/dimension counts only.
+
+Real PNG/JPEG and existing image decoders share the existing worker and render
+thread upload path. Legitimate avatars up to 2048 square are center-cropped and
+bounded to 256 square before upload. The poster bounds remain unchanged. The
+12-entry cache and generation cancellation remain; failed fetches retry after
+300 update frames rather than being remembered forever. Profile cards display a
+loading/unavailable fallback and draw real images circularly. No new image or
+controller library is introduced. URL, safe redirects, withheld credentials,
+real PNG/JPEG decode, large avatars and transient retry receive host coverage.
+Physical account avatars, Home entry and GPU lifetime acceptance remain pending.

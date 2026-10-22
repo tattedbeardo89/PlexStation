@@ -16,13 +16,14 @@ class Artwork {
         std::string key;
         ImTextureID texture = 0;
         uint64_t used = 0;
+        uint64_t retry_after = 0;
     };
     std::future<Decoded> pending;
     std::vector<Entry> entries;
     std::vector<ImTextureID> retired;
     uint64_t frame = 0, generation = 0;
     Transport transport;
-    ImTextureID request_image(const Request &request,const std::string &key);
+    ImTextureID request_image(const Request &request,const std::string &key,bool avatar_image=false);
 
   public:
     explicit Artwork(Transport t) : transport(std::move(t)) {}

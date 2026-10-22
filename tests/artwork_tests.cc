@@ -8,11 +8,12 @@
 #include "stb_image.h"
 #pragma GCC diagnostic pop
 #include <cassert>
+#include "avatar_image_fixtures.h"
 #include <chrono>
 #include <thread>
 static int uploaded,freed;
 ImTextureID library_upload_rgba(const unsigned char *rgba,int w,int h) {
-    assert(rgba && w==1 && h==1); return ++uploaded;
+    assert(rgba && w>0 && h>0 && w<=256 && h<=256); return ++uploaded;
 }
 void library_free_image(ImTextureID texture) {if(texture) ++freed;}
 static void settle(plex::Artwork &art) {
@@ -45,5 +46,48 @@ int main() {
     assert(!art.avatar("https://evil.invalid/avatar","fixture"));
     assert(!art.avatar("http://plex.tv/avatar","fixture"));
     art.avatar("https://plex.tv/users/fixture/avatar","fixture");settle(art);assert(uploaded==16);auto before_clear=freed;art.clear();assert(freed==before_clear);art.update();assert(freed==uploaded);
+    int requests=0;
+    plex::Artwork redirected([&](const plex::Request &q){
+        ++requests;
+        if(q.url=="https://plex.tv/users/avatar") {
+            assert(q.headers.at("X-Plex-Token")=="private-fixture");
+            plex::Reply reply{302,"",""};reply.location="https://images.plex.tv/avatar?X-Plex-Token=private-fixture";return reply;
+        }
+        assert(q.url=="https://images.plex.tv/avatar" && q.headers.empty());
+        return plex::Reply{200,image,""};
+    });
+    redirected.avatar("/users/avatar","private-fixture");settle(redirected);
+    assert(redirected.avatar("/users/avatar","private-fixture") && requests==2);
+    redirected.clear();redirected.update();
+    requests=0;
+    plex::Artwork rejected([&](const plex::Request &){++requests;plex::Reply r{302,"",""};r.location="https://evil.invalid/avatar";return r;});
+    rejected.avatar("/users/avatar","private-fixture");settle(rejected);assert(requests==1);
+    // Failed entries have a bounded retry delay, rather than permanent negative caching.
+    rejected.avatar("/users/avatar","private-fixture");assert(requests==1);
+    for(int i=0;i<301;++i)rejected.update();
+    rejected.avatar("/users/avatar","private-fixture");settle(rejected);assert(requests==2);
+    assert(!rejected.avatar("", "fixture"));
+    assert(!rejected.avatar("//evil.invalid/avatar", "fixture"));
+    for(int failure=0;failure<3;++failure) {
+        int calls=0;
+        plex::Artwork unavailable([&](const plex::Request &){++calls;return failure==0?plex::Reply{401,"",""}:failure==1?plex::Reply{0,"","Timeout"}:plex::Reply{200,"invalid image",""};});
+        unavailable.avatar("/users/avatar","fixture");settle(unavailable);
+        assert(!unavailable.avatar("/users/avatar","fixture") && calls==1);
+        unavailable.clear();unavailable.update();
+    }
+    // A legitimate large square avatar is bounded to a 256x256 upload.
+    image.assign(18,'\0');image[2]=2;image[12]=image[14]=0;image[13]=image[15]=4;image[16]=24;
+    image.append(1024*1024*3,'\x7f');
+    plex::Artwork large([&](const plex::Request &){return plex::Reply{200,image,""};});
+    large.avatar("https://images.plex.tv/large","fixture");settle(large);
+    assert(large.avatar("https://images.plex.tv/large","fixture"));large.clear();large.update();
+    for(int format=0;format<2;++format) {
+        const auto *bytes=format?fixture_jpeg:fixture_png;
+        const size_t size=format?sizeof(fixture_jpeg):sizeof(fixture_png);
+        image.assign(reinterpret_cast<const char *>(bytes),size);
+        large.avatar("https://images.plex.tv/fixture/"+std::to_string(format),"fixture");settle(large);
+        assert(large.avatar("https://images.plex.tv/fixture/"+std::to_string(format),"fixture"));
+        large.clear();large.update();
+    }
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

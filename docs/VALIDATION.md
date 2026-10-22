@@ -519,3 +519,17 @@ native no-exception/no-RTTI flags. Strict native source, Home and real native
 transport checks passed locally. A new native startup fixture checks numeric
 parsing before authenticated requests. Physical PS5 acceptance remains pending;
 see SIGILL-AVATARS-THEME.md for evidence, secondary signal distinction and tests.
+
+Avatar follow-up adds production-code tests for relative URLs, cross-origin
+redirect credential withholding, blocked redirect hosts, delayed negative-cache
+retry, missing/invalid/auth-denied/timeout images, PNG/JPEG decoding, 1024-square
+input downsampling, generation invalidation and render-thread texture cleanup.
+The native and host HTTP transports expose Location but keep global redirect
+following disabled; duplicate Location rejection has framing regression coverage.
+
+Local follow-up checks passed: core and curl transport, real native GnuTLS
+transport, authentication, Home, audio/listening, streaming, discovery,
+controller/package permissions, artwork, connection framing, crash tools and
+strict native source syntax. The complete ASan/UBSan runner passed all existing
+suites plus both numeric locale variants. These are host results; native build
+and physical acceptance are reported separately.

@@ -16,6 +16,9 @@ int main() {
     std::string wire="HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\n{}";
     for(size_t n=0;n<wire.size();++n) assert(decode_http(wire.substr(0,n),false,status,body)==Decode::More);
     assert(decode_http(wire,false,status,body)==Decode::Complete && body=="{}");
+    std::string location;
+    assert(decode_http("HTTP/1.1 302 Found\r\nLocation: https://images.plex.tv/avatar\r\nContent-Length: 0\r\n\r\n",false,status,body,&location)==Decode::Complete && location=="https://images.plex.tv/avatar");
+    assert(decode_http("HTTP/1.1 302 Found\r\nLocation: /a\r\nLocation: /b\r\nContent-Length: 0\r\n\r\n",false,status,body,&location)==Decode::Invalid);
     assert(decode_http(wire.substr(0,wire.size()-1),true,status,body)==Decode::Invalid);
     assert(decode_http("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\n\r\n",true,status,body)==Decode::Encoding);
     assert(decode_http("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nx",true,status,body)==Decode::Invalid);
