@@ -8,7 +8,9 @@ manifest={'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,t
           'hardware_verified':False,'files':{}}
 for name in ('llvm-pie.elf','eboot.elf','plexstation.map','elf-layout.txt','symbols.txt','link.log'):
     source=work/name
-    if not source.is_file() or not source.stat().st_size: raise SystemExit('Missing debug output: '+name)
+    if not source.is_file() or (name!='link.log' and not source.stat().st_size):
+        print('::error title=Debug artifact collection::Missing debug output: '+name)
+        raise SystemExit('Missing debug output: '+name)
     shutil.copy2(source,out/name)
     manifest['files'][name]=hashlib.sha256(source.read_bytes()).hexdigest()
 exe=root/'dist/PPSA85301/eboot.bin'

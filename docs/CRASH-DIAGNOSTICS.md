@@ -116,3 +116,9 @@ stack scanner is used. ShadowMountPlus backtraces/module mapping are preferable
 to guessing from application subtraction. To identify an unsupported syscall,
 collect the faulting module and exact bytes/registers from the debugger and
 compare them with the **matching module** disassembly/runtime imports.
+
+The owner has clarified the signal correlation: build 2458e45 / Actions run
+39652707008 authenticated, connected and displayed libraries, then aborted on
+Movies-library entry. The 15:03:20 SIGSYS entry has no independently confirmed
+installed build or same-launch UI milestones. It must remain a separate,
+unmatched report until further FTP evidence correlates it.
