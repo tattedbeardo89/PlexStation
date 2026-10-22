@@ -3,11 +3,16 @@
 import argparse,hashlib,json,pathlib,struct,subprocess
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('elf',type=pathlib.Path);p.add_argument('address',type=lambda s:int(s,0))
+p.add_argument('--installed-eboot',type=pathlib.Path,help='optional console eboot.bin; verify its hash against this build')
 p.add_argument('--load-bias',type=lambda s:int(s,0),default=0,help='verified runtime load address minus ELF VMA, not a guessed base')
 a=p.parse_args();data=a.elf.read_bytes()
 manifest=a.elf.parent/'build.json'
+if not manifest.is_file():raise SystemExit('Matching build.json is required; do not guess the ELF identity')
 if manifest.is_file():
-    expected=json.loads(manifest.read_text())['files'].get(a.elf.name)
+    build=json.loads(manifest.read_text())
+    if a.installed_eboot and hashlib.sha256(a.installed_eboot.read_bytes()).hexdigest()!=build.get('installed_eboot_sha256'):
+        raise SystemExit('Installed eboot does not match this debug build')
+    expected=build['files'].get(a.elf.name)
     if expected!=hashlib.sha256(data).hexdigest(): raise SystemExit('ELF checksum does not match debug manifest')
 if data[:6]!=b'\x7fELF\x02\x01':raise SystemExit('Expected little-endian ELF64')
 off=struct.unpack_from('<Q',data,32)[0];size,count=struct.unpack_from('<HH',data,54)

@@ -95,6 +95,7 @@ static void crash_handler(int sig, siginfo_t *info, void *context)
     snprintf(crash_path, sizeof(crash_path), "%s/vlc-crash.txt", app_dir);
     crash_file_fd = open(crash_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     write_str("*** build " PLEX_BUILD_COMMIT " title PPSA85301; context offsets require device validation\n");
+    snprintf(buf,sizeof(buf),"*** pid=%d\n",(int)getpid());write_str(buf);
     const uint64_t *ctx = (const uint64_t *)context;
     uint64_t rip = ctx[0xe0 / 8], rsp = ctx[0xf8 / 8];
     bool executable_rip = rip>=EBOOT_BASE && rip<EBOOT_END;
@@ -504,7 +505,7 @@ void plat_init(void)
     } else {
         plat_notify("VLC-PS5: can't write /app0/plexstation.log");
     }
-    fprintf(stderr,"start: build " PLEX_BUILD_COMMIT " title=PPSA85301 runtime=locked-PS5_Vulkan; SIGSYS/SIGABRT tracked separately\n");
+    fprintf(stderr,"start: build " PLEX_BUILD_COMMIT " pid=%d title=PPSA85301 runtime=locked-PS5_Vulkan; SIGSYS/SIGABRT tracked separately\n",(int)getpid());
     fprintf(stderr, "VLC-PS5: load address marker plat_init=%p\n", (void *)plat_init);
     crash_fd = open(LOG_PATH, O_WRONLY | O_APPEND);
 

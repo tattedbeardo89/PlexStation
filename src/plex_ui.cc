@@ -320,7 +320,7 @@ void finish_job() {
             auto id=number(result.data,"id",0);
             if(id<=0) { account_error="Plex account identity is missing. Retry sign-in validation."; return; }
             clear_profile();primary_id="id:"+std::to_string(id);
-            home_enabled=flag(result.data,"home",false);
+            home_enabled=flag(result.data,"home",true); // missing/unknown must not bypass Home PIN discovery
             account_error.clear();profile_error.clear();home_profiles.clear();
             if(home_enabled) {profile_screen=true;account_loading=false;auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
             else {

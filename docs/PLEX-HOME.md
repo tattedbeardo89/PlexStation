@@ -70,3 +70,7 @@ loop and PS5 pad backend, even if the overlay is enabled. This prevents keypad
 choices being inferred from debug logs. The separate Home layer now implements
 actual scoped Continue Watching and other supported PMS hubs; live permissions
 and progress attribution still require the checklist in TV-CLIENT-STATUS.md.
+
+A missing or unknown `home` capability flag triggers Home discovery rather than
+assuming an unlocked primary profile; only an explicitly non-Home account uses
+its validated sole identity directly.

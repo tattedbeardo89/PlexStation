@@ -6,7 +6,7 @@ retrieval are now owner-confirmed. The reported `eboot+0x7ffcb90c0` is **not a
 reliable app-relative address**: the old handler unconditionally subtracted
 0x400000 from the raw RIP read using the imported PS5 context layout. That
 reconstructs to 0x8000b90c0, outside its assumed [0x400000,0x10000000) executable
-range. It may be a shared-module abort path, or the context/layout assumption
+range. It may be an application relocation, a shared-module abort path, or the context/layout assumption
 may be wrong. A bare offset cannot distinguish these cases. No matching old
 unstripped artifact or full crash/module trace is currently available here.
 Do not symbolize it against a new build or call it proof of an artwork fault.
@@ -133,3 +133,7 @@ the separate matching debug artifact is
 `PlexStation-native-debug-8e6ae8e3e756721f4dcd66279503712b68b2950d`.
 Use this independent build for isolation and compare against later builds.
 Neither a successful compile nor the new instrumentation proves a hardware fix.
+
+New reports also record the PID at startup and crash for ShadowMountPlus correlation.
+The symbolizer requires the matching build manifest; optional `--installed-eboot`
+checks the console executable hash before using any ELF addresses.

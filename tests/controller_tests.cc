@@ -139,7 +139,7 @@ int main() {
     auto fixture_transport = [](const Request &q) {
         if(q.url.find("/hubs")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         if(q.url=="https://plex.tv/api/v2/user")
-            return Reply{200,R"({"id":42,"username":"fixture"})",""};
+            return Reply{200,R"({"id":42,"username":"fixture","home":false})",""};
         if(q.url.find("/identity")!=std::string::npos) return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
         if(q.url.find("/library/sections")!=std::string::npos) return Reply{200,R"({"MediaContainer":{"Directory":[]}})",""};
         assert(q.url.find("/api/v2/resources?")!=std::string::npos);
@@ -342,6 +342,16 @@ int main() {
     assert(load_credentials(credential_file,restored_id,restored_token) && restored_token.empty());
     account="fixture-account-token"; signout();
     assert(account.empty() && load_credentials(credential_file,restored_id,restored_token) && restored_token.empty());
+    // Missing Home capability metadata must discover profiles, not assume PIN-free admin access.
+    account="fixture-account-token";
+    client=std::make_unique<Client>([](const Request &q) {
+        assert(q.url=="https://plex.tv/api/v2/home/users");
+        return Reply{200,R"({"users":[{"id":42,"title":"Owner","protected":true,"admin":true}]})",""};
+    },device);
+    complete(ValidateAccount,Result{Json{{"id",42},{"username","fixture"}},"",200});
+    assert(job==HomeUsers);pending.wait();finish_job();
+    requested_profile=home_profiles.front();choose_profile();
+    assert(profile_pin && profile_token.empty() && job==None);signout();
     unlink(credential_file.c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ImGui::DestroyContext();
