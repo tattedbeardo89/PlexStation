@@ -561,3 +561,10 @@ fixture covers real UI draw lists at 1080p/4K, rapid navigation, media return,
 async cancellation, profile authorization and startup preference restoration.
 No physical playback, avatars, Home crash resolution or firmware acceptance is
 inferred from these host checks.
+
+Themed checkpoint 761d562 native run 39848648128 succeeded, including complete
+installation/debug/log artifacts. Final layout follow-up preserves real decoded
+image aspect ratios, center-crops banners, and centralizes custom list spacing.
+Its core/curl/native transport, artwork, controller/package/theme-boundary,
+strict native-source and all ASan/UBSan/numeric-locale checks completed with
+passing log summaries. The final native build is tracked separately below.

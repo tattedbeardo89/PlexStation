@@ -256,7 +256,7 @@ bool audio_frame(uint32_t hit,float) {
         if(hit & PAD_UP)audio.queue_focus=std::max(0,audio.queue_focus-1);
         if(hit & PAD_DOWN)audio.queue_focus=std::min(std::max(0,static_cast<int>(audio.queue.order.size())-1),audio.queue_focus+1);
         int first=std::max(0,audio.queue_focus-6);
-        for(int j=first;j<static_cast<int>(audio.queue.order.size()) && j<first+7;++j)row(j,audio.queue_focus,235+(j-first)*85,audio_label(audio.queue.entries[audio.queue.order[j]]));
+        for(int j=first;j<static_cast<int>(audio.queue.order.size()) && j<first+7;++j)row(j,audio.queue_focus,235+(j-first)*Theme::Metric::CompactStep,audio_label(audio.queue.entries[audio.queue.order[j]]));
         if((hit & PAD_CROSS) && !audio.queue.order.empty()){audio.queue.cursor=audio.queue_focus;audio.start_pending=true;}
         if(hit & PAD_SQUARE)audio.queue.remove(audio.queue_focus);
         if(hit & PAD_TRIANGLE){if(audio.active){book_save();queue_progress("stopped",player_time());player_stop();audio.active=false;}audio.queue.clear();}
@@ -282,8 +282,8 @@ bool audio_frame(uint32_t hit,float) {
     if(hit & PAD_DOWN)audio.focus=std::min(std::max(0,static_cast<int>(audio.entries.size())-1),audio.focus+1);
     int first=std::max(0,audio.focus-6);
     for(int j=first;j<static_cast<int>(audio.entries.size()) && j<first+7;++j) {
-        rect(390,235+(j-first)*85,1050,70,j==audio.focus?Theme::Selection:Theme::Surface);
-        auto label=audio_label(audio.entries[j]);draw_text(420,250+(j-first)*85,Theme::Font::Body,label,Theme::Text,990);
+        rect(390,235+(j-first)*Theme::Metric::CompactStep,1050,70,j==audio.focus?Theme::Selection:Theme::Surface);
+        auto label=audio_label(audio.entries[j]);draw_text(420,250+(j-first)*Theme::Metric::CompactStep,Theme::Font::Body,label,Theme::Text,990);
     }
     if(!audio.entries.empty() && !diagnostic(TextOnly))poster(1490,235,320,320,audio.entries[std::clamp(audio.focus,0,static_cast<int>(audio.entries.size())-1)],false);
     if(!audio.parent.summary.empty()) {float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(),20*scale,{1490*scale,590*scale},Theme::Text,audio.parent.summary.substr(0,250).c_str(),nullptr,320*scale);}
@@ -327,7 +327,7 @@ void audio_settings_frame(uint32_t hit) {
     if(hit & PAD_DOWN)focus=std::min(std::max(0,static_cast<int>(sections.size())-1),focus+1);
     if(sections.empty()){draw_text(400,250, Theme::Font::Body,"No accessible music libraries to designate");return;}
     int first=std::max(0,focus-6);
-    for(int n=first;n<static_cast<int>(sections.size()) && n<first+7;++n)row(n,focus,225+(n-first)*90,sections[n].title+(book_section(sections[n])?": Audiobooks":": Music"));
+    for(int n=first;n<static_cast<int>(sections.size()) && n<first+7;++n)row(n,focus,225+(n-first)*Theme::Metric::RowStep,sections[n].title+(book_section(sections[n])?": Audiobooks":": Music"));
     if(hit & PAD_CROSS){const auto &s=sections[std::clamp(focus,0,static_cast<int>(sections.size())-1)];pref_set((audio_scope()+".books."+encode(s.id)).c_str(),book_section(s)?0:1);}
     draw_text(390,895, Theme::Font::Caption,"Cross: designate library for this profile/server only; server metadata is unchanged");
 }

@@ -418,6 +418,13 @@ int main() {
     pref_set("plex_developer_flags_v1",0);pref_set("plex_safe_home_v1",0);
     diagnostic_flags=0;settings=false;load_home();drain();assert(job==None && home_screen);
     ui_frame_presented();
+    ImVec2 uv0,uv1;
+    Theme::cover_uv(16.f/9,1440,175,uv0,uv1);
+    assert(uv0.x==0 && uv1.x==1 && uv0.y>0 && uv1.y<1);
+    assert(std::abs((16.f/9)*(uv1.x-uv0.x)/(uv1.y-uv0.y)-1440.f/175)<.001f);
+    Theme::cover_uv(16.f/9,200,400,uv0,uv1);
+    assert(uv0.x>0 && uv1.x<1 && uv0.y==0 && uv1.y==1);
+    Theme::cover_uv(0,200,400,uv0,uv1);assert(uv0.x==0 && uv1.y==1);
     // Production native theme: focus and motion preferences remain controller usable.
     drain();audio_reset();video=false;profile_screen=false;settings=true;settings_page=6;sidebar=false;focus=0;
     Theme::reduced_motion=false;press(PAD_CROSS);

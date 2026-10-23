@@ -630,6 +630,12 @@ void gradient(float x,float y,float w,float h,ImU32 top,ImU32 bottom) {
     const float s=gfx.height/1080.f;
     ImGui::GetBackgroundDrawList()->AddRectFilledMultiColor({x*s,y*s},{(x+w)*s,(y+h)*s},top,top,bottom,bottom);
 }
+void cover_image(ImTextureID texture,float x,float y,float width,float height,ImU32 tint=Theme::White) {
+    if(!texture)return;
+    const float scale=gfx.height/1080.f;
+    ImVec2 uv0,uv1;Theme::cover_uv(artwork->aspect(texture),width,height,uv0,uv1);
+    ImGui::GetBackgroundDrawList()->AddImageRounded(texture,{x*scale,y*scale},{(x+width)*scale,(y+height)*scale},uv0,uv1,tint,Theme::Metric::Radius*scale);
+}
 void scene_background(bool sidebar_visible=false) {
     rect(0,0,1920,1080,Theme::Background);
     gradient(sidebar_visible?330:0,0,sidebar_visible?1590:1920,430,Theme::alpha(Theme::Accent,24),Theme::alpha(Theme::Background,0));
@@ -721,7 +727,8 @@ void poster(float x,float y,float width,float height,const Item &item,bool selec
     rect(x-5,y-5,width+10,height+10,selected?Theme::focus_color(plat_time()):Theme::Border);
     auto texture=item.type=="episode" ? artwork->landscape(base,server_token,item.thumb) : artwork->get(base,server_token,item.thumb);
     if(texture) {
-        float ratio=item.type=="episode" ? 16.f/9 : (item.type=="album" || item.type=="artist" || item.type=="track") ? 1.f : 2.f/3;
+        float ratio=artwork->aspect(texture);
+        if(ratio<=0)ratio=item.type=="episode"?16.f/9:(item.type=="album" || item.type=="artist" || item.type=="track")?1.f:2.f/3;
         float image_width=std::min(width,height*ratio);
         float image_height=image_width/ratio;
         float left=x+(width-image_width)*.5f;
@@ -758,7 +765,7 @@ void home_frame(uint32_t hit,float dt) {
     if(plex::diagnostic(TextOnly)) {
         draw_text(390,180, Theme::Font::Heading,selected.title);
         int first=std::max(0,column-4);
-        for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*85,selected.entries[i].title);
+        for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*Theme::Metric::CompactStep,selected.entries[i].title);
         if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
         return;
     }
@@ -769,7 +776,7 @@ void home_frame(uint32_t hit,float dt) {
         const auto &featured=selected.entries[column];
         rect(390,160,1440,175,Theme::Sidebar);
         auto backdrop=artwork->landscape(base,server_token,featured.art.empty()?featured.thumb:featured.art);
-        if(backdrop)draw->AddImageRounded(backdrop,{390*scale,160*scale},{1830*scale,335*scale},ImVec2(0,0),ImVec2(1,1),Theme::alpha(Theme::White,110),Theme::Metric::Radius*scale);
+        cover_image(backdrop,390,160,1440,175,Theme::alpha(Theme::White,110));
         gradient(390,160,1440,175,Theme::alpha(Theme::Background,90),Theme::alpha(Theme::Background,240));
         draw_text(420,182,Theme::Font::Caption,selected.continuing?"CONTINUE WATCHING":"YOUR LIBRARY",Theme::Focus,1300);
         draw_text(420,220,Theme::Font::Heading,featured.title,Theme::Text,1300);
@@ -777,12 +784,12 @@ void home_frame(uint32_t hit,float dt) {
     }
     draw->PushClipRect({365*scale,355*scale},{1890*scale,938*scale},true);
     for(int r=std::max(0,feed_focus-2);r<static_cast<int>(feed_rows.size()) && r<=feed_focus+2;++r) {
-        auto &hub=feed_rows[r];float y=370+(r-feed_vertical)*390;
-        if(y>938 || y+390<355)continue;
+        auto &hub=feed_rows[r];float y=370+(r-feed_vertical)*Theme::Metric::CarouselStep;
+        if(y>938 || y+Theme::Metric::CarouselStep<355)continue;
         draw_text(390,y, Theme::Font::Heading,hub.title);
         float dest=static_cast<float>(std::max(0,feed_columns[r]-4));feed_scroll[r]+=(dest-feed_scroll[r])*amount;
         for(int c=std::max(0,static_cast<int>(feed_scroll[r]));c<static_cast<int>(hub.entries.size()) && c<static_cast<int>(feed_scroll[r])+5;++c) {
-            auto &item=hub.entries[c];float x=390+(c-feed_scroll[r])*280;
+            auto &item=hub.entries[c];float x=390+(c-feed_scroll[r])*Theme::Metric::CardStep;
             if(plex::diagnostic(TextOnly))row(c,feed_columns[r],y+55+(c%3)*80,item.title);
             else {
                 poster(x,y+60,240,245,item,!sidebar && r==feed_focus && c==feed_columns[r]);
@@ -1095,13 +1102,13 @@ void ui_frame(const PadState &pad, float dt) {
         if(!nav_visible(i))continue;
         ++slot;
         if (nav == i) {
-            rect(25,150+slot*78,280,65,sidebar?Theme::Selection:Theme::alpha(Theme::Selection,140));
-            rect(25,162+slot*78,4,41,Theme::Accent);
+            rect(25,150+slot*Theme::Metric::NavStep,280,65,sidebar?Theme::Selection:Theme::alpha(Theme::Selection,140));
+            rect(25,162+slot*Theme::Metric::NavStep,4,41,Theme::Accent);
         }
-        float y=182+slot*78;
+        float y=182+slot*Theme::Metric::NavStep;
         ImU32 color=nav==i ? Theme::Accent : Theme::Secondary;
         navigation_icon(i,55,y,color);
-        draw_text(83,166+slot*78,i==3?Theme::Font::Caption:Theme::Font::Body,navigation[i],nav==i?Theme::Text:Theme::Secondary,215);
+        draw_text(83,166+slot*Theme::Metric::NavStep,i==3?Theme::Font::Caption:Theme::Font::Body,navigation[i],nav==i?Theme::Text:Theme::Secondary,215);
     }
     draw_text(390, 65, Theme::Font::Title, settings ? (settings_page==3 ? "Profile" : "Settings") : in_detail ? detail.title : home_screen ? (search_screen?"Search":home_title) : page_title);
     if(!active_profile.id.empty()) {auto avatar=artwork->avatar(active_profile.avatar,account);if(avatar){float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{270*scale,105*scale},{306*scale,141*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,18*scale);}}
@@ -1226,7 +1233,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(hit & PAD_CIRCLE){filter_picker=false;return;}
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
         if(hit & PAD_DOWN)tools_focus=std::min(std::max(0,static_cast<int>(filter_values.size())-1),tools_focus+1);
-        int first=std::max(0,tools_focus-6);for(int n=first;n<static_cast<int>(filter_values.size()) && n<first+7;++n)row(n,tools_focus,210+(n-first)*90,filter_values[n].first);
+        int first=std::max(0,tools_focus-6);for(int n=first;n<static_cast<int>(filter_values.size()) && n<first+7;++n)row(n,tools_focus,210+(n-first)*Theme::Metric::RowStep,filter_values[n].first);
         if(filter_values.empty())draw_text(410,280,Theme::Font::Body,"No filter values supplied by this library");
         if((hit & PAD_CROSS) && !filter_values.empty()){browser_filters[filter_field]=filter_values[tools_focus].second;filter_picker=false;load(library_query(page_path,browser_filters,browser_sort),page_title,false);}
         return;
@@ -1236,7 +1243,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(hit & PAD_CIRCLE)library_tools=false;
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
         if(hit & PAD_DOWN)tools_focus=std::min(9,tools_focus+1);
-        int first=std::max(0,tools_focus-6);for(int i=first;i<12 && i<first+7;++i)row(i,tools_focus,210+(i-first)*90,labels[i]);
+        int first=std::max(0,tools_focus-6);for(int i=first;i<12 && i<first+7;++i)row(i,tools_focus,210+(i-first)*Theme::Metric::RowStep,labels[i]);
         if((hit & PAD_CROSS) && job==None) {
             library_tools=false;
             if(tools_focus==5){editor=1;edit_text.clear();edit_focus=0;}
@@ -1338,7 +1345,7 @@ void ui_frame(const PadState &pad, float dt) {
             int first=std::max(0,focus-6);
             for(int i=first;i<12 && i<first+7;++i) {
                 bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : i==10 ? plex::diagnostic(SafeHome) : i==11 ? plex::diagnostic(DetailedHome) : false;
-                row(i,focus,190+(i-first)*90,std::string(labels[i])+(i<=6 || i>=10 ? (enabled ? ": On" : ": Off") : ""));
+                row(i,focus,190+(i-first)*Theme::Metric::RowStep,std::string(labels[i])+(i<=6 || i>=10 ? (enabled ? ": On" : ": Off") : ""));
             }
             if(hit & PAD_CROSS) {
                 if(focus==0) {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay_v2",controller_overlay?1:0);}
@@ -1399,7 +1406,7 @@ void ui_frame(const PadState &pad, float dt) {
             pref_set("plex_allow_http", allow_http ? 1 : 0);
         }
         const std::string labels[]={"Default audio delay +25 ms ("+std::to_string(global_delay)+" ms)","Default audio delay -25 ms",allow_http?"Local HTTP: allowed":"Local HTTP: disabled","Refresh servers","Sign out","Manual server address","Server","Developer Options","Profiles","Audio / Audiobook Libraries","Playback / Quality / Subtitles","Appearance / Motion"};
-        int first=std::max(0,focus-7);for(int n=first;n<12 && n<first+8;++n)row(n,focus,180+(n-first)*90,labels[n]);
+        int first=std::max(0,focus-7);for(int n=first;n<12 && n<first+8;++n)row(n,focus,180+(n-first)*Theme::Metric::RowStep,labels[n]);
     } else if (!available.empty()) {
         if (hit & PAD_UP)
             focus = std::max(0, focus - 1);
@@ -1407,7 +1414,7 @@ void ui_frame(const PadState &pad, float dt) {
             focus = std::min(static_cast<int>(available.size()) - 1, focus + 1);
         int first = std::max(0, focus - 7);
         for (int i = first; i < static_cast<int>(available.size()) && i < first + 8; ++i)
-            row(i, focus, 210 + (i - first) * 85, available[i].name);
+            row(i, focus, 210 + (i - first) *Theme::Metric::CompactStep, available[i].name);
         if ((hit & PAD_CROSS) && job == None) {
             connect_server(available[std::clamp(focus,0,static_cast<int>(available.size())-1)]);
         }
@@ -1415,7 +1422,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(!plex::diagnostic(TextOnly)) {
             poster(1560,220,250,340,detail,false);
             auto backdrop=artwork->landscape(base,server_token,detail.art);
-            if(backdrop) {float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();draw->AddImageRounded(backdrop,{385*scale,155*scale},{1510*scale,540*scale},ImVec2(0,0),ImVec2(1,1),Theme::alpha(Theme::White,150),Theme::Metric::Radius*scale);gradient(385,155,1125,385,Theme::alpha(Theme::Background,100),Theme::Background);}
+            if(backdrop) {cover_image(backdrop,385,155,1125,385,Theme::alpha(Theme::White,150));gradient(385,155,1125,385,Theme::alpha(Theme::Background,100),Theme::Background);}
         }
         draw_text(390, 220, Theme::Font::Caption,
                   (detail.year ? std::to_string(detail.year)+" • " : "")+(detail.duration>0 ? std::to_string(detail.duration/60000)+" min" : ""));
@@ -1482,7 +1489,7 @@ void ui_frame(const PadState &pad, float dt) {
         } else {
             int first = std::max(0, focus - 7);
             for (int i = first; i < static_cast<int>(listing.size()) && i < first + 8; ++i)
-                row(i, focus, 210 + (i - first) * 85, listing[i].title, !sidebar);
+                row(i, focus, 210 + (i - first) *Theme::Metric::CompactStep, listing[i].title, !sidebar);
         }
         if (!sidebar && (hit & PAD_CROSS))
             open_item();

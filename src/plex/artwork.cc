@@ -38,7 +38,7 @@ void Artwork::update() {
         library_free_image(old->texture);
         entries.erase(old);
     }
-    entries.push_back({image.key, texture, frame, texture?0:frame+300});
+    entries.push_back({image.key, texture, frame, texture?0:frame+300,image.width,image.height});
 }
 ImTextureID Artwork::get(const std::string &base, const std::string &token,
                          const std::string &thumb) {

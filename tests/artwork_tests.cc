@@ -57,7 +57,8 @@ int main() {
         return plex::Reply{200,image,""};
     });
     redirected.avatar("/users/avatar","private-fixture");settle(redirected);
-    assert(redirected.avatar("/users/avatar","private-fixture") && requests==2);
+    auto avatar_texture=redirected.avatar("/users/avatar","private-fixture");
+    assert(avatar_texture && requests==2 && redirected.aspect(avatar_texture)==1);
     redirected.clear();redirected.update();
     requests=0;
     plex::Artwork rejected([&](const plex::Request &){++requests;plex::Reply r{302,"",""};r.location="https://evil.invalid/avatar";return r;});
@@ -89,5 +90,9 @@ int main() {
         assert(large.avatar("https://images.plex.tv/fixture/"+std::to_string(format),"fixture"));
         large.clear();large.update();
     }
+    image.assign(18,'\0');image[2]=2;image[12]=2;image[14]=1;image[16]=24;image.append(6,'\x7f');
+    large.landscape("https://fixture.invalid","fixture","/wide");settle(large);
+    auto wide=large.landscape("https://fixture.invalid","fixture","/wide");
+    assert(wide && large.aspect(wide)==2);large.clear();assert(large.aspect(wide)==0);large.update();
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

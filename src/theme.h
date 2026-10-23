@@ -15,10 +15,21 @@ inline constexpr ImU32 White=IM_COL32(255,255,255,255), Black=IM_COL32(0,0,0,255
 constexpr ImU32 alpha(ImU32 color,int opacity) {return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(opacity)<<IM_COL32_A_SHIFT);}
 inline constexpr ImU32 Selection=IM_COL32(55,61,103,255);
 namespace Font {inline constexpr float Hero=52,Title=46,Brand=38,Heading=34,Body=28,Caption=22,Key=42,Avatar=70,Activation=58,LargeActivation=72,DeviceCode=110;}
-namespace Metric {inline constexpr float Radius=14,ImageRadius=10,FocusWidth=2,Gap=16,RowHeight=70,RowStep=90,SidebarWidth=330;}
+namespace Metric {inline constexpr float Radius=14,ImageRadius=10,FocusWidth=2,Gap=16,RowHeight=70,RowStep=90,CompactStep=85,NavStep=78,CarouselStep=390,CardStep=280,SidebarWidth=330;}
 inline bool reduced_motion=false;
 inline float motion(float dt) {return reduced_motion?1.f:std::clamp(dt*14.f,0.f,1.f);}
 inline ImU32 focus_color(double seconds) {return reduced_motion?Focus:alpha(Focus,220+static_cast<int>(35*(.5+.5*std::sin(seconds*4))));}
+inline void cover_uv(float source_aspect,float width,float height,ImVec2 &uv0,ImVec2 &uv1) {
+    uv0=ImVec2(0,0);uv1=ImVec2(1,1);
+    if(source_aspect<=0 || width<=0 || height<=0)return;
+    if(width/height>source_aspect) {
+        float visible=height*source_aspect/width;
+        uv0.y=(1-visible)*.5f;uv1.y=1-uv0.y;
+    } else {
+        float visible=width/(height*source_aspect);
+        uv0.x=(1-visible)*.5f;uv1.x=1-uv0.x;
+    }
+}
 inline void apply(float scale=1.f) {
     auto &s=ImGui::GetStyle();
     s.WindowRounding=s.ChildRounding=s.PopupRounding=Metric::Radius*scale;

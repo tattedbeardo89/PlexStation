@@ -230,3 +230,14 @@ its correction on this console. The earlier unmatched SIGSYS and old Movies
 SIGABRT cannot be correlated to an exact operation from the available evidence.
 The PCI UUID warning and zero-byte artwork checkpoint are not established crash
 causes. No physical crash-resolution claim is made.
+
+## Final layout regression checkpoint
+
+Artwork cache entries retain their decoded dimensions alongside existing texture
+handles. Posters/album/book covers fit their actual aspect ratio, and Home/detail
+banners center-crop UVs to fill their bounds without stretching. No second cache,
+new texture allocation path or shader is introduced. Tests cover decoded aspect
+lookup, invalidation after clearing, wide/portrait cover UVs and 1080p/4K geometry.
+Custom row, compact list, sidebar and carousel spacing now use shared theme
+metrics. Host core/transport, artwork, controller, source and complete sanitizer
+checks passed after these changes; physical visual acceptance remains pending.

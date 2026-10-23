@@ -17,6 +17,7 @@ class Artwork {
         ImTextureID texture = 0;
         uint64_t used = 0;
         uint64_t retry_after = 0;
+        int width=0,height=0;
     };
     std::future<Decoded> pending;
     std::vector<Entry> entries;
@@ -29,6 +30,12 @@ class Artwork {
     explicit Artwork(Transport t) : transport(std::move(t)) {}
     bool busy() const {return pending.valid();}
     size_t cached() const {return entries.size();}
+    float aspect(ImTextureID texture) const {
+        for(const auto &entry:entries)
+            if(texture && entry.texture==texture && entry.width>0 && entry.height>0)
+                return static_cast<float>(entry.width)/entry.height;
+        return 0;
+    }
     void update();
     ImTextureID get(const std::string &base, const std::string &token, const std::string &thumb);
     ImTextureID landscape(const std::string &base,const std::string &token,const std::string &path);
