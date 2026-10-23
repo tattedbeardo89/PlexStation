@@ -11,3 +11,7 @@
 /artifacts/
 
 __pycache__/
+
+# Rebuilt from the PNG/vector branding masters by packaging.
+/ps5/sce_sys/pic0.dds
+/ps5/sce_sys/pic1.dds

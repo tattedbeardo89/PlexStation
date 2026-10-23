@@ -1,6 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-<rect width="512" height="512" rx="96" fill="#101217"/>
-<rect x="48" y="48" width="416" height="416" rx="64" fill="#1c1f27" stroke="#e5ac42" stroke-width="6"/>
-<path d="M166 350V148h94c68 0 99 34 99 82s-31 81-99 81h-40v39zm54-155v69h37c32 0 48-10 48-34s-16-35-48-35z" fill="#e5ac42"/>
-<circle cx="345" cy="350" r="18" fill="#e5ac42"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>PlexStation — angular P and play symbol</title>
+  <rect width="512" height="512" fill="#111827"/>
+  <polygon points="104,88 304,88 408,192 408,264 304,368 224,368 224,440 104,440" fill="#1F2937"/>
+  <polygon points="88,72 288,72 392,176 392,248 288,352 208,352 208,424 88,424" fill="#6366F1"/>
+  <polygon points="88,72 208,144 208,424 88,424" fill="#818CF8"/>
+  <polygon points="208,144 316,212 208,280" fill="#F9FAFB"/>
+  <polygon points="288,72 392,176 316,212 208,144" fill="#3B82F6"/>
 </svg>
