@@ -11,7 +11,7 @@ struct StreamPlan {
 };
 inline std::string universal_query(const Item &i,size_t version,const std::string &session,Quality quality,bool local) {
     if(quality==Quality::Automatic)quality=local?Quality::Original:Quality::FHD;
-    std::string query="?path="+encode("/library/metadata/"+i.id)+"&mediaIndex="+std::to_string(version)+"&partIndex=0&protocol=hls&session="+encode(session)+"&directPlay=0&directStream=1&fastSeek=1&copyts=1&offset=0&hasMDE=1&X-Plex-Client-Profile-Name=Chrome";
+    std::string query="?path="+encode("/library/metadata/"+i.id)+"&mediaIndex="+std::to_string(version)+"&partIndex=0&protocol=hls&session="+encode(session)+"&directPlay=0&directStream=1&fastSeek=1&copyts=1&offset=0&subtitleStreamID=0&subtitles=none&hasMDE=1&X-Plex-Client-Profile-Name=Chrome";
     if(quality!=Quality::Original){const char *res[]={"","","3840x2160","1920x1080","1280x720","854x480","640x360"};const char *rate[]={"","","40000","8000","4000","1500","720"};int n=static_cast<int>(quality);query+="&videoResolution="+std::string(res[n])+"&maxVideoBitrate="+rate[n]+"&videoQuality=100";}
     return query;
 }
@@ -38,7 +38,7 @@ inline StreamPlan negotiate_video(Client &client,const std::string &base,const s
         if(video.empty())video=text((*parts)[0],"videoDecision");
         if(audio.empty())audio=text((*parts)[0],"audioDecision");
         auto streams=(*parts)[0].find("Stream");
-        if(streams!=(*parts)[0].end() && streams->is_array())for(const auto &s:*streams){if(number(s,"streamType")==1){video=text(s,"decision",video);codec=text(s,"codec",codec);}if(number(s,"streamType")==2)audio=text(s,"decision",audio);}
+        if(streams!=(*parts)[0].end() && streams->is_array())for(const auto &s:*streams){if(number(s,"streamType")==3 && text(s,"decision")=="burn")return {{Mode::Unsupported,"","Server would burn subtitles; select Original quality to keep client subtitle controls"},"",""};if(number(s,"streamType")==1){video=text(s,"decision",video);codec=text(s,"codec",codec);}if(number(s,"streamType")==2)audio=text(s,"decision",audio);}
     }
     if(codec!="h264" && codec!="hevc")return {{Mode::Unsupported,"","Server selected an unsupported video output codec"},"",""};
     if(video!="copy" && video!="transcode")return {{Mode::Unsupported,"","Server did not identify copy/transcode behavior"},"",""};

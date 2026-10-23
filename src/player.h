@@ -68,13 +68,15 @@ void player_set_rate(float rate);
 std::vector<Track> player_audio_tracks();
 int player_audio_track();
 void player_set_audio_track(int id);
+struct SubtitleTrack {int id; std::string name, language;};
+std::vector<SubtitleTrack> player_subtitle_catalog();
 std::vector<Track> player_subtitle_tracks();
 int player_subtitle_track();
 void player_set_subtitle_track(int id);
 void player_subtitles_automatic(const std::string &language="");
 void player_subtitles_off(); /* staged until VLC exposes its disabled entry; kept across seeks */
 /* Adds a subtitle file (.srt, .ass, ...) to what plays and selects it. */
-bool player_add_subtitle(const std::string &path); /* a local path, or a share's / a link's address */
+bool player_add_subtitle(const std::string &path, bool allow_reopen = true); /* a local path, or a share's / a link's address */
 bool player_is_subtitle_name(const std::string &name); /* .srt, .ass, .vtt... */
 const VideoInfo &player_video_info();
 

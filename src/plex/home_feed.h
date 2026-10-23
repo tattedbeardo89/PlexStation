@@ -77,7 +77,7 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
             int count=0;for(const auto &i:items(response.data,false)){
                 if(++count>12)break;
                 if(!seen.insert(i.id).second)continue;
-                merged.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"addedAt",i.added},{"originallyAvailableAt",i.released}});
+                merged.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"grandparentTitle",i.series},{"parentIndex",i.season},{"index",i.episode},{"addedAt",i.added},{"originallyAvailableAt",i.released}});
             }
             std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
             if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
@@ -87,14 +87,18 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
         row(id,title,Json{{"MediaContainer",{{"Metadata",std::move(merged)}}}});
     };
     if(!has("recentlyaddedmovies"))aggregate("recentlyAddedMovies","Recently Added Movies","movie","/recentlyAdded?type=1");
-    if(!has("recentlyreleased"))aggregate("recentlyReleasedMovies","Recently Released Movies","movie","/all?type=1&sort=originallyAvailableAt:desc",true);
-    if(!has("recentlyaddedtv"))aggregate("recentlyAddedTV","Recently Added TV","show","/recentlyAdded?type=4");
+    if(!has("recentlyreleasedmovies"))aggregate("recentlyReleasedMovies","Recently Released Movies","movie","/all?type=1&sort=originallyAvailableAt:desc",true);
+    if(!has("recentlyaddedtv"))aggregate("recentlyAddedTV","Recently Added TV Shows","show","/recentlyAdded?type=2");
+    if(!has("recentlyreleasedtv"))aggregate("recentlyReleasedTV","Recently Released TV Episodes","show","/all?type=4&sort=originallyAvailableAt:desc",true);
     if(!has("ondeck"))add("onDeck","On Deck / Next Episodes","/library/onDeck?X-Plex-Container-Size=12");
     if(!current())return {{},"Home loading cancelled",0};
     for(auto &row:extra_rows) {if(rows.size()==12)break;rows.push_back(std::move(row));}
     Json ordered=Json::array();bool continuing=false;
     for(const auto &row:rows)if(flag(row,"continuing")) {ordered.push_back(row);continuing=true;}
-    for(const auto &row:rows)if(!flag(row,"continuing"))ordered.push_back(row);
+    const char *preferred[]={"recentlyReleasedMovies","recentlyAddedMovies","recentlyReleasedTV","recentlyAddedTV"};
+    std::set<std::string> placed;
+    for(const auto *id:preferred)for(const auto &row:rows)if(text(row,"id")==id){ordered.push_back(row);placed.insert(id);}
+    for(const auto &row:rows)if(!flag(row,"continuing") && !placed.count(text(row,"id")))ordered.push_back(row);
     if(continuing)warnings=Json::array();
     return {Json{{"rows",std::move(ordered)},{"warnings",std::move(warnings)}},"",200};
 }

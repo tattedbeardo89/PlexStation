@@ -1,5 +1,8 @@
 # PlexStation
 
+Current continuation: [October 23 remaining-features status and PS5 checklist](docs/REMAINING-FEATURES-2026-10-23.md). Source implementation and host tests are distinct from the owner-tested `5d8adb9` baseline.
+
+
 Native PS5 homebrew Plex client under development, derived from
 [ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
 and native UI code, but **is not yet a complete or verified PS5 application**.

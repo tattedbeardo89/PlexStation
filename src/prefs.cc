@@ -9,6 +9,11 @@
 #include <map>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
+#include <atomic>
 
 #include "platform.h"
 
@@ -27,11 +32,14 @@ void load()
     if (loaded)
         return;
     loaded = true;
-    FILE *f = fopen(path().c_str(), "r");
-    if (!f)
-        return;
+    int fd=open(path().c_str(),O_RDONLY|O_NOFOLLOW);
+    if(fd<0)return;
+    struct stat st{};
+    if(fstat(fd,&st)!=0 || !S_ISREG(st.st_mode) || st.st_uid!=geteuid() || st.st_size>2*1024*1024){close(fd);return;}
+    FILE *f = fdopen(fd, "r");
+    if (!f){close(fd);return;}
     existed = true;
-    char line[512];
+    char line[8192];
     while (fgets(line, sizeof(line), f)) {
         std::string l = line;
         while (!l.empty() && (l.back() == '\n' || l.back() == '\r'))
@@ -45,14 +53,16 @@ void load()
 
 void save()
 {
-    std::string tmp = path() + ".tmp";
-    FILE *f = fopen(tmp.c_str(), "w");
-    if (!f)
-        return;
-    for (auto &kv : values)
-        fprintf(f, "%s=%s\n", kv.first.c_str(), kv.second.c_str());
-    fclose(f);
-    rename(tmp.c_str(), path().c_str());
+    static std::atomic<unsigned> serial{0};
+    std::string tmp = path()+".tmp-"+std::to_string(getpid())+"-"+std::to_string(serial++);
+    int fd=open(tmp.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+    if(fd<0)return;
+    FILE *f=fdopen(fd,"w");if(!f){close(fd);unlink(tmp.c_str());return;}
+    bool ok=true;
+    for(const auto &kv:values)if(fprintf(f,"%s=%s\n",kv.first.c_str(),kv.second.c_str())<0)ok=false;
+    if(fflush(f)!=0 || fsync(fd)!=0)ok=false;
+    if(fclose(f)!=0)ok=false;
+    if(!ok || rename(tmp.c_str(),path().c_str())!=0)unlink(tmp.c_str());
 }
 
 } // namespace
@@ -84,6 +94,7 @@ void pref_set(const char *key, int value)
 
 void pref_set(const char *key, const std::string &value)
 {
+    if(!key || !*key || std::string(key).find_first_of("=\r\n")!=std::string::npos || value.size()>4096 || value.find_first_of("\r\n")!=std::string::npos)return;
     load();
     if (values[key] == value)
         return;

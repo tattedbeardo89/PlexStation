@@ -568,3 +568,13 @@ image aspect ratios, center-crops banners, and centralizes custom list spacing.
 Its core/curl/native transport, artwork, controller/package/theme-boundary,
 strict native-source and all ASan/UBSan/numeric-locale checks completed with
 passing log summaries. The final native build is tracked separately below.
+
+## October 23, 2026 remaining-features candidate
+
+Owner acceptance of `5d8adb9` covers launch/authentication/server/native video,
+default subtitles Off and normal numeric parsing only. The new source candidate
+adds subtitle lifecycle controls, avatar/cache diagnostics, authorized cached
+startup, library routing/tabs, cloud filters/sidebar customization and branding.
+See [the detailed status and physical checklist](REMAINING-FEATURES-2026-10-23.md).
+No new physical acceptance is claimed. The local native attempt is blocked by
+its missing RADV release archive; hosted build results are tracked separately.

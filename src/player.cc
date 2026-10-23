@@ -101,6 +101,7 @@ struct Health {
 libvlc_media_stats_t debug_last;
 SubtitleLatch subtitle_latch;
 bool subtitle_auto_pending=false;
+unsigned subtitle_selection_generation=0;
 std::string subtitle_auto_language;
 double subtitle_auto_until=0,subtitle_auto_next=0;
 int restore_audio = -2, restore_spu = -2; /* tracks to pick again after a reopen */
@@ -136,6 +137,8 @@ std::vector<std::string> source_options; /* the open's login options, for the fo
 struct PendingSub {
     std::string path, ready; /* ready: what VLC gets, "" = couldn't be read */
     int serial;              /* side.serial when it was asked for */
+    unsigned selection;
+    bool allow_reopen;
 };
 std::mutex pending_lock;
 std::vector<PendingSub> pending_subs;
@@ -2461,7 +2464,7 @@ bool player_fast_decoding()
     return fast_now;
 }
 
-bool add_ready_subtitle(const std::string &path, const std::string &ready);
+bool add_ready_subtitle(const std::string &path, const std::string &ready, bool allow_reopen = true);
 
 /* The file playing is a disc: an image (.iso, .img), dvd:// or bluray://, or
  * anything VLC sees several titles in (a VIDEO_TS / BDMV folder). */
@@ -2486,8 +2489,8 @@ PlayerEvent player_tick()
         done.swap(pending_subs);
     }
     for (const PendingSub &p : done)
-        if (mp && p.serial == side.serial)
-            add_ready_subtitle(p.path, p.ready);
+        if (mp && p.serial == side.serial && p.selection == subtitle_selection_generation)
+            add_ready_subtitle(p.path, p.ready, p.allow_reopen);
     /* a video waiting for the one before to finish stopping */
     if (queued_media && !stopping) {
         fprintf(stderr, "player: [%.2f] the video before stopped: starting %s\n", plat_time(), "[media URL redacted]");
@@ -2954,6 +2957,25 @@ void player_set_audio_track(int id)
     kept.audio = id;
 }
 
+std::vector<SubtitleTrack> player_subtitle_catalog()
+{
+    std::vector<SubtitleTrack> result;
+    auto descriptions=player_subtitle_tracks();
+    if(!asking())return result;
+    auto *media=libvlc_media_player_get_media(mp);
+    if(!media)return result;
+    libvlc_media_track_t **tracks=nullptr;
+    unsigned count=libvlc_media_tracks_get(media,&tracks);
+    for(unsigned i=0;i<count;++i) {
+        const auto *track=tracks[i];
+        if(track->i_type!=libvlc_track_text || track->i_id<0)continue;
+        for(const auto &description:descriptions)if(description.id==track->i_id)
+            result.push_back({track->i_id,description.name,track->psz_language?track->psz_language:""});
+    }
+    libvlc_media_tracks_release(tracks,count);libvlc_media_release(media);
+    return result;
+}
+
 std::vector<Track> player_subtitle_tracks()
 {
     return tracks_from(asking() ? libvlc_video_get_spu_description(mp) : nullptr);
@@ -2966,6 +2988,7 @@ int player_subtitle_track()
 
 void player_set_subtitle_track(int id)
 {
+    ++subtitle_selection_generation;
     subtitle_auto_pending=false;
     subtitle_latch.choose(id<0);
     restore_spu=-2;sub_check_at=0;
@@ -2976,12 +2999,14 @@ void player_set_subtitle_track(int id)
 
 void player_subtitles_automatic(const std::string &language)
 {
+    ++subtitle_selection_generation;
     subtitle_latch.choose(false);restore_spu=-2;sub_check_at=0;
     subtitle_auto_language=language;subtitle_auto_pending=true;subtitle_auto_until=plat_time()+5;subtitle_auto_next=0;
 }
 
 void player_subtitles_off()
 {
+    ++subtitle_selection_generation;
     subtitle_auto_pending=false;
     subtitle_latch.choose(true);restore_spu=-2;sub_check_at=0;
     subtitle_latch.enforce(player_subtitle_tracks(),player_subtitle_track(),[](int id){
@@ -3034,8 +3059,9 @@ bool player_is_subtitle_name(const std::string &name)
     return is_sub_name(lowered(name));
 }
 
-bool player_add_subtitle(const std::string &path)
+bool player_add_subtitle(const std::string &path, bool allow_reopen)
 {
+    unsigned selection=++subtitle_selection_generation;
     if (!mp)
         return false;
     /* A full path or an address only: VLC makes a relative one full with
@@ -3055,16 +3081,16 @@ bool player_add_subtitle(const std::string &path)
             std::string ready = sub_ready(path, hint);
             libvlc_release(inst);
             std::lock_guard<std::mutex> g(pending_lock);
-            pending_subs.push_back({ path, ready, serial });
+            pending_subs.push_back({ path, ready, serial, selection, allow_reopen });
         }).detach();
         return true;
     }
     /* not UTF-8: a converted copy */
-    return add_ready_subtitle(path, sub_ready(path, sub_lang_hint()));
+    return add_ready_subtitle(path, sub_ready(path, sub_lang_hint()), allow_reopen);
 }
 
 /* A subtitle file read and made ready: into the file playing. */
-bool add_ready_subtitle(const std::string &path, const std::string &ready)
+bool add_ready_subtitle(const std::string &path, const std::string &ready, bool allow_reopen)
 {
     if (ready.empty()) {
         fprintf(stderr, "player: subtitle file %s: can't be read\n", "[subtitle source redacted]");
@@ -3072,7 +3098,7 @@ bool add_ready_subtitle(const std::string &path, const std::string &ready)
     }
     subtitle_auto_pending=false;subtitle_latch.choose(false);
     sub_check_count = player_subtitle_tracks().size();
-    sub_check_at = plat_time() + 4;
+    sub_check_at = allow_reopen ? plat_time() + 4 : 0;
     int r = libvlc_media_player_add_slave(mp, libvlc_media_slave_type_subtitle, sub_uri(ready).c_str(), true);
     fprintf(stderr, "player: subtitle file %s: %s\n", "[subtitle source redacted]", r == 0 ? "added" : "failed");
     /* the file VLC got is the one a reopen attaches again */

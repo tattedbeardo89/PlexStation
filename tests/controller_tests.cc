@@ -19,7 +19,8 @@ int64_t player_subtitle_delay(){return test_sub_delay;}
 void player_set_subtitle_delay(int64_t n){test_sub_delay=n;}
 SubStyle player_sub_style(){return {100,0,false};}
 void player_set_sub_style(const SubStyle &){}
-bool player_add_subtitle(const std::string &){return true;}
+bool player_add_subtitle(const std::string &,bool){return true;}
+std::vector<SubtitleTrack> player_subtitle_catalog(){return {};}
 std::string player_audio_language(){return "";}
 static std::string selected_sub_language;
 void player_set_languages(const std::string &,const std::string &sub){selected_sub_language=sub;}
@@ -42,6 +43,9 @@ Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
 void Artwork::clear() {}
+void Artwork::retry_avatars() {}
+std::string Artwork::avatar_state(const std::string &) const {return "Waiting";}
+std::string Artwork::diagnostics() const {return "Fixture";}
 void Artwork::set_scope(const std::string &,const std::string &,size_t) {}
 ImTextureID Artwork::landscape(const std::string &,const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
@@ -161,7 +165,9 @@ int main() {
     complete(PinStart,pin_reply); assert(auth.state==AuthState::Waiting && have_qr);
     auth.cancel(); pin_reply.data["authToken"]="cancelled-fixture-token";
     complete(PinPoll,pin_reply); assert(account.empty());
-    auto fixture_transport = [](const Request &q) {
+    int warm_requests=0;
+    auto fixture_transport = [&](const Request &q) {
+        if(q.timeout_ms==1400){assert(q.connect_timeout_ms==800);++warm_requests;}
         if(q.url.find("/hubs")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         if(q.url=="https://plex.tv/api/v2/user")
             return Reply{200,R"({"id":42,"username":"fixture","home":false})",""};
@@ -215,9 +221,10 @@ int main() {
     pref_set(primary_key("plex_show_profiles").c_str(),0);
     account.clear(); assert(ui_init()); assert(account_loading && job==ValidateAccount);
     io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
-    pending.wait(); finish_job(); assert(job==Resources);
-    pending.wait(); finish_job(); assert(!account_loading && job==Select && reconnect_screen);
-    pending.wait(); finish_job(); assert(!reconnect_screen && available.empty() && selected_server.id=="server");
+    pending.wait(); finish_job(); assert(job==FastConnect);
+    auto warm_started=std::chrono::steady_clock::now();
+    pending.wait(); finish_job(); assert(!account_loading && !reconnect_screen && selected_server.id=="server" && warm_requests==2);
+    printf("Warm startup fixture: 2 bounded authorized endpoint requests; completion %.3f ms (host fixture only)\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-warm_started).count());
     while(job!=None) {pending.wait();finish_job();}
     assert(account_pref("plex_preferred_server")=="server");
     // A short movie response cannot retain an index from the previous long list.
@@ -456,13 +463,16 @@ int main() {
     gfx.width=1920;gfx.height=1080;io.DisplaySize={1920,1080};
     puts("Native theme draw-list checks passed at 1080p/4K with controller motion preference");
     // Per-profile default Off, remembered mode, and controller-only subtitle menu.
-    video=false;test_prefs.clear();restore_video_preferences();assert(selected_sub_language=="off");
+    video=false;test_prefs.clear();restore_video_preferences();assert(selected_sub_language=="off" && subtitle_default_mode==0);
     subtitle_default_mode=2;subtitle_language_choice=1;subtitle_remember=true;
-    apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="es,none");
-    subtitle_remember=false;apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="off");
+    apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="off" && subtitle_default_mode==2 && subtitle_language_choice==1);
+    subtitle_remember=false;apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="off" && subtitle_default_mode==2);
     video=true;subtitle_menu=true;subtitle_focus=0;int before_off=off_choices;
     playback_track_frame(PAD_CROSS);assert(off_choices==before_off+1 && selected_sub_language=="off");
+    service_subtitle_selection();assert(subtitle_default_mode==2 && subtitle_selection.choice==-1);
     assert(playback_tracks_focus_valid());video=false;subtitle_menu=false;
+    subtitle_selection.reset();subtitle_default_mode=0;detail.id="different-movie";prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
+    subtitle_selection.choice=0;detail.id="different-episode";prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

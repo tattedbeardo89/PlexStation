@@ -112,7 +112,7 @@ std::vector<Item> items(const Json &j,bool include_media) {
                     auto key=text(part,"key");
                     Json streams=Json::array();auto ss=part.find("Stream");
                     if(ss!=part.end() && ss->is_array())for(const auto &stream:*ss) {
-                        Json value=Json::object();for(const char *field:{"id","streamType","codec","language","languageCode","key","forced","selected","channels","decision"}) {
+                        Json value=Json::object();for(const char *field:{"id","streamType","codec","language","languageCode","languageTag","title","displayTitle","hearingImpaired","key","forced","selected","channels","decision"}) {
                             auto v=stream.find(field);if(v!=stream.end() && (v->is_string() || v->is_number() || v->is_boolean()))value[field]=v->is_string()?Json(display_text(v->get<std::string>(),512)):*v;
                         }
                         streams.push_back(std::move(value));if(streams.size()==32)break;
@@ -219,7 +219,7 @@ Result Client::call(const std::string &method, const std::string &base, const st
         auto *root=document.RootElement(); if(!root || root->NextSiblingElement())return {{},"Invalid Plex Home response",r.status};
         auto object=[](tinyxml2::XMLElement *element) {
             Json out=Json::object();
-            for(const char *key:{"id","uuid","title","username","thumb","protected","admin","restricted","authenticationToken","authToken"})
+            for(const char *key:{"id","uuid","title","username","thumb","avatar","avatarUrl","protected","admin","restricted","authenticationToken","authToken"})
                 if(auto value=element->Attribute(key))out[key]=value;
             return out;
         };

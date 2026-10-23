@@ -2,6 +2,7 @@
 struct CleanupTask {std::string base,token,path;};
 std::vector<CleanupTask> cleanups;
 StreamPlan stream_plan;
+SubtitleSelection subtitle_selection;
 bool subtitle_menu=false;
 void choose_subtitle_mode(int mode);
 bool stream_fallback=false,video_info=false,video_retry_pending=false;
@@ -18,14 +19,18 @@ void service_cleanup() {
     auto task=std::move(cleanups.front());cleanups.erase(cleanups.begin());
     submit(Cleanup,[task]{return client->call("GET",task.base,task.path,task.token);});
 }
+void begin_session_subtitles();
 void apply_video_plan(const StreamPlan &plan) {
     if(plan.playback.mode==Mode::Unsupported){message=plan.playback.error;return;}
+    prepare_subtitle_selection();
+    if(plan.playback.mode!=Mode::DirectPlay && subtitle_selection.choice>=0){message="Selected subtitles require Original / Direct Play. Server stream reconfiguration is not supported; playback has not restarted.";return;}
     audio_reset();retire_stream();stream_plan=plan;
     if(!player_open(plan.playback.url,detail.offset)){message="VLC could not open media";retire_stream();return;}
     next_candidate={};next_requested=false;autoplay_deadline=0;
     playing=detail;video=true;tracks=false;subtitle_menu=false;progress={};video_info=false;stream_fallback=plan.playback.mode!=Mode::DirectPlay;
     auto offset=std::clamp(pref_int((account_key("plex_media_audio")+"."+encode(selected_server.id)+"."+encode(detail.id)).c_str(),global_delay),-500,500);
     player_set_audio_delay(offset);overlay_until=plat_time()+5;
+    begin_session_subtitles();
 }
 void request_video(bool force) {
     if(job!=None || progress_pending){message="Finishing previous playback request; select Play again shortly.";return;}
@@ -77,58 +82,126 @@ void video_tools(uint32_t hit) {
 }
 
 int subtitle_focus=0,subtitle_default_mode=0,subtitle_language_choice=0;
-bool subtitle_remember=true;
+bool subtitle_remember=false,subtitle_forced=false;
+bool subtitle_pending=false,subtitle_external_pending=false;
+int subtitle_native_id=-1;
+double subtitle_deadline=0;
+std::vector<int> subtitle_before_external;
+std::string subtitle_status;
 const char *subtitle_languages[]={"en","es","fr","ja","de","it","pt"};
 const char *subtitle_mode_names[]={"Off","Automatic","Preferred Language"};
+std::string subtitle_memory_key() {
+    return account_key("plex_subtitle_media_v3")+"."+encode(selected_server.id)+"."+encode(detail.id)+"."+std::to_string(version);
+}
+void prepare_subtitle_selection() {
+    if(subtitle_selection.media==detail.id && subtitle_selection.version==static_cast<size_t>(version))return;
+    subtitle_selection.begin(detail.id,version,subtitle_default_mode);
+    if(subtitle_forced && subtitle_default_mode!=0){auto entries=subtitle_streams(detail,version);int found=-1,count=0;for(size_t i=0;i<entries.size();++i)if(entries[i].forced && subtitle_language_matches(entries[i].language,subtitle_languages[subtitle_language_choice])){found=i;++count;}if(count==1)subtitle_selection.choice=found;}
+    subtitle_status.clear();
+    if(subtitle_remember) {
+        auto saved=pref_str(subtitle_memory_key().c_str(),"");
+        if(saved=="off")subtitle_selection.choice=-1;
+        else {auto entries=subtitle_streams(detail,version);for(size_t i=0;i<entries.size();++i)if(!entries[i].id.empty() && saved=="stream:"+entries[i].id)subtitle_selection.choice=i;}
+    }
+}
 void apply_subtitle_preferences(bool save) {
-    std::string language=subtitle_languages[std::clamp(subtitle_language_choice,0,6)];
-    player_set_languages(player_audio_language(),subtitle_default_mode==0?"off":subtitle_default_mode==2?language+",none":"");
-    if(video){if(subtitle_default_mode==0)player_subtitles_off();else player_subtitles_automatic(subtitle_default_mode==2?language:"");}
+    // Settings change the next session's defaults. Current session overrides survive.
+    player_set_languages(player_audio_language(),"off");
     if(save) {
-        pref_set(account_key("plex_subtitle_remember_v2").c_str(),subtitle_remember?1:0);
-        if(subtitle_remember){pref_set(account_key("plex_subtitle_mode_v2").c_str(),subtitle_default_mode);pref_set(account_key("plex_subtitle_language_v2").c_str(),subtitle_language_choice);}
+        pref_set(account_key("plex_subtitle_remember_v3").c_str(),subtitle_remember?1:0);
+        pref_set(account_key("plex_subtitle_mode_v3").c_str(),subtitle_default_mode);
+        pref_set(account_key("plex_subtitle_language_v3").c_str(),subtitle_language_choice);
+        pref_set(account_key("plex_subtitle_forced_v3").c_str(),subtitle_forced?1:0);
+        if(!video)subtitle_selection.reset();
     }
 }
-void choose_subtitle_mode(int mode){subtitle_default_mode=mode;apply_subtitle_preferences(true);}
-struct SubtitleAction {std::string label,url;int action=0,id=0;};
-std::vector<SubtitleAction> subtitle_actions() {
-    std::vector<SubtitleAction> out{{"Off","",0,0},{"Automatic","",1,0},{"Preferred language","",2,0}};
-    for(const auto &track:player_subtitle_tracks())if(track.id>=0 && out.size()<96)out.push_back({track.name,"",3,track.id});
-    if(playing.media.is_array() && version>=0 && static_cast<size_t>(version)<playing.media.size()) {
+void choose_subtitle_mode(int mode) {
+    subtitle_selection.choice=mode==0?-1:mode==1?-2:-3;
+    subtitle_pending=false;subtitle_external_pending=false;
+    if(video) {
+        if(mode==0)player_subtitles_off();
+        else player_subtitles_automatic(mode==2?subtitle_languages[subtitle_language_choice]:"");
+    }
+    subtitle_status=mode==0?"Off":"Automatic selection requested";
+}
+void begin_session_subtitles() {
+    player_subtitles_off(); // Off until an explicit/default policy is applied after discovery.
+    subtitle_pending=true;subtitle_external_pending=false;subtitle_deadline=plat_time()+12;
+    subtitle_status="Waiting for subtitle discovery";
+}
+void service_subtitle_selection() {
+    if(!subtitle_pending)return;
+    auto choice=subtitle_selection.choice;
+    if(choice==-1){player_subtitles_off();subtitle_pending=false;subtitle_status="Off";return;}
+    if(choice==-4){player_set_subtitle_track(subtitle_native_id);subtitle_pending=false;subtitle_status=player_subtitle_track()==subtitle_native_id?"Native track active":"Native track unavailable";return;}
+    if(choice<0){player_subtitles_automatic(choice==-3?subtitle_languages[subtitle_language_choice]:"");subtitle_pending=false;subtitle_status="Automatic selection requested";return;}
+    auto entries=subtitle_streams(playing,version);
+    if(static_cast<size_t>(choice)>=entries.size()){player_subtitles_off();subtitle_pending=false;subtitle_selection.choice=-1;subtitle_status="Requested subtitle is unavailable";return;}
+    const auto &entry=entries[choice];
+    int native=-1;
+    if(entry.external.empty())native=match_subtitle(entry,player_subtitle_catalog());
+    else if(!subtitle_external_pending && !player_subtitle_tracks().empty()) {
+        std::string url;
         auto parts=playing.media[version].find("Part");
-        if(parts!=playing.media[version].end() && parts->is_array())for(const auto &part:*parts) {
-            auto streams=part.find("Stream");if(streams==part.end() || !streams->is_array())continue;
-            for(const auto &stream:*streams){auto url=external_subtitle(base,server_token,stream);if(!url.empty() && out.size()<112)out.push_back({"External: "+text(stream,"language",text(stream,"codec","subtitle")),url,4,0});}
-        }
+        for(const auto &stream:(*parts)[0]["Stream"])if(text(stream,"id",std::to_string(number(stream,"id")))==entry.id)url=external_subtitle(base,server_token,stream);
+        if(url.empty()){subtitle_pending=false;subtitle_selection.choice=-1;subtitle_status="External subtitle format is unsupported";message=subtitle_status;return;}
+        subtitle_before_external.clear();for(const auto &t:player_subtitle_tracks())subtitle_before_external.push_back(t.id);
+        if(!player_add_subtitle(url,false)){subtitle_pending=false;subtitle_selection.choice=-1;subtitle_status="External subtitle could not be loaded";message=subtitle_status;return;}
+        subtitle_external_pending=true;
+    } else if(subtitle_external_pending) {
+        int count=0;
+        for(const auto &track:player_subtitle_tracks())if(track.id>=0 && std::find(subtitle_before_external.begin(),subtitle_before_external.end(),track.id)==subtitle_before_external.end()){native=track.id;++count;}
+        if(count!=1)native=-1;
     }
-    out.push_back({"Subtitle delay +100 ms","",5,0});out.push_back({"Subtitle delay -100 ms","",6,0});
-    out.push_back({"Subtitle appearance: size","",7,0});
-    return out;
+    if(native>=0) {
+        player_set_subtitle_track(native);
+        if(player_subtitle_track()==native){subtitle_pending=false;subtitle_status=entry.label;return;}
+    }
+    if(plat_time()>subtitle_deadline) {
+        player_subtitles_off();subtitle_pending=false;subtitle_selection.choice=-1;
+        subtitle_status="Subtitle could not be verified. Off retained; use a native track or Original quality.";
+        message=subtitle_status;
+    }
 }
-bool playback_tracks_focus_valid(){return subtitle_menu?subtitle_focus>=0 && subtitle_focus<static_cast<int>(subtitle_actions().size()):track_focus>=0 && track_focus<2;}
-void playback_track_frame(uint32_t hit) {
-    if(subtitle_menu) {
-        auto entries=subtitle_actions();subtitle_focus=std::clamp(subtitle_focus,0,static_cast<int>(entries.size())-1);
-        if(hit & PAD_UP)subtitle_focus=std::max(0,subtitle_focus-1);
-        if(hit & PAD_DOWN)subtitle_focus=std::min(static_cast<int>(entries.size())-1,subtitle_focus+1);
-        rect(70,70,1780,940,Theme::alpha(Theme::Background,245));
-        draw_text(390,120,Theme::Font::Heading,"Subtitles");
-        draw_text(390,175,Theme::Font::Caption,"Off is absolute, including forced captions. Automatic uses VLC's native policy.");
-        int first=std::max(0,subtitle_focus-7);
-        for(int i=first;i<static_cast<int>(entries.size()) && i<first+8;++i)row(i,subtitle_focus,245+(i-first)*76,entries[i].label);
-        draw_text(390,920,Theme::Font::Caption,"Cross select • Circle back • Preferred language and defaults: Settings / Playback / Subtitles");
-        if(hit & PAD_CROSS) {
-            const auto &entry=entries[subtitle_focus];
-            if(entry.action<=2){subtitle_default_mode=entry.action;apply_subtitle_preferences(true);}
-            if(entry.action==3)player_set_subtitle_track(entry.id);
-            if(entry.action==4 && !player_add_subtitle(entry.url))message="VLC could not attach the selected external subtitle";
-            if(entry.action==5 || entry.action==6)player_set_subtitle_delay(std::clamp<int64_t>(player_subtitle_delay()+(entry.action==5?100:-100),-10000,10000));
-            if(entry.action==7){auto style=player_sub_style();style.size=style.size>=200?50:style.size+10;player_set_sub_style(style);}
-        }
-        return;
+void subtitle_picker_frame(uint32_t hit) {
+    const auto &item=video?playing:detail;
+    auto entries=subtitle_streams(item,version);
+    std::vector<Track> native;
+    if(video)for(const auto &t:player_subtitle_tracks())if(t.id>=0)native.push_back(t);
+    int metadata_count=static_cast<int>(entries.size())+3;
+    int count=metadata_count+static_cast<int>(native.size());
+    subtitle_focus=std::clamp(subtitle_focus,0,count-1);
+    if(hit & PAD_UP)subtitle_focus=std::max(0,subtitle_focus-1);
+    if(hit & PAD_DOWN)subtitle_focus=std::min(count-1,subtitle_focus+1);
+    rect(70,70,1780,940,Theme::alpha(Theme::Background,255));
+    draw_text(390,115,Theme::Font::Heading,video?"Subtitle Tracks":"Subtitles before playback");
+    draw_text(390,175,Theme::Font::Caption,"Session selection takes precedence. Off disables all captions, including forced tracks.");
+    int first=std::max(0,subtitle_focus-6);
+    for(int i=first;i<count && i<first+7;++i) {
+        int choice=i>=metadata_count?-4:i==0?-1:i==1?-2:i==2?-3:i-3;
+        std::string label=i>=metadata_count?"Native: "+native[i-metadata_count].name:i==0?"Off":i==1?"Automatic":i==2?"Preferred Language":entries[i-3].label;
+        bool selected=choice==-4?player_subtitle_track()==native[i-metadata_count].id:subtitle_selection.choice==choice;
+        row(i,subtitle_focus,245+(i-first)*78,(selected?"[Selected] ":"")+label);
     }
-    if(hit & PAD_UP)track_focus=std::max(0,track_focus-1);
-    if(hit & PAD_DOWN)track_focus=std::min(1,track_focus+1);
+    draw_text(390,825,Theme::Font::Caption,subtitle_status,Theme::Secondary,1370);
+    draw_text(390,920,Theme::Font::Caption,"Cross select • Circle back • Track changes preserve playback position");
+    if(hit & PAD_CROSS) {
+        if(subtitle_focus>=metadata_count)subtitle_native_id=native[subtitle_focus-metadata_count].id;
+        subtitle_selection.choice=subtitle_focus>=metadata_count?-4:subtitle_focus==0?-1:subtitle_focus==1?-2:subtitle_focus==2?-3:subtitle_focus-3;
+        subtitle_pending=false;subtitle_external_pending=false;
+        if(video)begin_session_subtitles();
+        if(subtitle_remember) {
+            std::string saved=subtitle_selection.choice==-1?"off":subtitle_selection.choice>=0?"stream:"+entries[subtitle_selection.choice].id:"";
+            pref_set(subtitle_memory_key().c_str(),saved);
+        }
+    }
+    if(hit & PAD_CIRCLE){detail_subtitles=false;subtitle_menu=false;}
+}
+bool playback_tracks_focus_valid(){return subtitle_menu?subtitle_focus>=0:track_focus>=0 && track_focus<2;}
+void playback_track_frame(uint32_t hit) {
+    if(subtitle_menu){subtitle_picker_frame(hit);return;}
+    if(hit & PAD_UP)track_focus=0;
+    if(hit & PAD_DOWN)track_focus=1;
     if(hit & (PAD_CROSS|PAD_SQUARE)) {
         if(track_focus==1){subtitle_menu=true;subtitle_focus=0;return;}
         auto audio=player_audio_tracks();int current=player_audio_track();
@@ -139,20 +212,18 @@ void playback_track_frame(uint32_t hit) {
 }
 void subtitle_settings_frame(uint32_t hit) {
     if(hit & PAD_UP)focus=std::max(0,focus-1);
-    if(hit & PAD_DOWN)focus=std::min(5,focus+1);
-    row(0,focus,210,std::string("Default mode: ")+subtitle_mode_names[subtitle_default_mode]);
-    row(1,focus,300,std::string("Preferred language: ")+subtitle_languages[subtitle_language_choice]);
-    row(2,focus,390,std::string("Remember per-profile preference: ")+(subtitle_remember?"On":"Off"));
-    row(3,focus,480,"Appearance: cycle subtitle size");row(4,focus,570,"Subtitle delay +100 ms");row(5,focus,660,"Subtitle delay -100 ms");
-    draw_text(390,785,Theme::Font::Caption,"Forced policy: Off disables every caption; Automatic uses VLC selection.");
-    draw_text(390,830,Theme::Font::Caption,"Forced-only filtering is unavailable without an authoritative VLC track flag.");
+    if(hit & PAD_DOWN)focus=std::min(7,focus+1);
+    const std::string labels[]={std::string("Default mode: ")+subtitle_mode_names[subtitle_default_mode],std::string("Preferred language: ")+subtitle_languages[subtitle_language_choice],std::string("Remember per-media selection: ")+(subtitle_remember?"On":"Off"),"Appearance: cycle subtitle size","Subtitle delay +100 ms","Subtitle delay -100 ms",std::string("Prefer forced metadata tracks: ")+(subtitle_forced?"On":"Off"),"Reset subtitle preferences"};
+    int first=std::max(0,focus-6);for(int i=first;i<8 && i<first+7;++i)row(i,focus,210+(i-first)*85,labels[i]);
     if(hit & PAD_CROSS){
         if(focus==0)subtitle_default_mode=(subtitle_default_mode+1)%3;
         if(focus==1)subtitle_language_choice=(subtitle_language_choice+1)%7;
         if(focus==2)subtitle_remember=!subtitle_remember;
-        if(focus<=2)apply_subtitle_preferences(true);
+        if(focus==6)subtitle_forced=!subtitle_forced;
+        if(focus==7){subtitle_default_mode=0;subtitle_language_choice=0;subtitle_remember=false;subtitle_forced=false;pref_set(subtitle_memory_key().c_str(),"");}
+        if(focus<=2 || focus>=6)apply_subtitle_preferences(true);
         if(focus==3){auto style=player_sub_style();style.size=style.size>=200?50:style.size+10;player_set_sub_style(style);}
-        if(focus>=4)player_set_subtitle_delay(std::clamp<int64_t>(player_subtitle_delay()+(focus==4?100:-100),-10000,10000));
+        if(focus==4 || focus==5)player_set_subtitle_delay(std::clamp<int64_t>(player_subtitle_delay()+(focus==4?100:-100),-10000,10000));
     }
 }
 
@@ -203,10 +274,12 @@ void mark_video_completion(int64_t position){
 
 void restore_video_preferences(){
     const char *langs[]={"","en","es","fr","ja"};int n=std::clamp(pref_int(account_key("plex_language_choice").c_str(),0),0,4);
-    subtitle_remember=pref_int(account_key("plex_subtitle_remember_v2").c_str(),1)!=0;
-    subtitle_default_mode=subtitle_remember?std::clamp(pref_int(account_key("plex_subtitle_mode_v2").c_str(),0),0,2):0;
-    subtitle_language_choice=subtitle_remember?std::clamp(pref_int(account_key("plex_subtitle_language_v2").c_str(),0),0,6):0;
-    player_set_languages(langs[n],subtitle_default_mode==0?"off":subtitle_default_mode==2?std::string(subtitle_languages[subtitle_language_choice])+",none":"");
+    subtitle_remember=pref_int(account_key("plex_subtitle_remember_v3").c_str(),0)!=0;
+    subtitle_default_mode=std::clamp(pref_int(account_key("plex_subtitle_mode_v3").c_str(),0),0,2);
+    subtitle_language_choice=std::clamp(pref_int(account_key("plex_subtitle_language_v3").c_str(),0),0,6);
+    subtitle_forced=pref_int(account_key("plex_subtitle_forced_v3").c_str(),0)!=0;
+    subtitle_selection.reset();subtitle_pending=false;subtitle_external_pending=false;
+    player_set_languages(langs[n],"off");
 }
 
 void service_video_retry(){if(video_retry_pending && job==None && !progress_pending){video_retry_pending=false;request_video(true);}}

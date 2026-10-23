@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 bool cloud_checked=false,cloud_ok=false,cloud_screen=false,cloud_requested=false;
 std::string cloud_error;
-int cloud_start=0;
+int cloud_start=0,cloud_filter=0,cloud_sort=0;
+bool cloud_tools=false;
 bool cloud_available(){return cloud_ok;}
 void reset_cloud(){cloud_checked=false;cloud_ok=false;cloud_screen=false;cloud_error.clear();cloud_start=0;cloud_requested=false;}
 void service_cloud(){
@@ -12,13 +13,13 @@ void service_cloud(){
 }
 void show_cloud(int start){
     if(job!=None || !cloud_ok)return;
-    cloud_start=std::max(0,start);auto token=profile_token;auto offset=cloud_start;
-    submit(CloudList,[token,offset]{return cloud_watchlist(*client,token,offset);});
+    cloud_start=std::max(0,start);auto token=profile_token;auto offset=cloud_start;auto filter=cloud_filter,sort=cloud_sort;
+    submit(CloudList,[token,offset,filter,sort]{return cloud_watchlist(*client,token,offset,filter,sort);});
 }
 void finish_cloud(int kind,const Result &result){
-    if(kind==CloudProbe){auto mc=result.data.find("MediaContainer");cloud_ok=result && mc!=result.data.end() && mc->is_object();cloud_error=cloud_ok?"":result?"Unsupported cloud response":result.error;message=cloud_ok?"Plex Cloud Watchlist is available in the sidebar":"Cloud Watchlist unavailable: "+cloud_error;return;}
+    if(kind==CloudProbe){auto mc=result.data.find("MediaContainer");cloud_ok=result && mc!=result.data.end() && mc->is_object();cloud_error=cloud_ok?"":result?"Unsupported cloud response":result.error;if(cloud_ok && nav==4)show_cloud();message=cloud_ok?"Plex Cloud Watchlist is available in the sidebar":"Cloud Watchlist unavailable: "+cloud_error;return;}
     if(!result){message=result.error;return;}
-    if(kind==CloudList){listing=items(result.data,false);page_path="cloud-watchlist";page_title="Plex Cloud Watchlist";cloud_screen=true;home_screen=false;in_detail=false;sidebar=false;focus=0;page_start=cloud_start;
+    if(kind==CloudList){listing=items(result.data,false);page_path="cloud-watchlist";page_title="Watchlist";cloud_screen=true;home_screen=false;in_detail=false;sidebar=false;focus=0;page_start=cloud_start;
         auto mc=result.data.find("MediaContainer");page_total=mc==result.data.end()?listing.size():static_cast<int>(std::clamp<int64_t>(number(*mc,"totalSize",listing.size()),0,INT32_MAX));return;}
     if(kind==CloudResolve){auto found=items(result.data);if(found.empty()){message="This Watchlist item is unavailable on your selected PMS";return;}cloud_screen=false;open_media(found[0]);return;}
     message="Plex Cloud Watchlist update accepted by provider";

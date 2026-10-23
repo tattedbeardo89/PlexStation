@@ -54,12 +54,20 @@ void audio_load(const std::string &path,const std::string &title,bool push=true,
         return r;
     });
 }
+void audio_library_tab(int tab) {
+    if(job!=None || active_library.id.empty())return;
+    if(tab==0){auto b=base,t=server_token;auto section=active_library;bool books=audio.books;auto local=listening.books(audio_scope());submit(AudioFeed,[b,t,section,books,local]{return music_feed(*client,b,t,section,books,local);});return;}
+    audio.screen=true;audio.now_playing=false;home_screen=false;
+    audio_load("/library/sections/"+encode(active_library.id)+(tab==1?(audio.books?"/all?type=9":"/all?type=8"):"/genre?type=9"),active_library.title,false);
+}
 void audio_home(bool books) {
     if(!listening_loaded){listening.load(std::string(plat_data_dir())+"/plexstation-listening.json");listening_loaded=true;}
     audio.screen=true;audio.books=books;audio.now_playing=false;audio.queue_view=false;audio.menu=false;
     audio.entries.clear();audio.history.clear();audio.path="sections";audio.title=books?"Audiobooks":"Music";audio.focus=0;
     for(const auto &s:home_sections)if(music_section(s) && book_section(s)==books)audio.entries.push_back(s);
     home_screen=false;sidebar=false;settings=false;in_detail=false;
+    auto saved=pref_str((audio_scope()+(books?".default-books":".default-music")).c_str(),"");
+    for(const auto &section:audio.entries)if(section.id==saved){active_library=section;library_context=true;library_tab=0;audio_library_tab(0);break;}
 }
 void audio_start() {
     if(job!=None || !audio.queue.current())return;
@@ -88,7 +96,7 @@ void audio_queue_load(const Item &item,bool shuffle=false) {
 void audio_finish(int kind,const Result &result) {
     if(!result){message=result.error;audio.start_pending=false;return;}
     if(kind==AudioScrobble)return;
-    if(kind==AudioFeed){feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=false;home_title=audio.books?"Audiobooks":"Music";audio.screen=false;sidebar=false;return;}
+    if(kind==AudioFeed){library_context=true;library_tab=0;feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=false;home_title=audio.books?"Audiobooks":"Music";audio.screen=false;sidebar=false;return;}
     if(kind==AudioBrowse) {
         if(audio.request_push) {
             if(audio.history.size()>=16)audio.history.erase(audio.history.begin());
@@ -186,6 +194,13 @@ std::string audio_label(const Item &i) {
         (!i.artist.empty()?" • "+i.artist:"")+(i.duration>0?"  "+std::to_string(i.duration/60000)+":"+(i.duration/1000%60<10?"0":"")+std::to_string(i.duration/1000%60):"");
 }
 bool audio_frame(uint32_t hit,float) {
+    if(audio.screen && !audio.now_playing && !audio.queue_view && !audio.menu && library_context && !sidebar && !settings) {
+        const char *tabs[]={"Recommended","Library","Categories"};
+        for(int i=0;i<3;++i){rect(390+i*320,145,300,48,library_tab==i?Theme::Selection:Theme::Surface);draw_text(405+i*320,155,Theme::Font::Caption,tabs[i]);}
+        if(library_tabs_focus){if(hit & PAD_LEFT)library_tab=std::max(0,library_tab-1);if(hit & PAD_RIGHT)library_tab=std::min(2,library_tab+1);if(hit & PAD_CROSS){audio_library_tab(library_tab);library_tabs_focus=false;}if(hit & PAD_DOWN)library_tabs_focus=false;return true;}
+        if((hit & PAD_UP) && audio.focus==0){library_tabs_focus=true;return true;}
+    }
+
     if(audio.active && !audio.now_playing && !video && !settings && !profile_screen)
         draw_text(390,925, Theme::Font::Caption,(audio.playback_books?"Listening: ":"Music: ")+audio.current.title+" • Touchpad: Now Playing");
     if((hit & PAD_TOUCHPAD) && audio.queue.current() && !video && !profile_screen){audio.screen=true;audio.now_playing=true;sidebar=false;}
@@ -295,6 +310,8 @@ bool audio_frame(uint32_t hit,float) {
     if((hit & PAD_CROSS) && job==None && !audio.entries.empty()) {
         auto item=audio.entries[audio.focus];
         if(audio.path=="sections") {
+            active_library=item;library_context=true;library_tab=0;
+            pref_set((audio_scope()+(audio.books?".default-books":".default-music")).c_str(),item.id);
             // Directory choices are local navigation to real server endpoints, not invented content.
             audio.history.push_back({audio.path,audio.title,audio.entries,audio.focus,audio.start,audio.total,audio.parent});
             audio.path="music/"+item.id;audio.title=item.title;audio.entries.clear();audio.focus=0;

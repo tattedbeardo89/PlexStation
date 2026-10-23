@@ -2,6 +2,7 @@
 #include "plex/search.h"
 #include "plex/cloud.h"
 #include "plex/music_feed.h"
+#include "plex/navigation.h"
 #include <cassert>
 #include <cstdio>
 using namespace plex;
@@ -27,8 +28,24 @@ int main(){
   return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
  },"fixture");
  Item a,b;a.id="1";b.id="2";a.type=b.type="movie";
- rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==2 && second==2 && rows.size()==2 && rows[0].entries.size()==2 && rows[0].entries[0].id=="new");
+ rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==2 && second==2 && rows.size()==2 && std::any_of(rows.begin(),rows.end(),[](const Hub &h){return h.id=="recentlyAddedMovies" && h.entries.size()==2 && h.entries[0].id=="new";}));
  Client denied([](const Request &){return Reply{403,"private response must not be logged",""};},"fixture");assert(!cloud_watchlist(denied,"restricted"));
  Item music;music.id="music";music.type="artist";assert(home_rows(music_feed(denied,"https://pms.invalid","restricted",music,false).data).empty());
+ Item home;a.title="Movies";home.id="personal";home.title="Home Movies";home.type="movie";
+ assert(default_library({a,b,home},1,"missing").id==a.id);
+ assert(default_library({a,b,home},1,b.id).id==b.id);
+ assert(default_library({a,b,home},9,"missing").id=="personal");
+ assert(default_library({a,b,home},2,"missing").id.empty());
+ Client scoped([](const Request &q){
+   assert(q.url.find("/library/sections/allowed/")!=std::string::npos || q.url.find("/hubs/sections/allowed?")!=std::string::npos);
+   if(q.url.find("/genre")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"horror","title":"Horror"}]}})",""};
+   if(q.url.find("/hubs")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Hub":[]}})",""};
+   return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"real","type":"movie","title":"Fixture returned by server"}]}})",""};
+ },"fixture");
+ Item allowed;allowed.id="allowed";allowed.type="movie";
+ auto seasonal=home_rows(library_feed(scoped,"https://pms.invalid","active-profile",allowed,true,10).data);
+ assert(std::any_of(seasonal.begin(),seasonal.end(),[](const Hub &h){return h.id=="seasonal" && h.entries[0].id=="real";}));
+ auto disabled=home_rows(library_feed(scoped,"https://pms.invalid","active-profile",allowed,false,10).data);
+ assert(std::none_of(disabled.begin(),disabled.end(),[](const Hub &h){return h.id=="seasonal";}));
  puts("Grouped search, scoped cloud reads/writes/local resolution, filter encoding and multiple-library deduplication tests passed");
 }

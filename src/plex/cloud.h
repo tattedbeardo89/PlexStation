@@ -8,9 +8,9 @@ inline std::string cloud_id(const Item &item) {
     auto id=item.guid.substr(std::string(prefix).size());
     return !id.empty() && id.size()<=64 && id.find_first_not_of("0123456789abcdefABCDEF")==std::string::npos?id:"";
 }
-inline Result cloud_watchlist(Client &c,const std::string &token,int start=0) {
+inline Result cloud_watchlist(Client &c,const std::string &token,int start=0,int type=0,int sort=0) {
     if(token.empty() || start<0)return {{},"Cloud Watchlist authorization unavailable",0};
-    return c.call("GET","https://discover.provider.plex.tv","/library/sections/watchlist/all?includeCollections=1&includeExternalMedia=1&X-Plex-Container-Start="+std::to_string(start)+"&X-Plex-Container-Size=60",token);
+    return c.call("GET","https://discover.provider.plex.tv","/library/sections/watchlist/all?includeCollections=1&includeExternalMedia=1&X-Plex-Container-Start="+std::to_string(start)+"&X-Plex-Container-Size=60"+(type==1?"&type=1":type==2?"&type=2":"")+(sort==1?"&sort=titleSort%3Aasc":sort==2?"&sort=watchlistedAt%3Aasc":"&sort=watchlistedAt%3Adesc"),token);
 }
 inline Result cloud_change(Client &c,const std::string &token,const Item &item,bool add) {
     auto id=cloud_id(item);if(id.empty() || token.empty())return {{},"No supported Plex cloud identity",0};

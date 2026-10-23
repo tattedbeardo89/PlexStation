@@ -137,6 +137,18 @@ int main() {
     assert(uploaded==visible_uploads && visible.busy());
     settle(visible);assert(uploaded==visible_uploads+1 && visible.cached()==64);
     visible.clear();visible.update();
+    // Failure state belongs to the requested avatar, never another worker.
+    plex::Artwork retry([&](const plex::Request &){return plex::Reply{503,"",""};});
+    assert(retry.avatar_state("/users/retry")=="Waiting for avatar…");
+    retry.avatar("/users/retry","fixture");settle(retry);
+    assert(retry.avatar_state("/users/retry").find("503")!=std::string::npos);
+    retry.retry_avatars();assert(retry.avatar_state("/users/retry")=="Waiting for avatar…");
+    // Active avatars survive ordinary poster churn beyond the texture-count cap.
+    plex::Artwork pinned(network);pinned.avatar("/users/pinned","fixture");settle(pinned);
+    auto pinned_texture=pinned.avatar("/users/pinned","fixture");assert(pinned_texture);
+    for(int i=0;i<70;++i){pinned.get("https://fixture.invalid","fixture","/churn/"+std::to_string(i));settle(pinned);}
+    assert(pinned.avatar("/users/pinned","fixture")==pinned_texture);
+    pinned.clear();pinned.update();
     std::filesystem::remove_all(temporary);
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

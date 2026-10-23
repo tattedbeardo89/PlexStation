@@ -3,6 +3,10 @@
 #include <iostream>
 using namespace plex;
 int main() {
+    Client avatars([](const Request &){return Reply{200,"<users><User id=\"987\" title=\"Profile\" avatarUrl=\"/users/987/avatar\" /></users>",""};},"fixture");
+    auto avatar_response=avatars.home_users("fixture");assert(avatar_response);
+    auto avatar_profiles=profiles(avatar_response.data);assert(avatar_profiles.size()==1 && avatar_profiles[0].avatar=="/users/987/avatar");
+
     auto users=profiles(Json{{"users",Json::array({{{"id",42},{"uuid","owner"},{"title","Owner"},{"protected",true},{"admin",true}},{{"id","84"},{"title","Managed"},{"restricted",true},{"protected",false}}})}});
     assert(users.size()==2 && users[0].protected_user && users[1].managed && !users[1].protected_user);
     assert(profiles(Json{{"users",Json::array({{{"id",3}}})}})[0].protected_user);
