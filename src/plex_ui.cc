@@ -80,6 +80,7 @@ float feed_vertical=0;
 std::string feed_error, details_target;
 bool full_description=false;float description_scroll=0;
 std::atomic<uint64_t> feed_generation{0};
+std::string primary_avatar;
 std::string primary_id, profile_token, profile_error, pin_digits;
 Profile active_profile, requested_profile;
 std::vector<Profile> home_profiles;
@@ -93,6 +94,10 @@ std::string account_pref(const std::string &name, const char *fallback="") {
 }
 void save_account_pref(const std::string &name,const std::string &value) {
     if(!account_id.empty()) pref_set(account_key(name).c_str(),value);
+}
+void configure_artwork_scope(const std::string &scope) {
+    auto max_mb=std::clamp(pref_int("plex_artwork_cache_mb_v1",256),64,1024);
+    artwork->set_scope(std::string(plat_data_dir())+"/plexstation-artwork-cache",scope,static_cast<size_t>(max_mb)*1024*1024);
 }
 uint8_t qr[qrcodegen_BUFFER_LEN_MAX];
 double overlay_until = 0;
@@ -149,6 +154,7 @@ void finish_cloud(int kind,const Result &result);
 void change_cloud(bool add);
 void open_media(const Item &item);
 void restore_video_preferences();
+bool playback_tracks_focus_valid();
 void load_outbox();
 void record_progress(const Item &,const std::string &,int64_t);
 void capture_timeline(const Item &,const std::string &,int64_t);
@@ -237,7 +243,7 @@ void connected(const Json &data) {
     fprintf(stderr,"home:init persistent progress begin\n");fflush(stderr);
     load_outbox();
     fprintf(stderr,"home:init persistent progress completed\n");fflush(stderr);
-    artwork->clear(); history.clear(); detail={}; playing={};
+    configure_artwork_scope(account_id+"/server:"+selected_server.id); history.clear(); detail={}; playing={};
     progress_pending=false; progress={};
     available.clear(); settings=false; settings_page=0; in_detail=false; sidebar=false; focus=0; nav=0;
     reconnect_screen=false; connection_diagnostics=false; editor=0;
@@ -268,7 +274,9 @@ void clear_profile() {
     retire_stream();
     audio_reset();
     if(video) {player_stop();video=false;}
-    artwork->clear(); ++screen_generation; ++feed_generation;
+    artwork->clear();
+    if(!primary_id.empty())configure_artwork_scope(primary_id+"/avatars");
+    ++screen_generation; ++feed_generation;
     home_screen=false;home_sections.clear();feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_error.clear();library_tools=false;
     profile_pin=false;requested_profile={};
     profile_token.clear(); active_profile={}; account_id.clear(); base.clear(); server_token.clear();
@@ -329,7 +337,7 @@ void signout() {
     }
     reset_cloud();clear_next();retire_stream();audio_reset();
     artwork->clear();
-    profile_token.clear();primary_id.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
+    profile_token.clear();primary_id.clear();primary_avatar.clear();active_profile={};requested_profile={};home_profiles.clear();profile_screen=false;profile_pin=false;deferred_profiles=false;erase_pin();
     account.clear(); account_id.clear(); reconnect_screen=false; force_picker=false; settings_page=0;
     server_token.clear();
     base.clear();
@@ -419,6 +427,8 @@ void finish_job() {
             auto id=number(result.data,"id",0);
             if(id<=0) { account_error="Plex account identity is missing. Retry sign-in validation."; return; }
             clear_profile();primary_id="id:"+std::to_string(id);
+            primary_avatar=profile_avatar(result.data);
+            configure_artwork_scope(primary_id+"/avatars");
             home_enabled=flag(result.data,"home",true); // missing/unknown must not bypass Home PIN discovery
             account_error.clear();profile_error.clear();home_profiles.clear();
             if(home_enabled) {profile_screen=true;account_loading=false;auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
@@ -450,7 +460,13 @@ void finish_job() {
             else profile_error=result.error;
             return;
         }
-        home_profiles=profiles(result.data); profiles_ready();return;
+        home_profiles=profiles(result.data);
+        for(size_t i=0;i<home_profiles.size();++i) {
+            auto &profile=home_profiles[i];
+            if(profile.avatar.empty() && "id:"+profile.id==primary_id)profile.avatar=primary_avatar;
+            fprintf(stderr,"avatar: profile_slot=%zu source_present=%d\n",i,profile.avatar.empty()?0:1);
+        }
+        profiles_ready();return;
     }
     if(done==HomeSwitch) {
         if(!result) {profile_error=(result.status==401 || result.status==403) ? "Incorrect PIN or profile access denied. Retry or select another user." : result.error;erase_pin();return;}
@@ -665,10 +681,10 @@ void navigation_icon(int index,float x,float y,ImU32 color) {
 }
 bool custom_focus_valid() {
     if(profile_screen)return profile_pin ? pin_focus>=0 && pin_focus<10 : profile_focus>=0 && profile_focus<static_cast<int>(home_profiles.size());
-    if(video)return !tracks || (track_focus>=0 && track_focus<2);
+    if(video)return !tracks || playback_tracks_focus_valid();
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 12 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==5 ? 8 : settings_page ? 1 : 12);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 12 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==8 ? 6 : settings_page==7 ? 4 : settings_page==6 ? 2 : settings_page==5 ? 8 : settings_page ? 1 : 12);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?5:3);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
@@ -774,6 +790,7 @@ void home_frame(uint32_t hit,float dt) {
     float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
     if(!selected.entries.empty()) {
         const auto &featured=selected.entries[column];
+        if(featured.type=="episode")artwork->landscape(base,server_token,featured.thumb);else artwork->get(base,server_token,featured.thumb);
         rect(390,160,1440,175,Theme::Sidebar);
         auto backdrop=artwork->landscape(base,server_token,featured.art.empty()?featured.thumb:featured.art);
         cover_image(backdrop,390,160,1440,175,Theme::alpha(Theme::White,110));
@@ -804,6 +821,10 @@ void home_frame(uint32_t hit,float dt) {
         }
     }
     draw->PopClipRect();
+    if(pref_int(account_key("plex_artwork_prefetch_v1").c_str(),1) && !artwork->busy() && column+1<static_cast<int>(selected.entries.size())) {
+        const auto &next=selected.entries[column+1];
+        if(next.type=="episode")artwork->landscape(base,server_token,next.thumb);else artwork->get(base,server_token,next.thumb);
+    }
     if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
 }
 #include "plex_video_ui.h"
@@ -850,6 +871,7 @@ void profile_screen_frame(uint32_t hit) {
     }
     int first=(profile_focus/5)*5;
     int count=std::min(5,static_cast<int>(home_profiles.size())-first);
+    artwork->avatar(home_profiles[profile_focus].avatar,account);
     for(int i=first;i<first+count;++i) {
         float x=960-count*150+(i-first)*300;
         rect(x,310,260,300,i==profile_focus?Theme::Selection:Theme::Surface);
@@ -1014,11 +1036,11 @@ void ui_frame(const PadState &pad, float dt) {
         if ((hit & PAD_RIGHT) && !tracks)
             player_seek(player_time() + 10000);
         if (hit & PAD_CIRCLE) {
-            if (tracks) tracks = false;
+            if(subtitle_menu)subtitle_menu=false;
+            else if (tracks) tracks = false;
             else stop();
         }
-        if (hit & PAD_OPTIONS)
-            tracks = !tracks;
+        if (hit & PAD_OPTIONS){tracks=!tracks;subtitle_menu=false;}
         if(hit & PAD_SQUARE){video_info=true;video_tools(0);hit=0;}
         if (hit & PAD_L1)
             player_set_audio_delay(audio_offset(player_audio_delay(), -1));
@@ -1027,35 +1049,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_TRIANGLE)
             player_set_audio_delay(0);
         if(tracks && (hit & PAD_TRIANGLE))video_info=!video_info;
-        if (tracks) {
-            auto audio = player_audio_tracks(), subs = player_subtitle_tracks();
-            if (hit & PAD_UP)
-                track_focus = std::max(0, track_focus - 1);
-            if (hit & PAD_DOWN)
-                track_focus = std::min(1, track_focus + 1);
-            if (hit & (PAD_CROSS | PAD_SQUARE)) {
-                auto cycle = [](const std::vector<Track> &list, int id) {
-                    for (size_t i = 0; i < list.size(); ++i)
-                        if (list[i].id == id)
-                            return list[(i + 1) % list.size()].id;
-                    return list.empty() ? -1 : list.front().id;
-                };
-                if (track_focus == 0)
-                    player_set_audio_track(cycle(audio, player_audio_track()));
-                else
-                    player_set_subtitle_track(cycle(subs, player_subtitle_track()));
-            }
-            draw_text(100, 120, Theme::Font::Heading,
-                      track_focus == 0 ? "> Audio track (Cross to cycle)"
-                                       : "> Subtitle track (Cross to cycle)");
-            std::string name = "None";
-            auto list = track_focus == 0 ? audio : subs;
-            int id = track_focus == 0 ? player_audio_track() : player_subtitle_track();
-            for (auto &t : list)
-                if (t.id == id)
-                    name = t.name;
-            draw_text(100, 170, Theme::Font::Body, name);
-        }
+        if(tracks)playback_track_frame(hit);
         if (video && player_ended()) {
             if (player_failed())
                 message = "Playback failed; check decoder and server connectivity";
@@ -1288,7 +1282,7 @@ void ui_frame(const PadState &pad, float dt) {
     if (hit & PAD_CIRCLE) {
         video_retry_pending=false;
         ++screen_generation; ++feed_generation;
-        if (settings) { if(settings_page) {focus=settings_page==1 ? 6 : settings_page==3 ? 8 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
+        if (settings) { if(settings_page==7){settings_page=6;focus=1;} else if(settings_page==8){settings_page=5;focus=7;} else if(settings_page) {focus=settings_page==1 ? 6 : settings_page==3 ? 8 : 7; settings_page=0;} else {settings = false; sidebar = true; focus = 0;} }
         else if (in_detail) { in_detail = false; sidebar = false; }
         else if (!history.empty() && (job==None || job==Browse || job==Sections || job==Details)) {
             auto p = history.back(); history.pop_back();
@@ -1324,6 +1318,7 @@ void ui_frame(const PadState &pad, float dt) {
                 message = "Watchlist integration is not implemented yet";
         }
     } else if (settings) {
+        if(settings_page==8){subtitle_settings_frame(hit);return;}
         if(settings_page==5){video_options_frame(hit);return;}
         if(settings_page==4){audio_settings_frame(hit);return;}
         if(settings_page==3) {
@@ -1358,10 +1353,29 @@ void ui_frame(const PadState &pad, float dt) {
             }
             return;
         }
+        if(settings_page==7) {
+            if(hit & PAD_UP)focus=std::max(0,focus-1);
+            if(hit & PAD_DOWN)focus=std::min(3,focus+1);
+            int maximum=std::clamp(pref_int("plex_artwork_cache_mb_v1",256),64,1024);
+            row(0,focus,210,"Disk usage: "+std::to_string(artwork->disk_usage()/1024)+" KiB • GPU: "+std::to_string(artwork->memory_usage()/1024)+" KiB");
+            row(1,focus,310,"Maximum disk cache: "+std::to_string(maximum)+" MiB");
+            row(2,focus,410,"Clear this profile/server's artwork cache");
+            row(3,focus,510,std::string("Nearby artwork prefetch: ")+(pref_int(account_key("plex_artwork_prefetch_v1").c_str(),1)?"On":"Off"));
+            draw_text(390,670,Theme::Font::Caption,"Private hashed keys • validated images • atomic writes • 64 MiB GPU budget");
+            if(hit & PAD_CROSS) {
+                if(focus==1){pref_set("plex_artwork_cache_mb_v1",maximum>=1024?64:maximum*2);configure_artwork_scope(account_id+"/server:"+selected_server.id);}
+                if(focus==2){artwork->clear();artwork->clear_disk();message="Artwork cache cleanup queued on the image worker.";}
+                if(focus==3)pref_set(account_key("plex_artwork_prefetch_v1").c_str(),pref_int(account_key("plex_artwork_prefetch_v1").c_str(),1)?0:1);
+            }
+            return;
+        }
         if(settings_page==6) {
-            row(0,0,210,Theme::reduced_motion?"Reduced motion: On":"Reduced motion: Off");
-            draw_text(390,320,Theme::Font::Body,"Use instant carousel movement and steady focus outlines.");
-            if(hit & PAD_CROSS){Theme::reduced_motion=!Theme::reduced_motion;pref_set("plex_reduce_motion_v1",Theme::reduced_motion?1:0);}
+            if(hit & PAD_UP)focus=std::max(0,focus-1);
+            if(hit & PAD_DOWN)focus=std::min(1,focus+1);
+            row(0,focus,210,Theme::reduced_motion?"Reduced motion: On":"Reduced motion: Off");
+            row(1,focus,310,"Artwork Cache");
+            draw_text(390,430,Theme::Font::Body,"Instant carousel movement, steady outlines and persistent artwork preferences.");
+            if(hit & PAD_CROSS){if(focus==1){settings_page=7;focus=0;}else{Theme::reduced_motion=!Theme::reduced_motion;pref_set("plex_reduce_motion_v1",Theme::reduced_motion?1:0);}}
             return;
         }
         if(settings_page==1) {

@@ -8,6 +8,9 @@ int main() {
     assert(profiles(Json{{"users",Json::array({{{"id",3}}})}})[0].protected_user);
     assert(profile_scope("id:42",users[0])!=profile_scope("id:42",users[1]));
     assert(valid_pin("0123") && !valid_pin("123") && !valid_pin("12a4"));
+    assert(profile_avatar(Json{{"thumb",""},{"avatar","/owner/avatar"}})=="/owner/avatar");
+    assert(profile_avatar(Json{{"avatarUrl","//images.plex.tv/profile"}})=="//images.plex.tv/profile");
+    assert(profile_avatar(Json{{"thumb",nullptr}}).empty());
     int calls=0;
     Client client([&](const Request &q) {
         assert(q.headers.at("X-Plex-Token")=="primary-fixture");++calls;

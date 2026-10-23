@@ -53,7 +53,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y g++ pkg-config libcurl4-openssl-dev libgnutls28-dev libvulkan-dev
-          for suite in build-core test-json-numeric test-auth test-home test-audio test-streaming test-discovery test-artwork test-controller test-connections test-native-transport test-crash check-native-source test-sanitizers; do
+          for suite in build-core test-json-numeric test-auth test-home test-audio test-streaming test-discovery test-artwork test-subtitles test-cache test-controller test-connections test-native-transport test-crash check-native-source test-sanitizers; do
             if ! bash "host/$suite.sh" 2>&1 | tee "artifacts/logs/host-$suite.log"; then
               python3 - "$suite" <<'PYFAIL'
           import pathlib, sys

@@ -21,6 +21,7 @@ struct Reply {
     Failure failure = Failure::None;
     bool tcp_connected = false, tls_verified = false;
     std::string location = {};
+    std::string content_type = {};
 };
 using Transport = std::function<Reply(const Request &)>;
 struct Result {

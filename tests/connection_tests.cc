@@ -18,6 +18,8 @@ int main() {
     assert(decode_http(wire,false,status,body)==Decode::Complete && body=="{}");
     std::string location;
     assert(decode_http("HTTP/1.1 302 Found\r\nLocation: https://images.plex.tv/avatar\r\nContent-Length: 0\r\n\r\n",false,status,body,&location)==Decode::Complete && location=="https://images.plex.tv/avatar");
+    std::string content_type;
+    assert(decode_http("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 1\r\n\r\nx",false,status,body,nullptr,&content_type)==Decode::Complete && content_type=="image/png");
     assert(decode_http("HTTP/1.1 302 Found\r\nLocation: /a\r\nLocation: /b\r\nContent-Length: 0\r\n\r\n",false,status,body,&location)==Decode::Invalid);
     assert(decode_http(wire.substr(0,wire.size()-1),true,status,body)==Decode::Invalid);
     assert(decode_http("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\n\r\n",true,status,body)==Decode::Encoding);

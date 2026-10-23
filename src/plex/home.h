@@ -19,6 +19,10 @@ inline std::string profile_id(const Json &j) {
     if(id.empty() || id.size()>32 || id.find_first_not_of("0123456789")!=std::string::npos) return "";
     return id;
 }
+inline std::string profile_avatar(const Json &j) {
+    for(const char *key:{"thumb","avatar","avatarUrl"}){auto value=text(j,key);if(!value.empty())return value;}
+    return {};
+}
 inline std::vector<Profile> profiles(const Json &j) {
     const Json *list=&j;
     if(j.is_object()) {auto it=j.find("users"); if(it==j.end())return {}; list=&*it;}
@@ -27,7 +31,7 @@ inline std::vector<Profile> profiles(const Json &j) {
     for(const auto &v:*list) {
         auto id=profile_id(v); if(id.empty())continue;
         if(std::any_of(out.begin(),out.end(),[&](const Profile &p){return p.id==id;}))continue;
-        out.push_back({id,text(v,"uuid"),text(v,"title",text(v,"username","Plex user")),text(v,"thumb"),flag(v,"protected",true),flag(v,"admin"),flag(v,"restricted")});
+        out.push_back({id,text(v,"uuid"),text(v,"title",text(v,"username","Plex user")),profile_avatar(v),flag(v,"protected",true),flag(v,"admin"),flag(v,"restricted")});
         if(out.size()==32)break;
     }
     return out;

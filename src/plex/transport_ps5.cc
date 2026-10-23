@@ -134,7 +134,7 @@ Transport ps5_transport() {
             if(n<0) return fail(n==-2 ? Failure::Timeout : Failure::Receive);
             if(wire.size()+n>8*1024*1024+65536) return fail(Failure::TooLarge);
             wire.append(buffer,n);
-            auto decoded=decode_http(wire,n==0,reply.status,reply.body,&reply.location);
+            auto decoded=decode_http(wire,n==0,reply.status,reply.body,&reply.location,&reply.content_type);
             if(decoded==Decode::Complete) return reply;
             if(decoded==Decode::Invalid) return fail(Failure::HttpMalformed);
             if(decoded==Decode::Encoding) return fail(Failure::Encoding);

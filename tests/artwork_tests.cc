@@ -11,6 +11,7 @@
 #include "avatar_image_fixtures.h"
 #include <chrono>
 #include <thread>
+#include <filesystem>
 static int uploaded,freed;
 ImTextureID library_upload_rgba(const unsigned char *rgba,int w,int h) {
     assert(rgba && w>0 && h>0 && w<=256 && h<=256); return ++uploaded;
@@ -37,14 +38,14 @@ int main() {
     art.get("https://fixture.invalid","fixture","/corrupt"); settle(art); assert(uploaded==1);
     image.assign(18,'\0'); image[2]=2; image[12]=image[14]=1; image[16]=24; image.append(3,'\x7f');
     for(int i=0;i<14;++i) {art.get("https://fixture.invalid","fixture","/"+std::to_string(i));settle(art);}
-    assert(uploaded==15 && freed==3); art.clear();assert(freed==3);
+    assert(uploaded==15 && freed==1); art.clear();assert(freed==1);
     art.update();assert(freed==uploaded); // current-frame references survive until the next frame
     plex::diagnostic_flags=plex::NoDownloads; assert(!art.get("https://fixture.invalid","fixture","/no-download")); settle(art); assert(uploaded==15);
     plex::diagnostic_flags=plex::NoDecode; art.get("https://fixture.invalid","fixture","/no-decode");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=plex::NoUpload; art.get("https://fixture.invalid","fixture","/no-upload");settle(art);assert(uploaded==15);
     plex::diagnostic_flags=0; art.clear();
     assert(!art.avatar("https://evil.invalid/avatar","fixture"));
-    assert(!art.avatar("http://plex.tv/avatar","fixture"));
+    assert(!art.avatar("http://evil.invalid/avatar","fixture"));
     art.avatar("https://plex.tv/users/fixture/avatar","fixture");settle(art);assert(uploaded==16);auto before_clear=freed;art.clear();assert(freed==before_clear);art.update();assert(freed==uploaded);
     int requests=0;
     plex::Artwork redirected([&](const plex::Request &q){
@@ -53,7 +54,7 @@ int main() {
             assert(q.headers.at("X-Plex-Token")=="private-fixture");
             plex::Reply reply{302,"",""};reply.location="https://images.plex.tv/avatar?X-Plex-Token=private-fixture";return reply;
         }
-        assert(q.url=="https://images.plex.tv/avatar" && q.headers.empty());
+        assert(q.url=="https://images.plex.tv/avatar" && q.headers.count("X-Plex-Token")==0);
         return plex::Reply{200,image,""};
     });
     redirected.avatar("/users/avatar","private-fixture");settle(redirected);
@@ -94,5 +95,48 @@ int main() {
     large.landscape("https://fixture.invalid","fixture","/wide");settle(large);
     auto wide=large.landscape("https://fixture.invalid","fixture","/wide");
     assert(wide && large.aspect(wide)==2);large.clear();assert(large.aspect(wide)==0);large.update();
+    // Real disk restart: no second network request, endpoint changes retain identity.
+    char temporary[]="/tmp/plex-artwork-tests-XXXXXX";assert(mkdtemp(temporary));
+    int disk_requests=0;
+    auto network=[&](const plex::Request &){++disk_requests;return plex::Reply{200,image,""};};
+    {
+        plex::Artwork first(network);first.set_scope(temporary,"account/profile/server");
+        first.update();settle(first);
+        first.get("https://fixture.invalid","fixture","/persist");settle(first);
+        assert(first.get("https://fixture.invalid","fixture","/persist"));
+        first.clear();first.update();
+    }
+    assert(disk_requests==1);
+    {
+        plex::Artwork restart(network);restart.set_scope(temporary,"account/profile/server");
+        restart.update();settle(restart);
+        restart.get("https://different.invalid","fixture","/persist");settle(restart);
+        assert(restart.get("https://different.invalid","fixture","/persist") && disk_requests==1 && restart.disk_hits()==1);
+        restart.clear();restart.clear_disk();restart.update();settle(restart);
+        restart.get("https://fixture.invalid","fixture","/persist");settle(restart);assert(disk_requests==2);
+        restart.clear();restart.update();
+    }
+    // Corrupt disk bytes are rejected by the production decoder, then refetched.
+    plex::DiskCache corrupt(temporary,"account/profile/server");assert(corrupt.put("poster:/corrupt","not an image"));
+    {
+        plex::Artwork recovered(network);recovered.set_scope(temporary,"account/profile/server");recovered.update();settle(recovered);
+        recovered.get("https://fixture.invalid","fixture","/corrupt");settle(recovered);
+        assert(recovered.get("https://fixture.invalid","fixture","/corrupt") && disk_requests==3);
+        recovered.clear();recovered.update();
+    }
+    // A completed fetch must wait rather than evict any currently visible texture.
+    plex::Artwork visible(network);
+    for(int i=0;i<64;++i){visible.get("https://fixture.invalid","fixture","/visible/"+std::to_string(i));settle(visible);}
+    for(int i=0;i<64;++i)assert(visible.get("https://fixture.invalid","fixture","/visible/"+std::to_string(i)));
+    int visible_uploads=uploaded;
+    visible.get("https://fixture.invalid","fixture","/extra");
+    for(int frame=0;frame<20;++frame){
+        for(int i=0;i<64;++i)assert(visible.get("https://fixture.invalid","fixture","/visible/"+std::to_string(i)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));visible.update();
+    }
+    assert(uploaded==visible_uploads && visible.busy());
+    settle(visible);assert(uploaded==visible_uploads+1 && visible.cached()==64);
+    visible.clear();visible.update();
+    std::filesystem::remove_all(temporary);
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

@@ -21,7 +21,8 @@ SubStyle player_sub_style(){return {100,0,false};}
 void player_set_sub_style(const SubStyle &){}
 bool player_add_subtitle(const std::string &){return true;}
 std::string player_audio_language(){return "";}
-void player_set_languages(const std::string &,const std::string &){}
+static std::string selected_sub_language;
+void player_set_languages(const std::string &,const std::string &sub){selected_sub_language=sub;}
 
 float player_rate(){return test_rate;}
 void player_set_rate(float r){test_rate=r;}
@@ -41,6 +42,7 @@ Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
 void Artwork::clear() {}
+void Artwork::set_scope(const std::string &,const std::string &,size_t) {}
 ImTextureID Artwork::landscape(const std::string &,const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
@@ -63,6 +65,9 @@ int player_audio_track() { return 1; }
 int player_subtitle_track() { return -1; }
 void player_set_audio_track(int) {}
 void player_set_subtitle_track(int) {}
+static int off_choices=0;
+void player_subtitles_off() {++off_choices;}
+void player_subtitles_automatic(const std::string &) {}
 static void frame(uint32_t buttons = 0, float lx = 0, float ly = 0, float dt = 1.f/60) {
     PadState pad{}; pad.connected = true; pad.buttons = buttons; pad.lx = lx; pad.ly = ly;
     clock_now += dt;
@@ -450,6 +455,15 @@ int main() {
     }
     gfx.width=1920;gfx.height=1080;io.DisplaySize={1920,1080};
     puts("Native theme draw-list checks passed at 1080p/4K with controller motion preference");
+    // Per-profile default Off, remembered mode, and controller-only subtitle menu.
+    video=false;test_prefs.clear();restore_video_preferences();assert(selected_sub_language=="off");
+    subtitle_default_mode=2;subtitle_language_choice=1;subtitle_remember=true;
+    apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="es,none");
+    subtitle_remember=false;apply_subtitle_preferences(true);restore_video_preferences();assert(selected_sub_language=="off");
+    video=true;subtitle_menu=true;subtitle_focus=0;int before_off=off_choices;
+    playback_track_frame(PAD_CROSS);assert(off_choices==before_off+1 && selected_sub_language=="off");
+    assert(playback_tracks_focus_valid());video=false;subtitle_menu=false;
+    puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
     ui_shutdown();assert(!artwork && !client && job==None);

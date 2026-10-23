@@ -15,6 +15,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
+#include "subtitle_latch.h"
 #include "player.h"
 
 #include <algorithm>
@@ -98,6 +99,10 @@ struct Health {
     libvlc_media_stats_t last;
 } health;
 libvlc_media_stats_t debug_last;
+SubtitleLatch subtitle_latch;
+bool subtitle_auto_pending=false;
+std::string subtitle_auto_language;
+double subtitle_auto_until=0,subtitle_auto_next=0;
 int restore_audio = -2, restore_spu = -2; /* tracks to pick again after a reopen */
 
 /* What was changed on the file playing: kept when the same file opens again
@@ -2203,14 +2208,14 @@ void side_subs_apply()
         libvlc_media_slaves_release(slaves, n);
         libvlc_media_release(m);
     }
-    bool on = player_sub_language() != "off";
+    bool on = !subtitle_latch.off;
     for (size_t i = 0; i < uris.size(); i++) {
         if (std::find(have.begin(), have.end(), uris[i]) != have.end()) {
-            fprintf(stderr, "player: subtitle beside the video %s: already there\n", uris[i].c_str());
+            fprintf(stderr, "player: subtitle beside the video %s: already there\n", "[subtitle source redacted]");
             continue;
         }
         int r = libvlc_media_player_add_slave(mp, libvlc_media_slave_type_subtitle, uris[i].c_str(), on && i == 0);
-        fprintf(stderr, "player: subtitle beside the video %s: %s\n", uris[i].c_str(), r == 0 ? "added" : "failed");
+        fprintf(stderr, "player: subtitle beside the video %s: %s\n", "[subtitle source redacted]", r == 0 ? "added" : "failed");
     }
 }
 
@@ -2253,6 +2258,8 @@ static void player_choice_float(const char *name, float v)
 bool player_open_media(libvlc_media_t *m, const std::string &path, int64_t start_ms,
                        const std::vector<std::string> &options)
 {
+    subtitle_auto_pending=false;
+    subtitle_latch.begin(path==kept.path,player_sub_language()=="off");
     opened_from_ms = start_ms;
     /* A reopen of the same file (Auto's, Watch again) keeps its login. */
     if (!options.empty() || path != current_path)
@@ -2287,13 +2294,13 @@ bool player_open_media(libvlc_media_t *m, const std::string &path, int64_t start
          * A file reads in at once: it starts no later. */
         libvlc_media_add_option(m, ":file-caching=1000");
         std::vector<std::string> subs = local_side_subs(local);
-        bool on = player_sub_language() != "off";
+        bool on = !subtitle_latch.off;
         std::string hint = sub_lang_hint();
         for (size_t i = 0; i < subs.size(); i++) {
             /* 4 (the user's): VLC turns the first one on; 3: only listed */
             libvlc_media_slaves_add(m, libvlc_media_slave_type_subtitle, on && i == 0 ? 4 : 3,
                                     file_uri(sub_ready(subs[i], hint)).c_str());
-            fprintf(stderr, "player: subtitle beside the video: %s\n", subs[i].c_str());
+            fprintf(stderr, "player: subtitle beside the video: %s\n", "[subtitle source redacted]");
         }
     }
     if (path != kept.path) {
@@ -2543,7 +2550,7 @@ PlayerEvent player_tick()
     }
     if (state() == libvlc_Playing)
         side_subs_apply();
-    if (sub_check_at > 0 && t >= sub_check_at && state() == libvlc_Playing) {
+    if (!subtitle_latch.off && sub_check_at > 0 && t >= sub_check_at && state() == libvlc_Playing) {
         sub_check_at = 0;
         size_t now_count = player_subtitle_tracks().size();
         if (now_count <= sub_check_count && !kept.subs.empty()) {
@@ -2573,7 +2580,7 @@ PlayerEvent player_tick()
          * were picked before it. */
         if (restore_audio >= -1)
             libvlc_audio_set_track(mp, restore_audio);
-        if (restore_spu >= -1)
+        if (restore_spu >= -1 && !subtitle_latch.off)
             libvlc_video_set_spu(mp, restore_spu);
         restore_audio = restore_spu = -2;
     }
@@ -2581,6 +2588,26 @@ PlayerEvent player_tick()
         libvlc_audio_set_delay(mp, kept.audio_delay * 1000);
         libvlc_video_set_spu_delay(mp, kept.spu_delay * 1000);
         restore_delays = false;
+    }
+    if(subtitle_auto_pending && t>subtitle_auto_until) {subtitle_auto_pending=false;if(!subtitle_auto_language.empty())player_subtitles_off();}
+    if(subtitle_auto_pending && !subtitle_latch.off && t>=subtitle_auto_next && state()==libvlc_Playing) {
+        subtitle_auto_next=t+.25;
+        int chosen=0;bool found=false;
+        if(subtitle_auto_language.empty()) {
+            for(const auto &track:player_subtitle_tracks())if(track.id>=0){chosen=track.id;found=true;break;}
+        } else if(auto *media=libvlc_media_player_get_media(mp)) {
+            libvlc_media_track_t **tracks=nullptr;unsigned count=libvlc_media_tracks_get(media,&tracks);
+            for(unsigned i=0;i<count;++i)if(tracks[i]->i_type==libvlc_track_text && tracks[i]->i_id>=0 &&
+                tracks[i]->psz_language && subtitle_language_matches(tracks[i]->psz_language,subtitle_auto_language)) {
+                chosen=tracks[i]->i_id;found=true;break;
+            }
+            libvlc_media_tracks_release(tracks,count);libvlc_media_release(media);
+        }
+        if(found && libvlc_video_set_spu(mp,chosen)==0){kept.spu=chosen;subtitle_auto_pending=false;}
+    }
+    if(subtitle_latch.off && state()==libvlc_Playing) {
+        restore_spu=-2;sub_check_at=0;
+        subtitle_latch.enforce(player_subtitle_tracks(),libvlc_video_get_spu(mp),[](int id){return libvlc_video_set_spu(mp,id)==0;});
     }
     libvlc_media_stats_t s;
     if (!get_stats(&s))
@@ -2939,9 +2966,27 @@ int player_subtitle_track()
 
 void player_set_subtitle_track(int id)
 {
+    subtitle_auto_pending=false;
+    subtitle_latch.choose(id<0);
+    restore_spu=-2;sub_check_at=0;
     if (mp)
         libvlc_video_set_spu(mp, id);
     kept.spu = id;
+}
+
+void player_subtitles_automatic(const std::string &language)
+{
+    subtitle_latch.choose(false);restore_spu=-2;sub_check_at=0;
+    subtitle_auto_language=language;subtitle_auto_pending=true;subtitle_auto_until=plat_time()+5;subtitle_auto_next=0;
+}
+
+void player_subtitles_off()
+{
+    subtitle_auto_pending=false;
+    subtitle_latch.choose(true);restore_spu=-2;sub_check_at=0;
+    subtitle_latch.enforce(player_subtitle_tracks(),player_subtitle_track(),[](int id){
+        kept.spu=id;return mp && libvlc_video_set_spu(mp,id)==0;
+    });
 }
 
 void player_debug_line()
@@ -2996,7 +3041,7 @@ bool player_add_subtitle(const std::string &path)
     /* A full path or an address only: VLC makes a relative one full with
      * getcwd(), which crashed on the console. */
     if (path.empty() || (path[0] != '/' && path.find("://") == std::string::npos)) {
-        fprintf(stderr, "player: not a subtitle file address: \"%s\"\n", path.c_str());
+        fprintf(stderr, "player: not a subtitle file address: \"%s\"\n", "[subtitle source redacted]");
         return false;
     }
     if (path.find("://") != std::string::npos) {
@@ -3022,13 +3067,14 @@ bool player_add_subtitle(const std::string &path)
 bool add_ready_subtitle(const std::string &path, const std::string &ready)
 {
     if (ready.empty()) {
-        fprintf(stderr, "player: subtitle file %s: can't be read\n", path.c_str());
+        fprintf(stderr, "player: subtitle file %s: can't be read\n", "[subtitle source redacted]");
         return false;
     }
+    subtitle_auto_pending=false;subtitle_latch.choose(false);
     sub_check_count = player_subtitle_tracks().size();
     sub_check_at = plat_time() + 4;
     int r = libvlc_media_player_add_slave(mp, libvlc_media_slave_type_subtitle, sub_uri(ready).c_str(), true);
-    fprintf(stderr, "player: subtitle file %s: %s\n", path.c_str(), r == 0 ? "added" : "failed");
+    fprintf(stderr, "player: subtitle file %s: %s\n", "[subtitle source redacted]", r == 0 ? "added" : "failed");
     /* the file VLC got is the one a reopen attaches again */
     if (r == 0 && std::find(kept.subs.begin(), kept.subs.end(), ready) == kept.subs.end())
         kept.subs.push_back(ready);
@@ -3878,13 +3924,15 @@ std::string player_audio_language()
 
 std::string player_sub_language()
 {
-    return pref_str("lang_sub", "");
+    return pref_str("lang_sub", "off");
 }
 
 void player_set_languages(const std::string &audio, const std::string &sub)
 {
     pref_set("lang_audio", audio);
     pref_set("lang_sub", sub);
+    subtitle_latch.choose(sub=="off");
+    if(subtitle_latch.off)player_subtitles_off();
 }
 
 PictureAdjust player_picture()

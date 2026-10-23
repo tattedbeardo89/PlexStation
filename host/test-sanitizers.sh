@@ -13,11 +13,11 @@ for source in "$repo/src/plex/client.cc" "$repo/third_party/tinyxml2/tinyxml2.cp
   g++ "${flags[@]}" -c "$source" -o "$object"
   common+=("$object")
 done
-for kind in controller plex home home_feed audio listening streaming discovery artwork; do
+for kind in controller plex home home_feed audio listening streaming discovery artwork subtitle cache; do
   extra=()
   if [[ $kind == artwork ]]; then extra+=("$repo/src/plex/artwork.cc"); fi
   if [[ $kind == controller ]]; then extra+=("$repo/third_party/qrcodegen/qrcodegen.c" "$repo"/third_party/imgui/imgui{,_draw,_tables,_widgets}.cpp); fi
-  g++ "${flags[@]}" "$repo/tests/${kind}_tests.cc" "${common[@]}" "${extra[@]}" -o "$repo/build/${kind}-tests-asan"
+  g++ "${flags[@]}" "$repo/tests/${kind}_tests.cc" "${common[@]}" "${extra[@]}" -o "$repo/build/${kind}-tests-asan" -lgnutls
   ASAN_OPTIONS=detect_leaks=1 "$repo/build/${kind}-tests-asan"
 done
 
