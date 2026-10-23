@@ -63,7 +63,8 @@ void Artwork::update() {
 ImTextureID Artwork::get(const std::string &base, const std::string &token,
                          const std::string &thumb) {
     if(diagnostic(TextOnly) || diagnostic(NoDownloads)) return 0;
-    if (thumb.empty() || thumb.front() != '/' || thumb.rfind("//", 0) == 0 ||
+    bool public_image=(thumb.rfind("https://metadata-static.plex.tv/",0)==0 || thumb.rfind("https://provider-static.plex.tv/",0)==0) && thumb.size()<=4096 && thumb.find_first_of("?#\\\r\n")==std::string::npos;
+    if (thumb.empty() || (!public_image && (thumb.front() != '/' || thumb.rfind("//", 0) == 0)) ||
         !valid_base(base, true))
         return 0;
     Request q{"GET",base+"/photo/:/transcode?width=320&height=480&minSize=1&upscale=0&url="+encode(thumb),{{"X-Plex-Token",token}},""};

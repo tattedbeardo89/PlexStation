@@ -15,6 +15,7 @@
 #include "plex/subtitles.h"
 #include "plex/navigation.h"
 #include "plex/storage.h"
+#include "plex/live_tv.h"
 #include "plex/episodes.h"
 #include "plex/progress_outbox.h"
 #include "plex/search.h"
@@ -70,6 +71,10 @@ bool controller_overlay=false;
 bool library_context=false,library_tabs_focus=false;
 int library_kind=1,library_tab=0;
 Item active_library;
+Json live_channel_list=Json::array(),live_program_list=Json::array();
+Json live_channel;
+bool live_guide_screen=false;
+std::string live_error;
 void open_library(int kind);
 void activate_library_tab();
 bool warm_discovery_pending=false;
@@ -125,7 +130,7 @@ enum Job {
     PinStart,
     PinPoll,
     ValidateAccount,
-    HomeFeed, LibraryFeed,
+    HomeFeed, LibraryFeed, LiveChannels, LiveGuide, LiveTune,
     HomeUsers,
     HomeSwitch,
     ValidateProfile,
@@ -183,6 +188,7 @@ void offer_autoplay(double now);
 bool next_countdown_frame(uint32_t hit,double now);
 void mark_video_completion(int64_t position);
 void video_plan_ready(const Result &result);
+void apply_video_plan(const StreamPlan &);
 void retire_stream();
 void service_cleanup();
 void video_tools(uint32_t hit);
@@ -285,7 +291,7 @@ void connected(const Json &data) {
     home_checkpoint(6,"authenticated libraries received",0,items(data,false).size());
     home_active=false;
     reset_cloud();
-    clear_next();audio_reset();
+    clear_next();audio_reset();restore_video_preferences();
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
     save_account_pref("plex_verified_endpoint_v2",base);
@@ -322,8 +328,8 @@ void load_home() {
     search_screen=false;home_title="Home";
     auto b=base,t=server_token;auto sections=home_sections;
     home_active=true;home_draw_ready=false;home_checkpoint(7,"Home hubs requested");
-    auto epoch=++feed_generation;feed_error.clear();home_screen=true;auto cache=home_presentation_cache;
-    submit(HomeFeed,[b,t,sections,epoch,cache] {auto result=home_feed(*client,b,t,sections,[epoch]{return feed_generation.load()==epoch;});if(result && feed_generation.load()==epoch)cache.put("home",result.data.dump());return result;});
+    auto epoch=++feed_generation;feed_error.clear();home_screen=true;auto cache=home_presentation_cache;bool seasonal=pref_int(account_key("plex_seasonal_v1").c_str(),1)!=0;
+    submit(HomeFeed,[b,t,sections,epoch,cache,seasonal] {auto current=[epoch]{return feed_generation.load()==epoch;};auto result=home_feed(*client,b,t,sections,current);if(seasonal)append_seasonal_home(result,*client,b,t,sections,season_month(),current);if(result && feed_generation.load()==epoch)cache.put("home",result.data.dump());return result;});
 }
 void refresh() {
     if(!primary_id.empty() && profile_token.empty()) {profile_screen=true;profile_error="Select and authorize a profile first.";return;}
@@ -332,7 +338,7 @@ void refresh() {
 }
 void clear_profile() {
     home_active=false;home_draw_ready=false;
-    warm_discovery_pending=false;library_context=false;active_library={};
+    warm_discovery_pending=false;library_context=false;active_library={};live_channel_list=Json::array();live_program_list=Json::array();live_channel={};live_error.clear();live_guide_screen=false;
     reset_cloud();
     clear_next();
     retire_stream();
@@ -445,6 +451,7 @@ void signout() {
         message = "Signed out. Cross to sign in";
 }
 void queue_progress(const std::string &state, int64_t position) {
+    if(playing.type=="live")return;
     record_progress(playing,state,position);
     progress_item=playing;
     progress_state = state;
@@ -459,6 +466,15 @@ void finish_job() {
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
     if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==LibraryFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioFeed) && pending_generation!=screen_generation) return;
+    if(done==LiveChannels || done==LiveGuide || done==LiveTune) {
+        if(pending_generation!=screen_generation)return;
+        if(!result){live_error=result.error;return;}
+        live_error.clear();focus=0;
+        if(done==LiveChannels){auto list=result.data.find("channels");live_channel_list=list!=result.data.end() && list->is_array()?*list:Json::array();live_guide_screen=false;}
+        else if(done==LiveGuide){auto list=result.data.find("programs");live_program_list=list!=result.data.end() && list->is_array()?*list:Json::array();live_guide_screen=true;}
+        else {detail={};detail.id=text(result.data,"session");detail.type="live";detail.title=text(live_channel,"title","Live TV");apply_video_plan({{Mode::DirectPlay,text(result.data,"url"),""},"","Personal Live TV / HLS requested"});}
+        return;
+    }
     if(done==VideoPlan){if(pending_generation==screen_generation)video_plan_ready(result);return;}
     if(done==CloudProbe || done==CloudList || done==CloudResolve || done==CloudChange){if(pending_generation==screen_generation)finish_cloud(done,result);return;}
     if(done==GlobalSearch){if(pending_generation==screen_generation){if(result){feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=true;page_title="Search";}else message=result.error;}return;}
@@ -696,7 +712,7 @@ void activate_library_tab() {
     submit(LibraryFeed,[b,t,section,seasonal]{return library_feed(*client,b,t,section,seasonal);});
 }
 void open_library(int kind) {
-    library_kind=kind;
+    library_kind=kind;browser_filters.clear();browser_sort.clear();
     active_library=default_library(home_sections,kind,pref_str(library_preference(kind).c_str(),""));
     if(active_library.id.empty()){message="No accessible library is available for this section";return;}
     pref_set(library_preference(kind).c_str(),active_library.id);
@@ -717,7 +733,7 @@ void open_item() {
         return;
     Item item = listing[focus];
     if(page_path=="cloud-watchlist"){auto b=base,t=server_token;submit(CloudResolve,[b,t,item]{return resolve_cloud(*client,b,t,item);});return;}
-    if(library_context && library_tab==2){load("/library/sections/"+encode(active_library.id)+"/all?genre="+encode(item.id),active_library.title+" / "+item.title);return;}
+    if(library_context && library_tab==2){browser_filters["genre"]=item.id;load("/library/sections/"+encode(active_library.id)+"/all?genre="+encode(item.id),active_library.title+" / "+item.title);return;}
     if (page_path == "/library/sections") {
         diagnostic_lines=0; checkpoint(1,"library selection");
         browser_filters.clear();browser_sort.clear();
@@ -736,7 +752,7 @@ void stop() {
     player_stop();
     video = false;
     tracks = false;
-    in_detail = true;
+    in_detail = playing.type!="live";
     sidebar = false;
     focus = 0; // Resume/Play owns focus after leaving playback.
 }
@@ -807,6 +823,7 @@ bool custom_focus_valid() {
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?6:4);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
+    if(page_path=="live-tv")return focus>=0 && focus<std::max(1,static_cast<int>((live_guide_screen?live_program_list:live_channel_list).size()));
     if(home_screen) {
         if(feed_rows.empty())return true; // the refresh action owns focus
         return feed_focus>=0 && feed_focus<static_cast<int>(feed_rows.size()) && feed_columns.size()==feed_rows.size() &&
@@ -1181,7 +1198,7 @@ void ui_frame(const PadState &pad, float dt) {
             if(player_failed() && !stream_fallback){stream_fallback=true;player_stop();video=false;detail=playing;video_retry_pending=true;}
             else {bool ended_well=!player_failed();stop();if(ended_well)offer_autoplay(now);}
         }
-        if (video &&
+        if (video && playing.type!="live" &&
             progress.due(static_cast<int64_t>(now * 1000), player_paused() ? "paused" : "playing"))
             queue_progress(player_paused() ? "paused" : "playing", player_time());
         if (video && !video_info && !subtitle_menu && (now < overlay_until || tracks)) {
@@ -1214,7 +1231,8 @@ void ui_frame(const PadState &pad, float dt) {
     if(profile_screen) {profile_screen_frame(hit);return;}
     scene_background(true);
     rect(0, 0, Theme::Metric::SidebarWidth, 1080, Theme::Sidebar);
-    draw_text(45, 55, Theme::Font::Brand, "PlexStation", Theme::Accent);
+    float brand_scale=gfx.height/1080.f;Theme::brand(ImGui::GetBackgroundDrawList(),35*brand_scale,50*brand_scale,50*brand_scale);
+    draw_text(90, 55, Theme::Font::Brand, "PlexStation", Theme::Accent);
     if(sidebar && nav==-1)rect(25,100,280,44,Theme::Selection);
     draw_text(45,112,Theme::Font::Caption,active_profile.name.empty() ? "Profile" : active_profile.name,Theme::Secondary,210);
     std::vector<int> visible_sidebar;for(int i:sidebar_order())if(nav_visible(i))visible_sidebar.push_back(i);
@@ -1412,6 +1430,7 @@ void ui_frame(const PadState &pad, float dt) {
         hit |= PAD_CROSS; // Same section activation as the sidebar.
     }
     if(in_detail && detail_subtitles){subtitle_picker_frame(hit);return;}
+    if(page_path=="cloud-watchlist" && cloud_tools && (hit & PAD_CIRCLE)){cloud_tools=false;return;}
     if (hit & PAD_CIRCLE) {
         video_retry_pending=false;
         ++screen_generation; ++feed_generation;
@@ -1461,7 +1480,9 @@ void ui_frame(const PadState &pad, float dt) {
             library_context=false;
             if(nav>=12){active_library=home_sections[nav-12];library_context=true;library_kind=personal_library(active_library)?9:active_library.type=="show"?2:1;library_tab=0;activate_library_tab();return;}
             if(nav==9){open_library(9);return;}
-            if(nav==10 || nav==11){home_screen=false;listing.clear();page_title=navigation[nav];page_path=nav==10?"live-tv":"rentals";sidebar=false;return;}
+            if(nav==10 || nav==11){home_screen=false;listing.clear();page_title=navigation[nav];page_path=nav==10?"live-tv":"rentals";sidebar=false;
+                if(nav==10){live_channel_list=Json::array();live_program_list=Json::array();live_guide_screen=false;live_error.clear();auto b=base,t=server_token;submit(LiveChannels,[b,t]{return live_channels(*client,b,t);});}
+                return;}
             audio_leave_browse();
             settings = nav == 6; settings_page=0;
             in_detail = false;
@@ -1686,10 +1707,32 @@ void ui_frame(const PadState &pad, float dt) {
         }
     } else if(page_path=="cloud-pending") {
         draw_text(390,250,Theme::Font::Heading,"Plex Cloud Watchlist");draw_text(390,350,Theme::Font::Body,cloud_error.empty()?"Checking authorized cloud access…":cloud_error);
-    } else if(page_path=="live-tv" || page_path=="rentals") {
-        draw_text(390,240,Theme::Font::Heading,page_path=="live-tv"?"Personal Live TV & DVR / Plex Free Live TV":"Plex Rentals");
-        draw_text(390,350,Theme::Font::Body,page_path=="live-tv"?"Guide and channel playback are unavailable in this native client.":"Rental catalog and entitlement APIs are not available to this client.");
-        draw_text(390,440,Theme::Font::Body,page_path=="live-tv"?"A supported tuner, server authorization and any required Plex Pass must be verified.":"Use an authorized Plex application for purchases and DRM-protected rental playback.");
+    } else if(page_path=="live-tv") {
+        if(hit & PAD_UP)focus=std::max(0,focus-1);
+        const auto &entries=live_guide_screen?live_program_list:live_channel_list;
+        if(hit & PAD_DOWN)focus=std::min(std::max(0,static_cast<int>(entries.size())-1),focus+1);
+        draw_text(390,200,Theme::Font::Heading,live_guide_screen?text(live_channel,"title")+" / Guide":"Personal Plex Live TV & DVR");
+        if(entries.empty())draw_text(390,310,Theme::Font::Body,job!=None?"Loading authorized Live TV…":live_guide_screen?"No guide programs returned for today":"No authorized, configured DVR channels were returned");
+        int first=std::max(0,focus-6);
+        for(int i=first;i<static_cast<int>(entries.size()) && i<first+7;++i){
+            std::string label;
+            if(live_guide_screen){auto clock=[](int64_t value){std::time_t stamp=value;std::tm local{};char time[20]="";if(localtime_r(&stamp,&local))std::strftime(time,sizeof time,"%H:%M",&local);return std::string(time);};auto start=number(entries[i],"beginsAt"),end=number(entries[i],"endsAt"),now=static_cast<int64_t>(std::time(nullptr));label=(start<=now && now<end?"Now • ":start>now?"Upcoming • ":"Earlier • ")+clock(start)+"–"+clock(end)+" "+text(entries[i],"series")+" / "+text(entries[i],"title");}
+            else label=text(entries[i],"number")+" "+text(entries[i],"title");
+            row(i,focus,275+(i-first)*80,label);
+            if(!live_guide_screen){auto logo=artwork->get(base,server_token,text(entries[i],"thumb"));if(logo)cover_image(logo,1755,283+(i-first)*80,48,48);}
+        }
+        if(!live_error.empty())draw_text(390,860,Theme::Font::Caption,live_error,Theme::Warning);
+        draw_text(390,910,Theme::Font::Caption,live_guide_screen?"Cross: watch channel now • Square: channel list":"Cross: program guide • Plex Free Live TV is not integrated");
+        if((hit & PAD_SQUARE) && live_guide_screen){live_guide_screen=false;focus=0;}
+        if((hit & PAD_CROSS) && job==None && !entries.empty()) {
+            auto b=base,t=server_token;
+            if(live_guide_screen){auto channel=live_channel;auto consumer=device;submit(LiveTune,[b,t,channel,consumer]{return live_tune(*client,b,t,channel,consumer);});}
+            else {live_channel=live_channel_list[focus];auto channel=live_channel;std::time_t now=std::time(nullptr);std::tm today{};char date[20]="";localtime_r(&now,&today);std::strftime(date,sizeof date,"%Y-%m-%d",&today);std::string day=date;submit(LiveGuide,[b,t,channel,day]{return live_guide(*client,b,t,channel,day);});}
+        }
+    } else if(page_path=="rentals") {
+        draw_text(390,240,Theme::Font::Heading,"Plex Rentals");
+        draw_text(390,350,Theme::Font::Body,"Rental catalog and entitlement APIs are not available to this client.");
+        draw_text(390,440,Theme::Font::Body,"Use an authorized Plex application for purchases and DRM-protected rental playback.");
     } else if(home_screen) {
         if(search_screen && (hit & (PAD_L2|PAD_R2)) && job==None){search_start=std::max(0,search_start+((hit & PAD_R2)?12:-12));auto b=base,t=server_token,q=search_query;auto start=search_start;submit(GlobalSearch,[b,t,q,start]{return global_search(*client,b,t,q,start);});}
         home_frame(hit,dt);

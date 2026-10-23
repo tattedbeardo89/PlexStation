@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// PlexStation's native TV theme. Original branding/artwork is unchanged.
+// PlexStation's native TV theme and original angular branding.
 #pragma once
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 namespace Theme {
 inline constexpr ImU32 Background=IM_COL32(17,24,39,255), Sidebar=IM_COL32(31,41,55,255);
 inline constexpr ImU32 Surface=IM_COL32(55,65,81,255), Text=IM_COL32(249,250,251,255);
@@ -19,6 +20,19 @@ namespace Metric {inline constexpr float Radius=14,ImageRadius=10,FocusWidth=2,G
 inline bool reduced_motion=false;
 inline float motion(float dt) {return reduced_motion?1.f:std::clamp(dt*14.f,0.f,1.f);}
 inline ImU32 focus_color(double seconds) {return reduced_motion?Focus:alpha(Focus,220+static_cast<int>(35*(.5+.5*std::sin(seconds*4))));}
+// Same geometry/colors as assets/plexstation.svg; no texture/network dependency.
+inline void brand(ImDrawList *draw,float x,float y,float size) {
+    auto polygon=[&](std::initializer_list<ImVec2> vertices,ImU32 color){
+        ImVec2 points[12];int count=0;
+        for(const auto &point:vertices)points[count++]=ImVec2(x+point.x*size/512,y+point.y*size/512);
+        draw->AddConcavePolyFilled(points,count,color);
+    };
+    polygon({{104,88},{304,88},{408,192},{408,264},{304,368},{224,368},{224,440},{104,440}},Sidebar);
+    polygon({{88,72},{288,72},{392,176},{392,248},{288,352},{208,352},{208,424},{88,424}},Accent);
+    polygon({{88,72},{208,144},{208,424},{88,424}},Focus);
+    polygon({{208,144},{316,212},{208,280}},Text);
+    polygon({{288,72},{392,176},{316,212},{208,144}},Blue);
+}
 inline void cover_uv(float source_aspect,float width,float height,ImVec2 &uv0,ImVec2 &uv1) {
     uv0=ImVec2(0,0);uv1=ImVec2(1,1);
     if(source_aspect<=0 || width<=0 || height<=0)return;

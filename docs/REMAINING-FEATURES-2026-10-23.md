@@ -16,23 +16,22 @@ verified before implementation. No playback engine was replaced.
 | A2 preferences | Settings / Playback / Subtitles: default Off, Automatic, preferred language, forced metadata preference, optional per-media memory, size/delay and reset | New v3 schema deliberately starts Off. Selection memory is scoped by account/profile/server/media/version, using stream identity rather than a global track number. Forced preference needs one matching track. |
 | A2 avatars | Preserve XML avatar/avatarUrl fields, per-image pending/failure UI, safe HTTP/TLS/redirect/format/byte/decode/GPU diagnostics with opaque request numbers, explicit Retry Avatar, independent disk scope and stronger GPU residency | **Physical root cause is not established.** No owner's failing device log was supplied. WebP/SVG remain unsupported by stb. Real PNG/JPEG decode, redirect isolation and fake GPU tests do not prove the PS5 displays an avatar. |
 | A2 artwork | Existing bounded disk/GPU cache retained; corrupt full-decode validation and repair, avatar cache separate from posters, disk/GPU/download/decode/eviction/write/upload counters, protected visible textures and deferred destruction | Disk cache uses private `/data/plexstation-client` on PS5 when available, otherwise the title directory. An unwritable path is counted as a write failure. Persistence and GPU fences require device retest. |
-| B startup | After profile/PIN authentication, try the previously verified endpoint with 800 ms connect / 1400 ms request limits; verify server identity and libraries using current profile authorization, fall back to discovery; scoped cached Home; idle background resource refresh; Clear Cached Connection | DNS resolution can still exceed socket deadlines. Actual cold/warm PS5 timings are unavailable. Host warm fixture: two bounded requests, rather than full discovery first; timing is a fixture measurement, not a device performance claim. |
+| B startup | After profile/PIN authentication, try the previously verified endpoint with 800 ms connect / 1400 ms request limits; verify server identity and libraries using current profile authorization, fall back to discovery; scoped cached Home; idle background resource refresh; Clear Cached Connection | DNS resolution can still exceed socket deadlines. Actual cold/warm PS5 timings are unavailable. Host warm fixture: two bounded requests, rather than full discovery first; one observed completion was 0.075 ms after entering the fixture wait, which is not network or device latency. |
 | C Home | Existing native carousel layout retained and extended: released movies, added movies, released episodes, added shows; series/season/episode metadata retained during aggregation; focused item survives matching background row refresh | Reference screenshots were not available in this session. No screenshot-equivalence or physical visual acceptance claimed. |
-| C Watchlist | Actual Plex cloud provider, grid, account/profile restrictions, All/Movies/TV filters, added-date/title sorting, pagination and real response count; supported add/remove/local resolution retained | Cloud provider filters and count behavior need live validation; unavailable cloud access is explicit. No fabricated local Watchlist or cloud Recommended page. Cloud poster origins unsupported by the existing PMS image adapter remain a limitation. |
+| C Watchlist | Actual Plex cloud provider, grid, account/profile restrictions, All/Movies/TV filters, added-date/title sorting, pagination and real response count; supported add/remove/local resolution retained | Cloud provider filters and count behavior need live validation; unavailable cloud access is explicit. No fabricated local Watchlist or cloud Recommended page. Official metadata-static/provider-static image URLs can use the authorized PMS image transcoder; other cloud image origins still use placeholders. |
 | C libraries | Default Movies/TV IDs scoped per server/profile, deterministic accessible fallback, Recommended/Library/Categories, paged library browse, real genre categories and server collection rows | Recommendations use actual selected-library queries/hubs; not every server exposes every row. Categories currently emphasize genres. |
 | D Home Movies | Dedicated sidebar section found by real library ID/name, remembered routing, own tabs; personal videos excluded from professional Movies defaults and release recommendations | Thumbnail/date/duration presentation and all controller paths need device review. |
 | D Music/Audiobooks | Shared top tabs, remembered library selection, real feed and category paths; existing queues/shuffle/repeat, bookmarks/resume/speed/chapters/timer and explicit audiobook designation retained | UI remains less complete than video; some routes remain lists. First selection can still show a library chooser. No semantic conversion of ordinary music to audiobooks. |
-| E seasonal/sidebar | Halloween/Horror and Christmas/Holiday from real permitted genre tags on library Recommended pages; seasonal toggle; profile-specific optional visibility, ordering, reset, and accessible video-library pins | Home seasonal rows and broader winter/summer tag customization remain incomplete. Library pin reorder beyond built-in entries is not implemented. |
-| E Live TV/Rentals | Sidebar entries and explicit native-client unavailable states | Guide/tuning/playback and rental catalog/entitlement integration are not complete. No purchase controls or DRM bypass. See researched service boundaries below. |
-| F branding | Original SVG master and 512-square PNG icon, 1920x1080 PNG background masters, reproducible RGBA DDS packaging, original in-app symbol | Actual installed icon and PS5 shell cache refresh require device verification. PPSA85301 and saved data are retained. |
+| E seasonal/sidebar | Halloween/Horror and Christmas/Holiday from real permitted genre tags on library Recommended pages; seasonal toggle; profile-specific optional visibility, ordering, reset, and accessible video-library pins | Home seasonal rows now query up to four permitted nonpersonal libraries using actual genre/collection matches. Winter/summer rows need matching server tags or collections; arbitrary season definition editing is not implemented. Library pin reorder beyond built-in entries is not implemented. |
+| E Live TV/Rentals | Personal DVR and EPG provider discovery, up to 200 authorized channels, today's actual current/upcoming programs, channel logos, explicit tune and supported session HLS via the original player; protected/unknown codecs rejected; separate free-TV and Rentals limitations | Personal Live TV is source/fixture tested, not tuner/device verified. No schedule editing/recording, multi-day guide paging, verified idle-tuner cleanup or free cloud Live TV. Rental catalog/entitlement integration and licensed DRM remain unavailable. |
+| F branding | Original SVG master and 512-square PNG icon, 1920x1080 PNG background masters, reproducible DXT1 DDS packaging, original in-app symbol | Actual installed icon and PS5 shell cache refresh require device verification. PPSA85301 and saved data are retained. |
 
 ## Service boundaries and evidence
 
 Checked the official [PMS API](https://developer.plex.tv/pms/) on October 23, 2026.
 Its OpenAPI 1.2.3 documents `/media/providers`, `/livetv/dvrs`, provider EPG channel
-and grid queries, channel tuning, and session playlists. These are supported
-API surfaces worth integrating; a generic unavailable screen is **not** completion
-of personal Live TV. Provider/grid endpoints require the advertised provider and
+and grid queries, channel tuning, and session playlists. These API surfaces are used by the personal Live TV source adapter. A generic
+unavailable screen is not treated as completion of personal Live TV. Provider/grid endpoints require the advertised provider and
 current server/profile authorization; do not assume free cloud Live TV shares
 the same authorization or playback flow.
 
@@ -40,7 +39,10 @@ The official [rental FAQ](https://support.plex.tv/articles/faq-rentals-purchases
 states rentals use DRM and require compatible DRM/HDCP support. This client has
 no licensed DRM path or verified supported rental catalog/entitlement API.
 Use an authorized Plex application for protected rental playback. No prices,
-entitlements, or purchase controls are fabricated.
+entitlements, or purchase controls are fabricated. Personal tuning closes the
+native HTTP consumer on stop; an explicit server-side idle tuner release has not
+been validated. No DVR configuration, guide reload, recording or channel mapping
+mutation is introduced.
 
 ## Build and host validation
 
@@ -58,8 +60,7 @@ cache. An Actions link is not a passing build; installation and debug artifacts
 must both exist for the exact commit before reporting native success.
 
 Branding: `assets/plexstation.svg`, `ps5/sce_sys/icon0.png`, PNG background masters,
-`tools/make-brand.py` (authoring, Pillow), and `tools/brand-dds.py` (packaging,
-Python standard library). Build packaging validates the icon/background dimensions.
+`tools/make-brand.py` (authoring, Pillow, including the existing DXT1 DDS format). Build packaging validates the icon/background dimensions.
 The install artifact is `PlexStation-PPSA85301-<sha>` and matching symbols are
 `PlexStation-native-debug-<sha>`. Do not install diagnostics as an application.
 
@@ -85,6 +86,8 @@ Record build SHA, media version/codecs, Direct Play or server streaming, and pro
 - [ ] Watchlist counts/filter/sort/pages and add/remove match Plex's authorized account.
 - [ ] Music queues and audiobook bookmarks/chapters/speed/timer retain their distinct behavior.
 - [ ] Sidebar hide/order/reset/pins, seasonal toggle, 1080p/4K layout and rapid controller navigation.
+- [ ] Personal Live TV: authorized DVRs/channels, logos, current/upcoming guide times, tune H.264/HEVC, pause/stop/return, tuner release, no library-progress writes; test a denied profile and unsupported/protected channel.
+- [ ] Free cloud Live TV and protected Rentals show accurate native-client limitations.
 - [ ] Icon/splash use angular branding. If the PS5 shell shows its cached old icon, fully close the title and restart the console/launcher normally; do not delete saved data or system databases.
 
 No A2–F checkpoint is physically accepted by host tests. Remaining gaps above

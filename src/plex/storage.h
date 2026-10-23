@@ -5,7 +5,7 @@
 #include <string>
 namespace plex {
 inline std::string cache_root(const std::string &app) {
-#ifdef __FreeBSD__
+#if defined(PLEX_PS5) || defined(__FreeBSD__)
     // Separate from the installed title so updates retain cached artwork.
     const char *root="/data/plexstation-client";
     mkdir(root,0700);struct stat st{};

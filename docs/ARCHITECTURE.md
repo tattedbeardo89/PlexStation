@@ -116,3 +116,16 @@ cloud GUIDs to permitted local media before playback; managed-user cloud access
 is disabled pending isolation verification. See MEDIA-EXPANSION.md for the
 current source/fixture/native/device matrix. Older incomplete-feature statements
 above describe the original foundation and are superseded by that matrix.
+
+## October 23 continuation
+
+The current cache/subtitle/startup/navigation behavior supersedes the original
+foundation limits above. `plex/subtitles.h` separates Plex stream metadata from
+VLC IDs; `player.cc` cancels stale external selections and supports a no-reopen
+attachment mode. `plex/storage.h` configures private persistent cache storage;
+artwork state diagnostics distinguish per-image loading, retrieval, decode and
+upload failures. `plex/navigation.h` scopes default routing and recommendations
+to authorized libraries. `plex/live_tv.h` uses the official PMS DVR/provider/EPG/
+tune/session APIs with the active profile token; it does not implement Plex's
+separate cloud/free-TV or rental/DRM service. See the October 23 status matrix for
+source, host, native and physical acceptance boundaries.

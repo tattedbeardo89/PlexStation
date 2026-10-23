@@ -129,3 +129,14 @@ with ZIP metadata checked in Actions. Windows extraction/FTP may discard Unix
 modes; set and verify them remotely. Keep account files 600 and ensure app data
 ownership allows runtime writes. The confirmed 777 launch workaround is not
 the permanent deployment procedure.
+
+## Angular branding assets
+
+`assets/plexstation.svg` is the original vector master. `python3 tools/make-brand.py`
+regenerates the PNG masters (authoring requires Pillow). The authoring script also writes matching 1920x1080 DXT1 DDS backgrounds,
+preserving the established PS5 splash format. These rasters are committed and
+copied into the installation folder; Pillow is not needed in the native container. `check-package.py`
+checks the installed 512x512 PNG icon and both full-sized backgrounds. The in-app
+header draws the same geometry using ImGui. Keep PPSA85301 and its saved account
+files; a stale shell icon should be checked after fully closing/restarting the
+existing launcher/console, without deleting application data or system caches.

@@ -20,7 +20,8 @@ void player_set_subtitle_delay(int64_t n){test_sub_delay=n;}
 SubStyle player_sub_style(){return {100,0,false};}
 void player_set_sub_style(const SubStyle &){}
 bool player_add_subtitle(const std::string &,bool){return true;}
-std::vector<SubtitleTrack> player_subtitle_catalog(){return {};}
+static std::vector<SubtitleTrack> native_subtitles;
+std::vector<SubtitleTrack> player_subtitle_catalog(){return native_subtitles;}
 std::string player_audio_language(){return "";}
 static std::string selected_sub_language;
 void player_set_languages(const std::string &,const std::string &sub){selected_sub_language=sub;}
@@ -64,13 +65,14 @@ void player_seek(int64_t value) { position = value; }
 int64_t player_audio_delay() { return 0; }
 void player_set_audio_delay(int64_t) {}
 std::vector<Track> player_audio_tracks() { return {{1,"A"},{2,"B"}}; }
-std::vector<Track> player_subtitle_tracks() { return {}; }
+std::vector<Track> player_subtitle_tracks() {std::vector<Track> out{{-42,"Off"}};for(const auto &t:native_subtitles)out.push_back({t.id,t.name});return out;}
 int player_audio_track() { return 1; }
-int player_subtitle_track() { return -1; }
+static int subtitle_current=-42;
+int player_subtitle_track() { return subtitle_current; }
 void player_set_audio_track(int) {}
-void player_set_subtitle_track(int) {}
+void player_set_subtitle_track(int id) {subtitle_current=id;}
 static int off_choices=0;
-void player_subtitles_off() {++off_choices;}
+void player_subtitles_off() {++off_choices;subtitle_current=-42;}
 void player_subtitles_automatic(const std::string &) {}
 static void frame(uint32_t buttons = 0, float lx = 0, float ly = 0, float dt = 1.f/60) {
     PadState pad{}; pad.connected = true; pad.buttons = buttons; pad.lx = lx; pad.ly = ly;
@@ -473,6 +475,19 @@ int main() {
     assert(playback_tracks_focus_valid());video=false;subtitle_menu=false;
     subtitle_selection.reset();subtitle_default_mode=0;detail.id="different-movie";prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
     subtitle_selection.choice=0;detail.id="different-episode";prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
+    // Pre-play choice maps Plex metadata to verified native IDs after discovery.
+    subtitle_default_mode=0;subtitle_language_choice=0;subtitle_selection.reset();version=0;
+    detail.id="subtitle-movie";detail.type="movie";detail.media=Json::array({{{"Part",Json::array({{{"Stream",Json::array({{{"id",9001},{"streamType",3},{"languageCode","eng"},{"title","English"}}})}}})}}});
+    prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
+    subtitle_focus=3;subtitle_picker_frame(PAD_CROSS);assert(subtitle_selection.choice==0 && subtitle_default_mode==0);
+    native_subtitles={{7,"English","en"}};playing=detail;video=true;begin_session_subtitles();service_subtitle_selection();
+    assert(player_subtitle_track()==7 && !subtitle_pending && subtitle_default_mode==0);
+    auto before_switch_url=last_opened_url;auto before_switch_position=position;
+    choose_subtitle_mode(0);assert(player_subtitle_track()==-42 && position==before_switch_position && last_opened_url==before_switch_url);
+    player_seek(position+1000);player_toggle_pause();service_subtitle_selection();assert(player_subtitle_track()==-42);
+    subtitle_selection.choice=-3;begin_session_subtitles();service_subtitle_selection();assert(player_subtitle_track()==7 && subtitle_selection.choice==-3);
+    native_subtitles.clear();subtitle_selection.choice=-3;begin_session_subtitles();clock_now+=13;service_subtitle_selection();assert(player_subtitle_track()==-42 && subtitle_selection.choice==-1);
+    video=false;native_subtitles.clear();detail_subtitles=false;
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

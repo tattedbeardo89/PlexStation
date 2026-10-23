@@ -27,7 +27,7 @@ void apply_video_plan(const StreamPlan &plan) {
     audio_reset();retire_stream();stream_plan=plan;
     if(!player_open(plan.playback.url,detail.offset)){message="VLC could not open media";retire_stream();return;}
     next_candidate={};next_requested=false;autoplay_deadline=0;
-    playing=detail;video=true;tracks=false;subtitle_menu=false;progress={};video_info=false;stream_fallback=plan.playback.mode!=Mode::DirectPlay;
+    playing=detail;video=true;tracks=false;subtitle_menu=false;progress={};video_info=false;stream_fallback=detail.type=="live" || plan.playback.mode!=Mode::DirectPlay;
     auto offset=std::clamp(pref_int((account_key("plex_media_audio")+"."+encode(selected_server.id)+"."+encode(detail.id)).c_str(),global_delay),-500,500);
     player_set_audio_delay(offset);overlay_until=plat_time()+5;
     begin_session_subtitles();
@@ -91,7 +91,7 @@ std::string subtitle_status;
 const char *subtitle_languages[]={"en","es","fr","ja","de","it","pt"};
 const char *subtitle_mode_names[]={"Off","Automatic","Preferred Language"};
 std::string subtitle_memory_key() {
-    return account_key("plex_subtitle_media_v3")+"."+encode(selected_server.id)+"."+encode(detail.id)+"."+std::to_string(version);
+    return account_key("plex_subtitle_media_v3")+"."+std::to_string(pref_int(account_key("plex_subtitle_memory_epoch_v3").c_str(),0))+"."+encode(selected_server.id)+"."+encode(detail.id)+"."+std::to_string(version);
 }
 void prepare_subtitle_selection() {
     if(subtitle_selection.media==detail.id && subtitle_selection.version==static_cast<size_t>(version))return;
@@ -133,8 +133,15 @@ void service_subtitle_selection() {
     if(!subtitle_pending)return;
     auto choice=subtitle_selection.choice;
     if(choice==-1){player_subtitles_off();subtitle_pending=false;subtitle_status="Off";return;}
-    if(choice==-4){player_set_subtitle_track(subtitle_native_id);subtitle_pending=false;subtitle_status=player_subtitle_track()==subtitle_native_id?"Native track active":"Native track unavailable";return;}
-    if(choice<0){player_subtitles_automatic(choice==-3?subtitle_languages[subtitle_language_choice]:"");subtitle_pending=false;subtitle_status="Automatic selection requested";return;}
+    if(choice==-4){player_set_subtitle_track(subtitle_native_id);subtitle_pending=false;if(player_subtitle_track()==subtitle_native_id)subtitle_status="Native track active";else{player_subtitles_off();subtitle_selection.choice=-1;subtitle_status="Native track unavailable; Off retained";}return;}
+    if(choice==-3) {
+        SubtitleStream wanted;wanted.language=subtitle_languages[subtitle_language_choice];
+        int native=match_subtitle(wanted,player_subtitle_catalog());
+        if(native>=0){player_set_subtitle_track(native);if(player_subtitle_track()==native){subtitle_pending=false;subtitle_status="Preferred language active";return;}}
+        if(plat_time()>subtitle_deadline){player_subtitles_off();subtitle_selection.choice=-1;subtitle_pending=false;subtitle_status="Preferred language unavailable or ambiguous; Off retained";message=subtitle_status;}
+        return;
+    }
+    if(choice<0){player_subtitles_automatic("");subtitle_pending=false;subtitle_status="Automatic selection requested";return;}
     auto entries=subtitle_streams(playing,version);
     if(static_cast<size_t>(choice)>=entries.size()){player_subtitles_off();subtitle_pending=false;subtitle_selection.choice=-1;subtitle_status="Requested subtitle is unavailable";return;}
     const auto &entry=entries[choice];
@@ -220,7 +227,7 @@ void subtitle_settings_frame(uint32_t hit) {
         if(focus==1)subtitle_language_choice=(subtitle_language_choice+1)%7;
         if(focus==2)subtitle_remember=!subtitle_remember;
         if(focus==6)subtitle_forced=!subtitle_forced;
-        if(focus==7){subtitle_default_mode=0;subtitle_language_choice=0;subtitle_remember=false;subtitle_forced=false;pref_set(subtitle_memory_key().c_str(),"");}
+        if(focus==7){auto key=account_key("plex_subtitle_memory_epoch_v3");pref_set(key.c_str(),(std::clamp(pref_int(key.c_str(),0),0,999999)+1)%1000000);subtitle_default_mode=0;subtitle_language_choice=0;subtitle_remember=false;subtitle_forced=false;pref_set(subtitle_memory_key().c_str(),"");}
         if(focus<=2 || focus>=6)apply_subtitle_preferences(true);
         if(focus==3){auto style=player_sub_style();style.size=style.size>=200?50:style.size+10;player_set_sub_style(style);}
         if(focus==4 || focus==5)player_set_subtitle_delay(std::clamp<int64_t>(player_subtitle_delay()+(focus==4?100:-100),-10000,10000));
