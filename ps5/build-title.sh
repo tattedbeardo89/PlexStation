@@ -46,7 +46,7 @@ TARGET=ps5 NM="$sdk/bin/prospero-nm" APP_MODULES="vlc_entry__ps5http vlc_entry__
 bash "$here/compile-shaders.sh"
 build_commit=$(git -C "$repo" rev-parse HEAD)
 cflags=(-g -fno-omit-frame-pointer "-DPLEX_BUILD_COMMIT=\"$build_commit\"" -O2 -march=znver2 -Wall -Wno-unused-result -Wno-unused-function
-    -DVK_NO_PROTOTYPES -DIMGUI_IMPL_VULKAN_USE_VOLK
+    -DPLEX_PS5 -DVK_NO_PROTOTYPES -DIMGUI_IMPL_VULKAN_USE_VOLK
     -I"$repo/third_party" -I"$repo/src" -I"$repo/third_party/imgui" -I"$repo/third_party/volk" -I"$repo/third_party/stb"
     -I"$vk/.deps/native/radv-release/include" -I"$vlc_src/include" -I"$prefix/include")
 cxxflags=(-std=c++17 -fno-exceptions -fno-rtti -Wno-missing-field-initializers)
@@ -181,12 +181,10 @@ mkdir -p "$app/sce_sys" "$app/sce_module" "$app/media"
 "$tool" self --sign --in "$work/eboot.elf" --out "$app/eboot.bin" --magic 0x1D3D154F
 "$tool" self --inspect --file "$app/eboot.bin" > /dev/null
 cp "$param" "$app/sce_sys/param.json"
-for asset in icon0.png; do
+for asset in icon0.png pic0.dds pic1.dds; do
     if [[ -f $here/sce_sys/$asset ]]; then cp "$here/sce_sys/$asset" "$app/sce_sys/$asset"
     fi
 done
-python3 "$repo/tools/brand-dds.py" "$here/sce_sys/background-source.png" "$app/sce_sys/pic0.dds"
-python3 "$repo/tools/brand-dds.py" "$here/sce_sys/launch-background-source.png" "$app/sce_sys/pic1.dds"
 (cd "$vk/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
 cp "$vk/runtime/libc.prx" "$app/sce_module/libc.prx"
 # Every GOT slot and its symbol, for the startup import report.

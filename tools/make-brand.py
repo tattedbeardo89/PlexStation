@@ -24,5 +24,5 @@ for stem,dds in [('background-source','pic0'),('launch-background-source','pic1'
     badge=symbol(1024).resize((420,420),Image.Resampling.LANCZOS);image.alpha_composite(badge,(750,215))
     draw.text((960,715),'PlexStation',font=font,fill='#F9FAFB',anchor='mm')
     image.convert('RGB').save(output/(stem+'.png'))
-    image.save(output/(dds+'.dds'))
+    image.convert('RGB').save(output/(dds+'.dds'),pixel_format='DXT1')
 print('Generated original icon0.png 512x512; pic0.dds/pic1.dds 1920x1080; in-app symbol')

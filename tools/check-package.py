@@ -22,6 +22,6 @@ if icon[:8]!=b'\x89PNG\r\n\x1a\n' or struct.unpack_from('>II',icon,16)!=(512,512
     sys.exit('Invalid 512x512 PS5 icon')
 for name in ('pic0.dds','pic1.dds'):
     data=(root/'sce_sys'/name).read_bytes()
-    if data[:4]!=b'DDS ' or len(data)!=128+1920*1080*4 or struct.unpack_from('<II',data,12)!=(1080,1920):
+    if data[:4]!=b'DDS ' or len(data)!=128+1920*1080//2 or data[84:88]!=b'DXT1' or struct.unpack_from('<II',data,12)!=(1080,1920):
         sys.exit('Invalid PS5 background dimensions')
 print('Package files and independent metadata verified; PS5 launch is still unverified')
