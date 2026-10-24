@@ -92,3 +92,36 @@ Record build SHA, media version/codecs, Direct Play or server streaming, and pro
 
 No A2–F checkpoint is physically accepted by host tests. Remaining gaps above
 must stay visible in release notes.
+
+## Resume audit and A2 control-path follow-up
+
+The resumed environment contained a clean, older `work` branch at `0675991`.
+Fetched the requested feature branch and continued its existing history at
+`fe9c0c4a348c0c02fe79e2d45e7c3abda16269a8`; both `5d8adb9` and `1ad4f6c`
+remain ancestors. The source/acceptance inventory above remains applicable.
+
+Verified GitHub metadata for [native run 40039598122](https://github.com/tattedbeardo89/PlexStation/actions/runs/40039598122):
+actual native compile, matching debug collection, packaging and uploads passed.
+Its installation artifact is `PlexStation-PPSA85301-fe9c0c4a348c0c02fe79e2d45e7c3abda16269a8`
+and symbols are `PlexStation-native-debug-fe9c0c4a348c0c02fe79e2d45e7c3abda16269a8`.
+These existing artifacts predate the following fix.
+
+Playback Information's legacy external-subtitle action bypassed the shared
+subtitle session policy and allowed the player's reopen fallback. It now opens
+the same embedded/external subtitle menu used by Options / Tracks. The actual
+controller fixture checks that entering this menu preserves the active track,
+playback URL and playback position. External choices therefore use the shared
+bounded, cancellable attachment path with reopening disabled.
+
+Physical acceptance remains pending: test both menu entry points, choose an
+external track, select Off while it loads, seek/pause, and verify uninterrupted
+video/audio and correct captions. Avatar diagnosis and persistent artwork
+retention still require device observations; no physical root cause or fix is
+claimed from host fixtures.
+
+Resume follow-up local checks passed: 74 core assertions, ten libcurl transport
+scenarios, subtitle policy, artwork decode/cache/lifecycle, persistent cache,
+production controller/UI including the alternate subtitle entry, PS5 pad mocks,
+ZIP permissions/theme boundary, ten native GnuTLS transport scenarios and strict
+native-source host syntax. Loopback fixtures require the execution sandbox's
+network permission. Hosted native and sanitizer gates are reported separately.

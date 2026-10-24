@@ -483,6 +483,12 @@ int main() {
     native_subtitles={{7,"English","en"}};playing=detail;video=true;begin_session_subtitles();service_subtitle_selection();
     assert(player_subtitle_track()==7 && !subtitle_pending && subtitle_default_mode==0);
     auto before_switch_url=last_opened_url;auto before_switch_position=position;
+    video_info=true;video_info_focus=6;tracks=false;subtitle_menu=false;
+    video_tools(PAD_CROSS);
+    assert(!video_info && tracks && subtitle_menu);
+    assert(player_subtitle_track()==7 && position==before_switch_position && last_opened_url==before_switch_url);
+    subtitle_menu=false;tracks=false;
+
     choose_subtitle_mode(0);assert(player_subtitle_track()==-42 && position==before_switch_position && last_opened_url==before_switch_url);
     player_seek(position+1000);player_toggle_pause();service_subtitle_selection();assert(player_subtitle_track()==-42);
     subtitle_selection.choice=-3;begin_session_subtitles();service_subtitle_selection();assert(player_subtitle_track()==7 && subtitle_selection.choice==-3);

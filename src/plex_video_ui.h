@@ -59,7 +59,7 @@ void video_tools(uint32_t hit) {
     draw_text(110,255, Theme::Font::Caption,info.hardware?"Decoder reports hardware active":"No hardware-active report (codec alone does not establish hardware decoding)");
     if(hit & PAD_UP)video_info_focus=std::max(0,video_info_focus-1);
     if(hit & PAD_DOWN)video_info_focus=std::min(8,video_info_focus+1);
-    const char *labels[]={"Audio offset +25 ms (save for this media)","Audio offset -25 ms (save for this media)","Reset media offset","Subtitle delay +100 ms","Subtitle delay -100 ms","Subtitle size +10%","Load next external subtitle","Subtitles Off","Next Episode (server order)"};
+    const char *labels[]={"Audio offset +25 ms (save for this media)","Audio offset -25 ms (save for this media)","Reset media offset","Subtitle delay +100 ms","Subtitle delay -100 ms","Subtitle size +10%","Subtitle tracks (embedded / external)","Subtitles Off","Next Episode (server order)"};
     for(int n=0;n<9;++n)row(n,video_info_focus,310+n*75,labels[n]);
     if(hit & PAD_CROSS) {
         if(video_info_focus==8){if(next_candidate.id.empty())message="No next episode is available";else{stop();autoplay_deadline=plat_time();}}
@@ -68,14 +68,9 @@ void video_tools(uint32_t hit) {
         if(video_info_focus==5){auto style=player_sub_style();style.size=style.size>=200?50:style.size+10;player_set_sub_style(style);}
         if(video_info_focus==7)choose_subtitle_mode(0);
         if(video_info_focus==6) {
-            std::vector<std::string> subtitles;
-            if(playing.media.is_array() && static_cast<size_t>(version)<playing.media.size()){
-                auto parts=playing.media[version].find("Part");if(parts!=playing.media[version].end() && parts->is_array())for(const auto &part:*parts) {
-                    auto streams=part.find("Stream");if(streams!=part.end() && streams->is_array())for(const auto &stream:*streams){auto url=external_subtitle(base,server_token,stream);if(!url.empty())subtitles.push_back(url);}
-                }
-            }
-            static size_t selected=0;if(subtitles.empty())message="No supported external subtitle provided";
-            else {if(!player_add_subtitle(subtitles[selected++%subtitles.size()]))message="VLC could not attach external subtitle";}
+            // Use the same verified, cancellable selection path as Options / Tracks.
+            // The legacy external loader could reopen playback and bypass session Off.
+            video_info=false;tracks=true;subtitle_menu=true;
         }
     }
     if(hit & (PAD_CIRCLE|PAD_SQUARE)){video_info=false;tracks=false;}
