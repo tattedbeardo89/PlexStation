@@ -5,8 +5,9 @@ clean working tree. Native source checkpoint `208b5be1ec73f6fa11797dbd3ae2b21262
 passed [run 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391).
 `5d8adb9` and `1ad4f6c4ab562762bd4c2ffa958cc098e234528a` remain rollback references.
 
-The matrix records the inspected starting state, not a declaration that every
-row is finished. Corrections and validation evidence are appended per milestone.
+The matrix records the corrected source state; milestone sections below identify
+the original defects and the evidence for each change. Partial and externally
+blocked rows remain open.
 “Implemented” describes reachable source behavior. Host fixtures use fake
 player/GPU/service boundaries; only the transport fixtures make actual local
 HTTP/TLS requests. No new physical acceptance is inferred from builds.
@@ -40,30 +41,30 @@ the current task's layout requirements govern the audit.
 | Avatar diagnostics/retry | Implemented | Artwork::avatar_state/diagnostics/retry_avatars; Developer Retry Avatar | Expose retry on profile picker and precise current image status | artwork_tests | Pending |
 | Fast endpoint startup | Implemented | activate_profile FastConnect 800/1400ms; identity + authenticated sections | Cache route can fail with token needing rediscovery; DNS may exceed timeout | controller_tests; connections | Cold/warm device measurements missing |
 | Warm Home presentation | Implemented | restore_presentation/presentation_scope/home_presentation_cache | Validate cached schema; retain scoped permission gate | cache_tests; controller_tests | Pending |
-| Background Home refresh/focus | Partially implemented | connected load_home; BackgroundResources; HomeFeed completion preserves IDs | No periodic idle Home metadata refresh; add scheduling/coalescing | controller_tests | Pending |
+| Background Home refresh/focus | Implemented | service_home_refresh/load_home; HomeFeed ID reconciliation; 568f95f | Idle scheduling added; physical refresh/focus acceptance pending | controller_tests | Pending |
 | Startup measurements | Partially implemented | startup: authorized-server-ms; home checkpoints | Report route/cache/first-render metrics; no physical latency claims | controller_tests fast-path fixture | Device five-run cold/warm benchmark pending |
 | Home layout/episode cards | Implemented | home_frame/poster shared Theme; home_feed.h | Personal libraries currently included in professional aggregates; fix; no screenshots available | controller_tests 1080/4K; home_feed_tests | Visual/focus acceptance pending |
-| Personalized Collections on Home | Partially implemented | home_feed parses unknown server hubs | Collection items discarded by row serializer; preserve actionable real collections | discovery_tests; home_feed_tests | Pending |
+| Personalized Collections on Home | Implemented | home_feed collection serialization/aggregation; open_media; f6d853b | Real server collections and images pending live acceptance | discovery_tests; home_feed_tests | Pending |
 | Watchlist sync/grid/count/filter/pages | Requires physical PS5 verification | cloud.h cloud_watchlist/cloud_change/resolve_cloud; plex_cloud_ui.h; grid renderer | Circle interception is already implemented; recommended cloud feed unavailable | discovery_tests; controller_tests | Cloud access/write acceptance pending; managed profiles blocked |
 | Movies/TV default routing/tabs | Implemented | navigation.h default_library; open_library/activate_library_tab; scoped prefs | Recommended TV added endpoint may return episodes; request type=2 explicitly | discovery_tests; controller_tests | Pending |
-| Categories genres/collections | Implemented but malfunctioning | activate_library_tab(2); open_item category branch | Only genres loaded; every item after drilling treated as genre; implement explicit category routes | New controller/discovery cases required | Pending |
-| Library tools/sorts/search/pages | Implemented but malfunctioning | library_tools renderer labels[10] loops to 13 | Out-of-bounds read when scrolled; bound by array length | New controller rendering case required | Pending |
-| Home Movies | Partially implemented | navigation.h personal_library; nav 9; default_library | Use landscape personal cards and duration/date; retain section ID and permissions | discovery_tests; controller_tests | Pending |
+| Categories genres/collections | Requires physical PS5 verification | library_categories and explicit category types; open_item/open_media; f6d853b | Bounded genres/collections and drill-through corrected; live category acceptance pending | New controller/discovery cases required | Pending |
+| Library tools/sorts/search/pages | Implemented | library_tools loop bounded by actual labels; 192707d | Real controller behavior and library filter availability pending | New controller rendering case required | Pending |
+| Home Movies | Requires physical PS5 verification | personal_library/default_library; persisted section designation; landscape/card_metadata | Stable ID across rename and personal duration/date added; physical validation pending | discovery_tests; controller_tests | Pending |
 | Music browsing/queue/audio-only | Implemented | audio.h; plex_audio_ui.h audio_queue_load/audio_start/audio_frame; player :no-video | Genre route handling exists; sole-library defaults absent; direct-item/default-feed race | audio_tests; controller_tests | Audible formats not yet accepted |
 | Music Recommended/categories/default | Partially implemented | music_feed.h; audio_home/audio_library_tab | Improve sole/default routing, genre+collections+playlists, artists; avoid stale video library kind | discovery_tests; controller_tests | Pending |
 | Audiobooks designated libraries/progress | Implemented | book_section; ListeningStore/book_resume/book_save; AudioQueue | Keep local semantics explicit and library-scope local recommendations | listening_tests; audio_tests | Pending |
 | Audiobook chapters/rates/bookmarks/timer | Implemented | player chapters/rate; SleepTimer; audio_frame | Narrator/series unavailable unless actual server metadata; no invented type | listening_tests; controller_tests | Audibility/pitch/timer hardware acceptance pending |
-| Seasonal Home/library recommendations | Partially implemented | navigation.h append_seasonal_home/library_feed | Library feed lacks winter/summer/collections; customization is toggle only | discovery_tests | Pending |
-| Sidebar hide/order/pins/theme | Partially implemented | sidebar_order/nav_visible; settings pages 10/11; Theme | Default ordering differs; diagnostics reject indices >=9; pins cannot reorder/reset; improve | controller_tests; test_theme.py | Pending |
+| Seasonal Home/library recommendations | Implemented | seasonal_library/seasonal_tag/append_seasonal_home; recommendation_month | Winter/summer and real collection fallback/custom season selection added; live matches pending | discovery_tests | Pending |
+| Sidebar hide/order/pins/theme | Implemented | sidebar_order/library_pin_order/nav_visible; settings 10/11; Theme | Stable pin reorder/reset and requested default order added; device usability pending | controller_tests; test_theme.py | Pending |
 | Personal Live TV guide/tune | Requires physical PS5 verification | live_tv.h live_channels/live_guide/live_tune; LiveChannels/Guide/Tune jobs | Current-day bounded guide; idle tuner release unverified; recording controls missing | discovery_tests; controller_tests | No tuner/device acceptance |
-| DVR recordings | Missing | No recording list/control path | Inspect supported official API; only add documented authorized behavior | No existing end-to-end test | Not tested |
+| DVR recordings | Partially implemented | live_recordings/cancel_recording_rule; LiveRecordings/LiveCancel jobs; live-recordings UI | Scheduled/rule lists and confirmed owner rule cancellation added; creation/edit/storage template and tuner cleanup remain incomplete | No existing end-to-end test | Not tested |
 | Free cloud Live TV | Blocked by external API/platform | Live TV unavailable state separates personal tuner from cloud | No verified cloud authorization/playback adapter; do not use fake channels | Unsupported UI inspection | Not supported |
 | Rentals catalog/entitlements/DRM | Blocked by external API/platform | rentals screen; no licensed DRM path or supported catalog binding | Accurate unavailable state; no pricing/payment/entitlement fabrication | Unsupported UI inspection | Not supported |
 | Angular icon/splash/title | Implemented | assets/plexstation.svg; ps5/sce_sys; make-brand.py; check-package.py; 596ea9f/816d7eb | Verify packaged dimensions and small-size asset; safe shell-cache refresh | package validation; test_package_permissions | Installed icon pending |
 | Shared UI architecture | Partially implemented | Theme/poster/home_frame/row/sidebar shared; media adapters | Tabs duplicated video/audio; centralize shared tab drawing; avoid framework rewrite | test_theme.py; controller_tests | 1080/4K fixture only |
 | Crash/numeric/TLS/secrets | Implemented | diagnostics.h; patched json.hpp; crash/debug scripts; transports; secure stores | Preserve instrumentation and no URL/token logs | test-json-numeric; test-crash; transports/sanitizers | Parser/video baseline accepted; distinct historical signals need matching logs |
 | Native build/symbols/package | Implemented | build-ps5.yml; collect-debug/check-package/package-title; 40060131391 | Run full gates and native compile for final new source | All host suites + Actions native | Build success is not device acceptance |
-| README/status accuracy | Implemented but malfunctioning | README/ARCHITECTURE/TV-CLIENT-STATUS claim no playback/no cache/no Watchlist | Replace stale present-tense claims; retain historical evidence labeled as historical | Documentation/source cross-check | Use owner evidence only |
+| README/status accuracy | Implemented | README/ARCHITECTURE rewritten; historical status banners; this audit | Keep each new native result separate from physical acceptance | Documentation/source cross-check | Use owner evidence only |
 
 ## Milestone 1 — correctness and truthful evidence
 
@@ -161,3 +162,77 @@ pic1.dds 1920×1080 DXT1. Existing package validation enforces dimensions and
 PPSA85301 identity. Installed icon/splash acceptance remains pending; refresh an
 old shell icon by closing the app and restarting the launcher/console normally,
 without deleting saved data or system databases.
+
+## Milestone 4 — supported DVR controls and media isolation
+
+Inspected official [PMS OpenAPI 1.2.3](https://developer.plex.tv/pms/) on
+October 24, 2026: GET `/media/subscriptions`, GET
+`/media/subscriptions/scheduled` and DELETE
+`/media/subscriptions/{subscriptionId}`. `live_recordings` parses bounded actual
+recording subscriptions/scheduled grabs. Live TV → Square opens recordings;
+L2/R2 switches schedule/rules, Square refreshes. Only the owner profile can open
+the rule-cancellation prompt. A second Cross confirms the whole-rule operation;
+Circle preserves it. The worker rereads current profile-authorized rules before
+deleting an exact present ID; 401/403/unsupported/malformed responses never
+become success. Profile/server transitions clear lists and confirmation state.
+No live server was mutated during development; writes were fixture requests.
+
+The API's DELETE cancels the subscription and all scheduled grabs, not one
+program or completed media. New/edit recording-rule setup needs server-provided
+template/storage configuration and remains in Plex's supported app. No free
+cloud Live TV adapter was established. Rentals remain limited by unavailable
+supported catalog/entitlement binding and licensed DRM/HDCP playback; see the
+[official Rentals FAQ](https://support.plex.tv/articles/faq-rentals-purchases-on-plex/).
+No price, entitlement, rental availability or payment action is fabricated.
+
+Music/Audiobook recommendations now avoid showing global ordinary playlists as
+book-specific content. Freshly resolved tracks outside designated audiobook
+libraries cannot inherit audiobook playback semantics. Local Continue Listening
+is filtered by saved actual library ID. Home Movies' remembered accessible section
+ID survives a title rename; permissions remain established by fresh sections.
+
+Targeted checks cover actual adapter reads/deletes, forbidden/malformed/stale
+rules, no mutation before confirmation, denied owner controls, book-library
+recommendation scoping, pin order across library reorder, reset/profile isolation,
+managed-user Watchlist states and strict source syntax. Hosted full regressions,
+ASan/UBSan, native compile and package/debug collection are the final gate.
+
+## Remaining boundaries and release assessment
+
+This is an implementation candidate, not full Plex parity or physical acceptance.
+
+- The owner's Avatar Unavailable root cause needs device request-stage logs.
+  PNG/JPEG, redirect/credential isolation, decode/cache/upload fixtures and retry
+  are implemented; WebP/SVG decoding remains unsupported.
+- Native caption rendering, repeated external attachments, HLS segment auth,
+  codec/rate/pitch/sync, tuner release and real cloud writes need device/service
+  evidence. Source menus and stub-player tests do not establish those results.
+- Automatic quality uses local Original / remote 1080p policy; measured/adaptive
+  bandwidth quality remains missing. Multipart video and normalized audiobook
+  narrator/series metadata are not implemented.
+- Watchlist is real supported cloud data, with grid/count/filter/sort/pages and
+  local GUID resolution; separate cloud Recommended discovery and managed-user
+  cloud access remain unavailable. Availability is checked on selection.
+- Music recommendation genres are browsable through Categories; not every
+  requested personalized shelf has a dedicated carousel. Audiobook series are
+  available only through real existing collections, not an invented schema.
+- DVR creation/edit/storage template UI, recording priorities, multi-day guide
+  paging and explicit verified idle-tuner release remain incomplete. Scheduled
+  list and full-rule cancellation are implemented, with live acceptance pending.
+- Free cloud TV and Rentals lack verified supported integration/DRM. No workaround
+  or bypass is introduced. Full localization and physical visual polish remain.
+- Cold/warm device timings and full regression acceptance are pending the owner.
+  Use [the physical test procedure](HARDWARE-ACCEPTANCE.md), including five cold
+  and five warm runs and safe avatar/cache diagnostics.
+
+The existing native decoder/audio/renderer, PPSA85301 identity, numeric locale
+fix, crash tools, TLS, PIN protections and private credential storage are retained.
+The angular packaged icon was visually inspected; its original P/play motif,
+navy background, blue/indigo layers and 512-square dimensions match the requested
+direction. Shell rendering and small-display legibility still need console review.
+
+Milestone 4 final local checks passed: discovery/seasonal/category/recording and
+book-scope fixtures; audio/listening persistence; production controller including
+recording confirmation/cancel/owner gate, stable pin ordering/reset, managed cloud
+unavailable state; pad backend, package permissions, theme boundary and strict
+native-source syntax. A live account, actual tuner or physical PS5 was not used.

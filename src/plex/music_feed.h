@@ -14,8 +14,8 @@ inline Result music_feed(Client &c,const std::string &base,const std::string &to
     struct Query{const char *id,*title,*path;};
     const Query queries[]={{"recent-played","Recently Played","/all?type=10&sort=lastViewedAt:desc&lastViewedAt>>=0"},{"recent-albums","Recently Added Albums","/recentlyAdded?type=9"},{"recent-artists","Artists","/all?type=8&sort=titleSort:asc"},{"favorites","Favorite Tracks","/all?type=10&userRating>=8"}};
     for(const auto &q:queries){if(books && (std::string(q.id)=="favorites" || std::string(q.id)=="recent-played"))continue;
-        auto r=c.browse(base,token,"/library/sections/"+encode(section.id)+q.path,0,12);if(r)add(q.id,books && std::string(q.id)=="recent-albums"?"Recently Added Audiobooks":q.title,items(r.data,false));}
-    auto playlists=c.browse(base,token,"/playlists?playlistType=audio",0,12);if(playlists)add("playlists","Audio Playlists",items(playlists.data,false));
+        auto r=c.browse(base,token,"/library/sections/"+encode(section.id)+q.path,0,12);if(r)add(q.id,books && std::string(q.id)=="recent-albums"?"Recently Added Audiobooks":books && std::string(q.id)=="recent-artists"?"Authors":q.title,items(r.data,false));}
+    if(!books){auto playlists=c.browse(base,token,"/playlists?playlistType=audio",0,12);if(playlists)add("playlists","Audio Playlists",items(playlists.data,false));}
     return {Json{{"rows",std::move(rows)}},"",200};
 }
 }

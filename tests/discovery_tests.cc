@@ -37,6 +37,7 @@ int main(){
  assert(default_library({a,b,home},1,b.id).id==b.id);
  assert(default_library({a,b,home},9,"missing").id=="personal");
  assert(default_library({a,b,home},2,"missing").id.empty());
+ home.title="Family Videos";home.personal=true;assert(default_library({a,b,home},9,"personal").id=="personal");
  Client scoped([](const Request &q){
    assert(q.url.find("/library/sections/allowed/")!=std::string::npos || q.url.find("/hubs/sections/allowed?")!=std::string::npos);
    if(q.url.find("/genre")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"horror","title":"Horror"}]}})",""};
@@ -86,5 +87,24 @@ int main(){
  assert(!live_channels(denied,"https://pms.invalid","restricted"));
  Client protected_tv([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[{"drm":true,"Media":[{"uuid":"session-id"}]}]}})",""};},"fixture");
  assert(!live_tune(protected_tv,"https://pms.invalid","profile",channel,"device"));
+ Client audio_empty([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
+ Item owned_book;owned_book.id="book";owned_book.type="album";owned_book.section_id="music";Item other_book=owned_book;other_book.id="other";other_book.section_id="other-library";
+ auto book_rows=home_rows(music_feed(audio_empty,"https://pms.invalid","profile",music,true,{owned_book,other_book}).data);
+ assert(book_rows.size()==1 && book_rows[0].entries.size()==1 && book_rows[0].entries[0].id=="book");
+ int recording_deletes=0;
+ Client recordings([&](const Request &q){
+  assert(q.headers.at("X-Plex-Token")=="authorized-owner");
+  if(q.method=="DELETE"){++recording_deletes;assert(q.url=="https://pms.invalid/media/subscriptions/77");return Reply{204,"",""};}
+  if(q.url.find("/scheduled")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"MediaGrabOperation":[{"status":"scheduled","Metadata":{"title":"Real episode","grandparentTitle":"Series","Media":[{"beginsAt":1234}]}}]}})",""};
+  assert(q.url.find("/media/subscriptions?includeGrabs=1&includeStorage=1")!=std::string::npos);
+  return Reply{200,R"({"MediaContainer":{"MediaSubscription":[{"key":"77","type":2,"targetLibrarySectionID":1,"title":"Record Series"},{"key":"evil/../77","type":2,"targetLibrarySectionID":1},{"key":"88","type":15}]}})",""};
+ },"fixture");
+ auto rules=live_recordings(recordings,"https://pms.invalid","authorized-owner");
+ assert(rules && rules.data["subscriptions"].size()==1 && rules.data["scheduled"].size()==1 && recording_deletes==0);
+ assert(!cancel_recording_rule(recordings,"https://pms.invalid","authorized-owner","stale") && recording_deletes==0);
+ assert(cancel_recording_rule(recordings,"https://pms.invalid","authorized-owner","77") && recording_deletes==1);
+ assert(!live_recordings(denied,"https://pms.invalid","restricted"));
+ Client malformed_rules([](const Request &){return Reply{200,R"({"MediaContainer":{"MediaSubscription":42}})",""};},"fixture");
+ assert(!live_recordings(malformed_rules,"https://pms.invalid","restricted"));
  puts("Grouped search, scoped cloud reads/writes/local resolution, filter encoding and multiple-library deduplication tests passed");
 }

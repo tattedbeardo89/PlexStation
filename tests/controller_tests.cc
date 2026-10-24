@@ -539,6 +539,26 @@ int main() {
     Item album;album.id="book";album.type="album";album.section_id="music";
     Item music_section_item;music_section_item.id="music";music_section_item.type="artist";home_sections={music_section_item};
     open_audio_item(album);assert(job==AudioBrowse);pending.wait();finish_job();audio_leave_browse();
+    // Recording-rule cancellation requires an explicit second confirmation.
+    audio.screen=false;library_context=false;home_screen=false;sidebar=false;settings=false;in_detail=false;editor=0;reset_cloud();
+    page_path="live-recordings";page_title="Live TV";live_rules_tab=true;live_cancel_id.clear();focus=0;
+    live_subscriptions=Json::array({{{"id","77"},{"title","Record Series"}}});active_profile.admin=true;
+    press(PAD_CROSS);assert(live_cancel_id=="77" && job==None);
+    press(PAD_CIRCLE);assert(live_cancel_id.empty() && page_path=="live-recordings" && job==None);
+    active_profile.admin=false;press(PAD_CROSS);assert(live_cancel_id.empty() && !live_error.empty() && job==None);
+    press(PAD_CIRCLE);assert(page_path=="live-tv");
+    // Library pins retain stable IDs through section reorder and remain profile-scoped.
+    Item pin_a;pin_a.id="pin-a";pin_a.type="movie";Item pin_b=pin_a;pin_b.id="pin-b";
+    home_sections={pin_a,pin_b};account_id="pin-owner";selected_server.id="pin-server";
+    for(const auto &section:home_sections)pref_set((account_key("plex_pinned_library_v1")+"."+encode(selected_server.id)+"."+encode(section.id)).c_str(),1);
+    pref_set(pin_order_key().c_str(),Json::array({"pin-b","pin-a"}).dump());
+    auto pins=library_pin_order();assert(pins.size()==2 && home_sections[pins[0]].id=="pin-b");
+    home_sections={pin_b,pin_a};pins=library_pin_order();assert(home_sections[pins[0]].id=="pin-b");
+    account_id="different-pin-profile";assert(!nav_visible(12) && !nav_visible(13));account_id="pin-owner";
+    settings=true;settings_page=10;focus=12;sidebar=false;press(PAD_CROSS);
+    assert(!nav_visible(12) && !nav_visible(13));settings=false;
+    active_profile.managed=true;profile_token="profile";request_cloud_check();assert(page_path=="cloud-pending" && listing.empty());
+    service_cloud();assert(job==None && !cloud_ok && !cloud_error.empty());active_profile.managed=false;reset_cloud();
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

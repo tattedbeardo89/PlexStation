@@ -52,6 +52,7 @@ struct Item {
     std::string artist, album, parent_id, grandparent_id, section_id, guid;
     int disc=0, track=0;
     int64_t added=0, last_played=0;
+    bool personal = false; // local section designation; never trusted from server JSON
 };
 struct Pin {
     int64_t id = 0;

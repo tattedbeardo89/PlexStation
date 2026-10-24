@@ -59,7 +59,8 @@ PS5 build succeeds on GitHub Actions. See the build guide.
   completion thresholds and cancellable next-episode autoplay.
 - Scoped cached-endpoint fast reconnect, warm Home presentation, library tabs,
   automatic video defaults, Home Movies, seasonal rows and sidebar controls.
-- Personal Live TV channel/guide/tune adapter; free cloud TV and protected
+- Personal Live TV channel/guide/tune adapter, scheduled recording/rule lists
+  and confirmed authorized whole-rule cancellation; free cloud TV and protected
   Rentals explicitly unavailable without verified supported authorization/DRM.
 - Original angular SVG/PNG/DXT1 branding and independent PPSA85301 metadata.
 
@@ -81,6 +82,9 @@ book-level completion are explicitly PlexStation-local. See the comprehensive
 [media checkpoint status, codec matrix and limits](docs/MEDIA-EXPANSION.md).
 
 ## Documentation
+
+- [Full implementation audit, corrections and limits](docs/FULL-IMPLEMENTATION-AUDIT.md)
+- [Current physical acceptance and safe diagnostics](docs/HARDWARE-ACCEPTANCE.md)
 
 - [Music, Audiobooks, streaming and discovery checkpoints](docs/MEDIA-EXPANSION.md)
 - [Full requested project specification](docs/PROJECT-SPEC.md)

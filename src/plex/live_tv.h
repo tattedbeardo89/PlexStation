@@ -71,4 +71,39 @@ inline Result live_tune(Client &client,const std::string &base,const std::string
     if(!supported)return {{},"Live TV output codec is not supported by this adapter",0};
     return {Json{{"url",base+"/livetv/sessions/"+encode(session)+"/"+encode(consumer)+"/index.m3u8?X-Plex-Token="+encode(token)},{"session",session}},"",200};
 }
+// PMS OpenAPI 1.2.3 Subscriptions: list recording rules and scheduled grabs.
+inline Result live_recordings(Client &client,const std::string &base,const std::string &token) {
+    auto rules=client.call("GET",base,"/media/subscriptions?includeGrabs=1&includeStorage=1",token);
+    if(!rules)return rules;
+    auto schedule=client.call("GET",base,"/media/subscriptions/scheduled",token);
+    if(!schedule)return schedule;
+    Json subscriptions=Json::array(),scheduled=Json::array();
+    auto mc=rules.data.find("MediaContainer");
+    if(mc==rules.data.end() || !mc->is_object())return {{},"Unsupported recording rules response",rules.status};
+    auto entries=mc->find("MediaSubscription");
+    if(entries!=mc->end() && !entries->is_array())return {{},"Malformed recording rules response",rules.status};
+    if(entries!=mc->end())for(const auto &rule:*entries){
+        auto key=text(rule,"key",std::to_string(number(rule,"key",-1)));
+        if(number(rule,"targetLibrarySectionID")<=0 || number(rule,"type")<1 || number(rule,"type")>4 || key.empty() || key.size()>18 || key.find_first_not_of("0123456789")!=std::string::npos || subscriptions.size()>=200)continue;
+        subscriptions.push_back({{"id",key},{"title",live_label(text(rule,"title","Recording rule"))},{"section",number(rule,"targetLibrarySectionID")}});
+    }
+    mc=schedule.data.find("MediaContainer");
+    if(mc==schedule.data.end() || !mc->is_object())return {{},"Unsupported recording schedule response",schedule.status};
+    entries=mc->find("MediaGrabOperation");
+    if(entries!=mc->end() && !entries->is_array())return {{},"Malformed recording schedule response",schedule.status};
+    if(entries!=mc->end())for(const auto &grab:*entries){
+        auto metadata=grab.find("Metadata");if(metadata==grab.end() || !metadata->is_object() || scheduled.size()>=200)continue;
+        int64_t begins=0;auto media=metadata->find("Media");if(media!=metadata->end() && media->is_array() && !media->empty())begins=number((*media)[0],"beginsAt");
+        scheduled.push_back({{"title",live_label(text(*metadata,"title","Scheduled recording"))},{"series",live_label(text(*metadata,"grandparentTitle"))},{"status",live_label(text(grab,"status","Unknown"))},{"beginsAt",begins}});
+    }
+    return {Json{{"subscriptions",std::move(subscriptions)},{"scheduled",std::move(scheduled)}},"",200};
+}
+inline Result cancel_recording_rule(Client &client,const std::string &base,const std::string &token,const std::string &id) {
+    // Re-read using the current profile. Never delete an arbitrary stale/foreign key.
+    auto current=live_recordings(client,base,token);if(!current)return current;
+    for(const auto &rule:current.data["subscriptions"])if(text(rule,"id")==id)
+        return client.call("DELETE",base,"/media/subscriptions/"+encode(id),token);
+    return {{},"Recording rule is no longer available to this profile",0};
+}
+
 }

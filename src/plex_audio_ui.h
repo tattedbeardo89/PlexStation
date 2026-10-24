@@ -118,7 +118,7 @@ void audio_finish(int kind,const Result &result) {
         if(audio.path.find("/categories")!=std::string::npos){
             for(auto &item:audio.entries)if(item.type=="category")item.type="audio-route";
             Item playlists;playlists.id="audio-playlists";playlists.type="audio-route";playlists.title="Playlists";playlists.key="/playlists?playlistType=audio";
-            audio.entries.insert(audio.entries.begin(),playlists);
+            if(!audio.books)audio.entries.insert(audio.entries.begin(),playlists);
         }
         auto mc=result.data.find("MediaContainer");
         audio.total=mc==result.data.end()?0:static_cast<int>(std::clamp<int64_t>(number(*mc,"totalSize",audio.entries.size()),0,INT32_MAX));
@@ -137,6 +137,10 @@ void audio_finish(int kind,const Result &result) {
     }
     auto parsed=items(result.data);
     if(parsed.empty() || !audio.queue.current() || parsed[0].id!=audio.queue.current()->id){message="Audio identity mismatch";return;}
+    if(audio.playback_books && !parsed[0].section_id.empty()){
+        bool designated=false;for(const auto &section:home_sections)if(section.id==parsed[0].section_id)designated=book_section(section);
+        if(!designated){message="This track is outside the designated audiobook libraries. Open it from Music.";return;}
+    }
     auto decision=audio_direct_play(base,server_token,parsed[0]);
     if(decision.mode!=Mode::DirectPlay || audio.force_transcode) {
         auto session=new_stream_id();decision=audio_transcode(base,server_token,parsed[0],session);

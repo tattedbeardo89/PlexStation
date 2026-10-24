@@ -7,6 +7,7 @@
 #include <set>
 namespace plex {
 inline bool personal_library(const Item &section) {
+    if(section.personal)return true;
     auto name=section.title;std::transform(name.begin(),name.end(),name.begin(),[](unsigned char c){return std::tolower(c);});
     return name=="home movies";
 }
