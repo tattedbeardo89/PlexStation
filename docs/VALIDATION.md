@@ -584,3 +584,18 @@ startup, library routing/tabs, cloud filters/sidebar customization and branding.
 See [the detailed status and physical checklist](REMAINING-FEATURES-2026-10-23.md).
 No new physical acceptance is claimed. The local native attempt is blocked by
 its missing RADV release archive; hosted build results are tracked separately.
+
+## October 24 full audit and final native candidate
+
+Built source `1078e74cb636cf852ec17dfc221cb551cbbe508b` passed
+[run 40063743047](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047):
+all hosted regressions/sanitizers/numeric-locale gates, actual native compile,
+matching debug collection, complete package/ZIP modes and artifact uploads.
+The earlier four-milestone combined source `fdeec1d` passed run 40063037586;
+a confirmed sidebar transition defect prompted the final sequential build.
+See [the full current audit](FULL-IMPLEMENTATION-AUDIT.md),
+[artifact metadata](BUILD-EVIDENCE-2026-10-24.json) and
+[physical acceptance checklist](HARDWARE-ACCEPTANCE.md).
+No new hardware acceptance, live cloud write or tuner operation was performed.
+The old tools-label loop was defensively hardened; normal focus clamping kept
+it in bounds, so no reproduced physical crash fix is claimed for that change.

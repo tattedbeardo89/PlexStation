@@ -25,8 +25,8 @@ the current task's layout requirements govern the audit.
 | Launch/auth/primary token | Implemented | client.cc create_pin/poll_pin/validate_account; auth.h; ui_init/login_screen; 5d8adb9 | Protect existing behavior | auth_tests; plex_tests | Owner confirms launch/auth on 5d8adb9; new changes pending |
 | Home users/PIN/profile isolation | Implemented | home.h profiles/profile_scope; choose_profile/ValidateProfile/clear_profile | Real avatar failure still unresolved | home_tests; controller_tests | Owner confirms profile selection on 5d8adb9 |
 | Server identity/TLS/endpoint fallback | Implemented | client.cc select/identity/sections; transport_ps5.cc; connect_server | Prefer verified route after discovery too | connection_tests; test_transport | Owner confirms connection on 5d8adb9 |
-| Pre-play subtitles | Requires physical PS5 verification | plex_video_ui.h prepare_subtitle_selection/subtitle_picker_frame/apply_video_plan; a5fbca9 | Extend actual session tests for repeated external choices | subtitle_tests; controller_tests | Off accepted; switching pending |
-| In-player subtitle switching/Off | Requires physical PS5 verification | service_subtitle_selection; player.cc player_set_subtitle_track/player_add_subtitle; 208b5be | Exercise external cancellation and unsupported choices | controller_tests; subtitle_tests | Pending; never infer from stub player |
+| Pre-play subtitles | Requires physical PS5 verification | plex_video_ui.h prepare_subtitle_selection/subtitle_picker_frame/apply_video_plan; a5fbca9 | Pre-play policy and external reuse tests added; actual native discovery/rendering acceptance pending | subtitle_tests; controller_tests | Off accepted; switching pending |
+| In-player subtitle switching/Off | Requires physical PS5 verification | service_subtitle_selection; player.cc player_set_subtitle_track/player_add_subtitle; 208b5be | Reuse, Off and media-open-count regressions passed; actual late-load cancellation/rendering needs PS5 | controller_tests; subtitle_tests | Pending; never infer from stub player |
 | Subtitle defaults/memory/forced/language | Implemented | v3 scoped preferences in plex_video_ui.h; subtitles.h match_subtitle | Ambiguous embedded match intentionally fails closed | subtitle_tests; controller_tests | Pending |
 | Subtitle appearance/delay | Implemented | video_tools/subtitle_settings_frame; player_set_sub_style/player_set_subtitle_delay | Renderer acceptance | streaming_tests; controller_tests | Pending |
 | Native Direct Play/decoder/audio clock | Implemented | client.cc direct_play; player.cc; ps5/modules/ps5vdec.c; platform_ps5.c | Preserve pipeline; extend codec testing on console | plex_tests; streaming_tests | Owner confirms native video on 5d8adb9 |
@@ -38,20 +38,20 @@ the current task's layout requirements govern the audit.
 | Artwork GPU residency/lifetime | Requires physical PS5 verification | artwork.cc update/request_image/clear; gfx/library_free_image | Device disappearing-poster root cause not established | artwork_tests fake GPU + real decode | Disappearing posters reported on older builds |
 | Persistent/scoped artwork | Implemented | cache.h DiskCache; configure_artwork_scope; artwork.cc set_scope | No network fetch on valid disk hit; device permissions/path test | cache_tests; artwork_tests | Relaunch/offline retention pending |
 | Home avatars | Requires physical PS5 verification | home.h profile_avatar; client XML fields; artwork.cc avatar_url/redirect/decode/upload; profile_screen_frame | Need safe device request-stage logs to establish root cause; WebP/SVG unsupported | home_tests; artwork_tests | Avatar Unavailable reported; no confirmed correction |
-| Avatar diagnostics/retry | Implemented | Artwork::avatar_state/diagnostics/retry_avatars; Developer Retry Avatar | Expose retry on profile picker and precise current image status | artwork_tests | Pending |
+| Avatar diagnostics/retry | Implemented | Artwork::avatar_state/diagnostics/retry_avatars; Developer Retry Avatar | Picker/Developer retry and format errors added; device request-stage logs still required | artwork_tests | Pending |
 | Fast endpoint startup | Implemented | activate_profile FastConnect 800/1400ms; identity + authenticated sections | Cache route can fail with token needing rediscovery; DNS may exceed timeout | controller_tests; connections | Cold/warm device measurements missing |
 | Warm Home presentation | Implemented | restore_presentation/presentation_scope/home_presentation_cache | Validate cached schema; retain scoped permission gate | cache_tests; controller_tests | Pending |
 | Background Home refresh/focus | Implemented | service_home_refresh/load_home; HomeFeed ID reconciliation; 568f95f | Idle scheduling added; physical refresh/focus acceptance pending | controller_tests | Pending |
-| Startup measurements | Partially implemented | startup: authorized-server-ms; home checkpoints | Report route/cache/first-render metrics; no physical latency claims | controller_tests fast-path fixture | Device five-run cold/warm benchmark pending |
-| Home layout/episode cards | Implemented | home_frame/poster shared Theme; home_feed.h | Personal libraries currently included in professional aggregates; fix; no screenshots available | controller_tests 1080/4K; home_feed_tests | Visual/focus acceptance pending |
+| Startup measurements | Partially implemented | startup: authorized-server-ms; home checkpoints | Route/cache/first-Home metrics added; no measured PS5 cold/warm timings available | controller_tests fast-path fixture | Device five-run cold/warm benchmark pending |
+| Home layout/episode cards | Implemented | home_frame/poster shared Theme; home_feed.h | Supplemental personal-video exclusion and collection cards added; screenshot equivalence and device navigation unverified | controller_tests 1080/4K; home_feed_tests | Visual/focus acceptance pending |
 | Personalized Collections on Home | Implemented | home_feed collection serialization/aggregation; open_media; f6d853b | Real server collections and images pending live acceptance | discovery_tests; home_feed_tests | Pending |
 | Watchlist sync/grid/count/filter/pages | Requires physical PS5 verification | cloud.h cloud_watchlist/cloud_change/resolve_cloud; plex_cloud_ui.h; grid renderer | Circle interception is already implemented; recommended cloud feed unavailable | discovery_tests; controller_tests | Cloud access/write acceptance pending; managed profiles blocked |
-| Movies/TV default routing/tabs | Implemented | navigation.h default_library; open_library/activate_library_tab; scoped prefs | Recommended TV added endpoint may return episodes; request type=2 explicitly | discovery_tests; controller_tests | Pending |
+| Movies/TV default routing/tabs | Implemented | navigation.h default_library; open_library/activate_library_tab; scoped prefs | Selected-library routing and type=2 TV added query implemented; live server and physical tab acceptance pending | discovery_tests; controller_tests | Pending |
 | Categories genres/collections | Requires physical PS5 verification | library_categories and explicit category types; open_item/open_media; f6d853b | Bounded genres/collections and drill-through corrected; live category acceptance pending | controller_tests category→movie; discovery_tests genre/collection/seasonal | Pending |
 | Library tools/sorts/search/pages | Implemented | library_tools loop bounded by actual labels; 192707d | Real controller behavior and library filter availability pending | controller_tests bottom-of-tools rendering; ASan/UBSan | Pending |
 | Home Movies | Requires physical PS5 verification | personal_library/default_library; persisted section designation; landscape/card_metadata | Stable ID across rename and personal duration/date added; physical validation pending | discovery_tests; controller_tests | Pending |
 | Music browsing/queue/audio-only | Implemented | audio.h; plex_audio_ui.h audio_queue_load/audio_start/audio_frame; player :no-video | Genre route handling exists; sole-library defaults absent; direct-item/default-feed race | audio_tests; controller_tests | Audible formats not yet accepted |
-| Music Recommended/categories/default | Partially implemented | music_feed.h; audio_home/audio_library_tab | Improve sole/default routing, genre+collections+playlists, artists; avoid stale video library kind | discovery_tests; controller_tests | Pending |
+| Music Recommended/categories/default | Partially implemented | music_feed.h; audio_home/audio_library_tab | Defaults, direct-item request isolation, artists/authors and real categories implemented; some requested dedicated shelves remain partial | discovery_tests; controller_tests | Pending |
 | Audiobooks designated libraries/progress | Implemented | book_section; ListeningStore/book_resume/book_save; AudioQueue | Keep local semantics explicit and library-scope local recommendations | listening_tests; audio_tests | Pending |
 | Audiobook chapters/rates/bookmarks/timer | Implemented | player chapters/rate; SleepTimer; audio_frame | Narrator/series unavailable unless actual server metadata; no invented type | listening_tests; controller_tests | Audibility/pitch/timer hardware acceptance pending |
 | Seasonal Home/library recommendations | Implemented | seasonal_library/seasonal_tag/append_seasonal_home; recommendation_month | Winter/summer and real collection fallback/custom season selection added; live matches pending | discovery_tests | Pending |
@@ -61,9 +61,9 @@ the current task's layout requirements govern the audit.
 | Free cloud Live TV | Blocked by external API/platform | Live TV unavailable state separates personal tuner from cloud | No verified cloud authorization/playback adapter; do not use fake channels | Unsupported UI inspection | Not supported |
 | Rentals catalog/entitlements/DRM | Blocked by external API/platform | rentals screen; no licensed DRM path or supported catalog binding | Accurate unavailable state; no pricing/payment/entitlement fabrication | Unsupported UI inspection | Not supported |
 | Angular icon/splash/title | Implemented | assets/plexstation.svg; ps5/sce_sys; make-brand.py; check-package.py; 596ea9f/816d7eb | Verify packaged dimensions and small-size asset; safe shell-cache refresh | package validation; test_package_permissions | Installed icon pending |
-| Shared UI architecture | Partially implemented | Theme/poster/home_frame/row/sidebar shared; media adapters | Tabs duplicated video/audio; centralize shared tab drawing; avoid framework rewrite | test_theme.py; controller_tests | 1080/4K fixture only |
+| Shared UI architecture | Partially implemented | Theme/poster/home_frame/row/sidebar shared; media adapters | Tabs now share rendering; media adapters intentionally retain distinct audio/video controls; no new framework | test_theme.py; controller_tests | 1080/4K fixture only |
 | Crash/numeric/TLS/secrets | Implemented | diagnostics.h; patched json.hpp; crash/debug scripts; transports; secure stores | Preserve instrumentation and no URL/token logs | test-json-numeric; test-crash; transports/sanitizers | Parser/video baseline accepted; distinct historical signals need matching logs |
-| Native build/symbols/package | Implemented | build-ps5.yml; collect-debug/check-package/package-title; 40060131391 | Run full gates and native compile for final new source | All host suites + Actions native | Build success is not device acceptance |
+| Native build/symbols/package | Implemented | build-ps5.yml; collect-debug/check-package/package-title; final native run 40063743047 at 1078e74 | Final full hosted and native gates passed; physical acceptance and independent binary inspection are separate | All host suites + Actions native | Build success is not device acceptance |
 | README/status accuracy | Implemented | README/ARCHITECTURE rewritten; historical status banners; this audit | Keep each new native result separate from physical acceptance | Documentation/source cross-check | Use owner evidence only |
 
 ## Milestone 1 — correctness and truthful evidence
@@ -248,7 +248,8 @@ native-source syntax. A live account, actual tuner or physical PS5 was not used.
 
 One native workflow builds the combined candidate, avoiding overlapping builds.
 Each earlier commit is retained as a source rollback point; it has not been
-separately cross-built. The latest native artifacts contain all four milestones.
+separately cross-built. The final native artifacts contain all four milestones
+plus the shared-transition and subtitle media-open-counter follow-ups.
 
 ## Final review follow-up — shared sidebar transition
 
@@ -270,3 +271,61 @@ not an overlapping or cosmetic-only rebuild.
 
 Follow-up local production controller/pad/package/theme and strict native-source
 checks passed with the final shared transition and search styling changes.
+
+Audit precision correction: the tools renderer's old literal upper bound (13)
+did not match its ten labels, but the normal focus clamp also limited the loop
+window to valid labels. No out-of-bounds crash was reproduced through normal
+focus navigation. The array-sized bound is defensive hardening, not evidence
+that this caused a prior physical crash. Category drill-through, repeated
+external-track selection, competing audio-feed requests and stale sidebar
+layers are separately demonstrated application defects with regression cases.
+
+## Final native build and artifacts — passed
+
+Final built source: `1078e74cb636cf852ec17dfc221cb551cbbe508b`.
+[Run 40063743047](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047)
+completed successfully. Every hosted host-regression gate (including ASan/UBSan
+and both numeric locale cases), actual native compile/validation, matching debug
+collection, installation ZIP modes and artifact uploads passed.
+The workflow also runs the symbolization fixture. This is native build evidence,
+not physical PS5 acceptance or live Plex/tuner validation.
+
+| Deliverable | Link | Bytes | Outer artifact SHA-256 |
+|---|---|---|---|
+| Complete installation | [PPSA85301](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12548449135) | 39,492,485 | `1a0503bc610d6d0b353ee171e991ff3e67b6371243d70faf79e3d97847058f85` |
+| Matching native symbols | [native-debug](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12549140245) | 92,894,636 | `73c868fab2e2bdc9959214933c7ccbcb8f9cdf6e044b7235196e6faf8841306f` |
+| Build diagnostics | [logs/report](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12547879179) | 198,409 | `a3243aee2c5cd8e71afe886261b698edc0afe88fc5eb29a32c47c14f22c7cadb` |
+
+Artifact names include the full built SHA. Installation and symbols expire per
+GitHub retention policy; retain both offline before testing. The earlier combined
+source `fdeec1d28020ac1a362b4386aed3952795dba97f` also passed
+[run 40063037586](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063037586).
+These two executions were sequential. The second is needed for the confirmed
+shared navigation follow-up, not an overlapping duplicate build.
+
+Follow-up implementation commit: `ffd45cc9befb3354af8379198ef0c4cd86ed6028`.
+Additional regression commit: `1078e74cb636cf852ec17dfc221cb551cbbe508b`.
+The latter adds explicit player-open counts across pre-play selection and live
+external re-selection, catching a same-URL reopen that URL equality alone misses.
+All are included in the final successful hosted tests and native package.
+
+[Machine-readable build evidence](BUILD-EVIDENCE-2026-10-24.json) records both
+runs, artifact metadata/digests and successful final job steps. Evidence was
+inspected via GitHub; these archives were not independently downloaded or
+binary-inspected in this audit. No physical execution or live account/tuner
+mutation occurred. The documentation-only publication commit changes no built
+application source and does not start another native run.
+
+## Exact continuation point
+
+Install/test the final SHA using [HARDWARE-ACCEPTANCE.md](HARDWARE-ACCEPTANCE.md).
+Preserve runtime data and matching symbols. Priority device evidence is subtitle
+switch/Off/late external completion, avatar request-stage errors, poster retention,
+and five cold/warm startup runs. These results determine the remaining critical
+fixes; the physical avatar root cause cannot be established from the host alone.
+Remaining independent development is adaptive bandwidth quality, multipart video,
+more dedicated audio shelves/normalized metadata where actually provided, full
+localization, DVR template-based create/edit/multi-day guide/tuner cleanup and
+verified external-provider capabilities. Free cloud TV/Rentals remain blocked
+without a supported authorization/catalog/DRM contract. No complete Plex parity
+or final physical release acceptance is claimed.

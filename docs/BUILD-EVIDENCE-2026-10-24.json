@@ -1,0 +1,153 @@
+{
+  "repository": "tattedbeardo89/PlexStation",
+  "branch": "feature/plexstation-initial-implementation",
+  "built_source_sha": "1078e74cb636cf852ec17dfc221cb551cbbe508b",
+  "final_run": {
+    "id": 40063743047,
+    "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047",
+    "conclusion": "success",
+    "artifacts": [
+      {
+        "name": "PlexStation-native-debug-1078e74cb636cf852ec17dfc221cb551cbbe508b",
+        "id": 12549140245,
+        "bytes": 92894636,
+        "sha256": "73c868fab2e2bdc9959214933c7ccbcb8f9cdf6e044b7235196e6faf8841306f",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12549140245",
+        "expires_at": "2026-11-23T05:00:03Z"
+      },
+      {
+        "name": "PlexStation-PPSA85301-1078e74cb636cf852ec17dfc221cb551cbbe508b",
+        "id": 12548449135,
+        "bytes": 39492485,
+        "sha256": "1a0503bc610d6d0b353ee171e991ff3e67b6371243d70faf79e3d97847058f85",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12548449135",
+        "expires_at": "2026-11-23T05:00:01Z"
+      },
+      {
+        "name": "PlexStation-build-diagnostics-1078e74cb636cf852ec17dfc221cb551cbbe508b",
+        "id": 12547879179,
+        "bytes": 198409,
+        "sha256": "a3243aee2c5cd8e71afe886261b698edc0afe88fc5eb29a32c47c14f22c7cadb",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047/artifacts/12547879179",
+        "expires_at": "2026-11-07T05:00:11Z"
+      }
+    ],
+    "job_steps": [
+      {
+        "name": "Set up job",
+        "conclusion": "success"
+      },
+      {
+        "name": "Check out PlexStation",
+        "conclusion": "success"
+      },
+      {
+        "name": "Prepare build directories and cache key",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run host regression suites",
+        "conclusion": "success"
+      },
+      {
+        "name": "Restore exact native dependency cache",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build pinned Arch Linux toolchain image",
+        "conclusion": "success"
+      },
+      {
+        "name": "Compile and validate the real native PS5 title",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve matching native debug files",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify installation ZIP executable permissions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Ensure diagnostics remain accessible",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve native build checkpoints",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload complete installation folder ZIP",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload matching native debug artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload logs and validation report (including failed builds)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Check out PlexStation",
+        "conclusion": "success"
+      },
+      {
+        "name": "Complete job",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "earlier_combined_run": {
+    "sha": "fdeec1d28020ac1a362b4386aed3952795dba97f",
+    "id": 40063037586,
+    "conclusion": "success",
+    "artifacts": [
+      {
+        "name": "PlexStation-native-debug-fdeec1d28020ac1a362b4386aed3952795dba97f",
+        "id": 12548501471,
+        "bytes": 92905658,
+        "sha256": "5ca79655ad36b017b8bfca214fbecac6e13b7a17c75ebc313033400869cece42",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063037586/artifacts/12548501471",
+        "expires_at": "2026-11-23T04:46:57Z"
+      },
+      {
+        "name": "PlexStation-PPSA85301-fdeec1d28020ac1a362b4386aed3952795dba97f",
+        "id": 12548501460,
+        "bytes": 39493083,
+        "sha256": "7a4bbbcc3840db62ce6edba75ab4cf1a74d21f7fc5af48f1f5cc9147fe9529d4",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063037586/artifacts/12548501460",
+        "expires_at": "2026-11-23T04:46:56Z"
+      },
+      {
+        "name": "PlexStation-build-diagnostics-fdeec1d28020ac1a362b4386aed3952795dba97f",
+        "id": 12547474694,
+        "bytes": 198340,
+        "sha256": "09be8043ddc64837f878c3dbf2a9b0772479a8cacdc0c14baa48c7b42ee8c0cb",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40063037586/artifacts/12547474694",
+        "expires_at": "2026-11-07T04:47:04Z"
+      }
+    ]
+  },
+  "baseline_references": [
+    "5d8adb9ca74d051b8154e01dafb0ad0848c372f7",
+    "1ad4f6c4ab562762bd4c2ffa958cc098e234528a"
+  ],
+  "physical_acceptance": {
+    "new_build": "Pending owner PS5 tests",
+    "baseline_owner_confirmed": [
+      "launch",
+      "Plex authentication",
+      "Home profile selection",
+      "server connection",
+      "native video",
+      "subtitles initially Off"
+    ],
+    "avatar_root_cause": "Not established without device diagnostic evidence",
+    "cold_warm_device_timings": "Not measured"
+  },
+  "evidence_scope": "GitHub run/job states and artifact metadata; archives not independently downloaded or binary-inspected in this audit. SHA-256 values describe outer Actions artifacts.",
+  "host_scope": "Synthetic service/player/GPU boundaries except real loopback HTTP/TLS and real filesystem/image decoding; no live account/tuner writes or PS5 execution.",
+  "build_strategy": "Two sequential native workflow runs; final run includes all code checkpoints and final navigation/subtitle regression follow-up."
+}

@@ -7,9 +7,11 @@ connection, native video and subtitles initially Off at `5d8adb9`. The earlier
 working baseline `1ad4f6c4ab562762bd4c2ffa958cc098e234528a` is preserved.
 
 Current source audit: [full feature matrix, defects and acceptance evidence](docs/FULL-IMPLEMENTATION-AUDIT.md).
-[Native build 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391)
-passed for `208b5be1ec73f6fa11797dbd3ae2b21262eafce3`, with installation and
-matching symbols. Later feature changes require their own build and PS5 tests.
+[Native build 40063743047](https://github.com/tattedbeardo89/PlexStation/actions/runs/40063743047)
+passed for `1078e74cb636cf852ec17dfc221cb551cbbe508b`, with full host/sanitizer
+regressions, native compilation, package validation, installation and matching
+symbols. [Exact artifact links and checksums](docs/FULL-IMPLEMENTATION-AUDIT.md#final-native-build-and-artifacts--passed).
+New behavior still requires the owner's physical PS5 tests.
 Historical crash reports remain in the investigation documents; they do not
 supersede the owner's newer confirmed working video baseline.
 
