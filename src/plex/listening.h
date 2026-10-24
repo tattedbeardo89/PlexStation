@@ -59,9 +59,11 @@ public:
             bool done=flag(*it,"finished",false);
             if((state==0 && done) || (state==1 && !done))continue;
             Item i;i.id=text(*it,"book");i.type=text(*it,"kind","album");i.title=text(*it,"title","Audiobook");i.thumb=text(*it,"thumb");
+            i.section_id=text(*it,"section");i.last_played=number(*it,"updated");
             i.offset=number(*it,"total_position");i.duration=number(*it,"total_duration");i.watched=done;
             if(!i.id.empty())out.push_back(i);
         }
+        std::stable_sort(out.begin(),out.end(),[](const Item &a,const Item &b){return a.last_played>b.last_played;});
         if(out.size()>200)out.resize(200);
         return out;
     }

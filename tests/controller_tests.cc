@@ -98,7 +98,7 @@ int main() {
     assert(focus == 0 && nav == 0 && sidebar && account.empty()); frame();
     assert(io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad);
     account="fixture"; base="https://fixture.invalid"; sidebar=true;
-    press(PAD_DOWN); assert(nav==1); press(PAD_UP); assert(nav==0);
+    press(PAD_DOWN); assert(nav==4); press(PAD_UP); assert(nav==0);
     press(PAD_RIGHT); assert(!sidebar); press(PAD_LEFT); assert(sidebar);
     press(PAD_OPTIONS); assert(settings && !sidebar && focus==0);
     press(PAD_DOWN); assert(focus==1);
@@ -400,8 +400,8 @@ int main() {
         return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"101","type":"track","title":"Song","parentTitle":"Album","grandparentTitle":"Artist","Media":[{"audioCodec":"flac","container":"flac","Part":[{"key":"/library/parts/101/song.flac"}]}]}]}})",""};
     },device);
     auto audio_drain=[&] {for(int n=0;n<20;++n){frame();if(job!=None){pending.wait();finish_job();}if(!audio.start_pending && !progress_pending && job==None)return;}assert(false);};
-    audio_home();assert(audio.screen && audio.entries.size()==1 && !video);
-    press(PAD_CROSS);assert(audio.entries.size()==11);
+    audio_home();assert(audio.screen && audio.entries.size()==1 && !video && job==AudioFeed);
+    audio_drain();assert(home_screen && library_context && library_kind==7 && active_library.id=="12");
     Item song;song.id="101";song.type="track";song.title="Song";
     audio_queue_load(song);audio_drain();
     assert(audio.active && !video && audio.now_playing && last_opened_url.find("child-pms")!=std::string::npos);
@@ -524,6 +524,21 @@ int main() {
     auto refresh_generation=feed_generation.load();service_home_refresh(clock_now);assert(feed_generation==refresh_generation);
     pending.wait();finish_job();assert(job==None && feed_rows[feed_focus].entries[feed_columns[feed_focus]].id=="kept");
     service_home_refresh(clock_now);assert(job==None && home_refresh_at>clock_now);
+    // Categories are explicit directory routes; selecting a resulting movie opens details.
+    home_screen=false;library_context=true;library_tab=2;active_library={};active_library.id="movies";active_library.title="Movies";active_library.type="movie";
+    client=std::make_unique<Client>([](const Request &q){
+        if(q.url.find("/genre")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"17","title":"Drama"}]}})",""};
+        if(q.url.find("/collections?")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"33","type":"collection","title":"Favorites"}]}})",""};
+        return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"77","type":"movie","title":"Chosen movie"}]}})",""};
+    },"fixture");
+    activate_library_tab();assert(job==Browse);pending.wait();finish_job();assert(listing.size()==2 && listing[0].type=="category" && listing[1].type=="collection");
+    open_item();assert(job==Browse);pending.wait();finish_job();assert(listing.size()==1 && listing[0].type=="movie");
+    open_item();assert(job==Details);pending.wait();finish_job();assert(in_detail && detail.id=="77");
+    in_detail=false;library_context=false;
+    // Direct audio-item navigation starts its own request, never a competing default feed.
+    Item album;album.id="book";album.type="album";album.section_id="music";
+    Item music_section_item;music_section_item.id="music";music_section_item.type="artist";home_sections={music_section_item};
+    open_audio_item(album);assert(job==AudioBrowse);pending.wait();finish_job();audio_leave_browse();
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

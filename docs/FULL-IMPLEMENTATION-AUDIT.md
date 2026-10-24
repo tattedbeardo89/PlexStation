@@ -49,7 +49,7 @@ the current task's layout requirements govern the audit.
 | Categories genres/collections | Implemented but malfunctioning | activate_library_tab(2); open_item category branch | Only genres loaded; every item after drilling treated as genre; implement explicit category routes | New controller/discovery cases required | Pending |
 | Library tools/sorts/search/pages | Implemented but malfunctioning | library_tools renderer labels[10] loops to 13 | Out-of-bounds read when scrolled; bound by array length | New controller rendering case required | Pending |
 | Home Movies | Partially implemented | navigation.h personal_library; nav 9; default_library | Use landscape personal cards and duration/date; retain section ID and permissions | discovery_tests; controller_tests | Pending |
-| Music browsing/queue/audio-only | Implemented | audio.h; plex_audio_ui.h audio_queue_load/audio_start/audio_frame; player :no-video | Controller route for genre is created but unhandled; sole-library defaults absent | audio_tests; controller_tests | Audible formats not yet accepted |
+| Music browsing/queue/audio-only | Implemented | audio.h; plex_audio_ui.h audio_queue_load/audio_start/audio_frame; player :no-video | Genre route handling exists; sole-library defaults absent; direct-item/default-feed race | audio_tests; controller_tests | Audible formats not yet accepted |
 | Music Recommended/categories/default | Partially implemented | music_feed.h; audio_home/audio_library_tab | Improve sole/default routing, genre+collections+playlists, artists; avoid stale video library kind | discovery_tests; controller_tests | Pending |
 | Audiobooks designated libraries/progress | Implemented | book_section; ListeningStore/book_resume/book_save; AudioQueue | Keep local semantics explicit and library-scope local recommendations | listening_tests; audio_tests | Pending |
 | Audiobook chapters/rates/bookmarks/timer | Implemented | player chapters/rate; SleepTimer; audio_frame | Narrator/series unavailable unless actual server metadata; no invented type | listening_tests; controller_tests | Audibility/pitch/timer hardware acceptance pending |
@@ -118,3 +118,46 @@ profile's cached presentation.
 Milestone 2 local checks passed: real connection/framing/TLS fixtures and
 separate-process preference persistence, production controller startup/idle
 refresh/focus coalescing, pad/package/theme checks, strict native-source syntax.
+
+## Milestone 3 — real category routes and media navigation
+
+`library_categories` combines actual selected-section genres and collections,
+using explicit category route types and bounded pagination. The old blanket
+Categories-tab check treated every later movie/episode as a genre. Genre →
+movie now requests metadata/details; collections route to real collection children.
+TV Recently Added explicitly requests shows (`type=2`). Supplemental professional
+Home rows omit Home Movies; personalized collection cards survive serialization
+and open the real collection. Home Movies cards use landscape thumbnails and
+personal duration/date labels. Server aggregate hubs can still include any
+profile-permitted media; only supplemental selected-library queries are filtered.
+
+Music/Audiobook entry opens an accessible remembered default (or deterministic
+first library) and persists it. Opening a track/album directly avoids starting
+a competing default-feed request. Audio categories share real genre/collection
+routes with video; tabs share rendering. Change Library now supports audio too.
+Book saves carry section ID and last-played order so Continue Listening can be
+scoped to the selected library. Older records without a section are retained for
+resume but need one newly resolved playback/save before appearing in that row.
+
+Seasonal Home and library pages use the same real-genre/collection adapter,
+including Winter/Summer. Settings → Libraries supports automatic or explicit
+Halloween/Holiday/Winter/Summer selection plus disable. No matching media means
+no row. Default sidebar order follows the owner's requested order; optional
+Continue Watching remains available at the end. Pins reorder by stable library
+ID and Reset clears current-server pins as well as built-in visibility/order.
+Watchlist shows persistent filter/sort/count controls and a reachable explicit
+cloud-access error/retry view, instead of leaving unrelated content visible
+while probing. A separate cloud Recommended feed is still unavailable.
+
+Local checks passed: discovery/search/Watchlist fixtures, seasonal tag and
+collection fallback, real selected-section categories, Home Movies supplemental
+exclusion, Home/profile fixtures, production controller default routing,
+category → movie details, direct audio-item request, 1080p/4K draws, pad mocks,
+package/theme boundaries and strict syntax. Final hosted gates cover the combined
+source including the Watchlist error/presentation changes.
+
+Icon source/package audit: original SVG master, icon0.png 512×512, pic0.dds and
+pic1.dds 1920×1080 DXT1. Existing package validation enforces dimensions and
+PPSA85301 identity. Installed icon/splash acceptance remains pending; refresh an
+old shell icon by closing the app and restarting the launcher/console normally,
+without deleting saved data or system databases.

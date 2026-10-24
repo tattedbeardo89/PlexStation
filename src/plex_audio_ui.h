@@ -58,16 +58,25 @@ void audio_library_tab(int tab) {
     if(job!=None || active_library.id.empty())return;
     if(tab==0){auto b=base,t=server_token;auto section=active_library;bool books=audio.books;auto local=listening.books(audio_scope());submit(AudioFeed,[b,t,section,books,local]{return music_feed(*client,b,t,section,books,local);});return;}
     audio.screen=true;audio.now_playing=false;home_screen=false;
-    audio_load("/library/sections/"+encode(active_library.id)+(tab==1?(audio.books?"/all?type=9":"/all?type=8"):"/genre?type=9"),active_library.title,false);
+    if(tab==2){
+        audio.request_path="/library/sections/"+encode(active_library.id)+"/categories";audio.request_title=active_library.title+" / Categories";audio.request_start=0;audio.request_push=false;
+        auto b=base,t=server_token;auto section=active_library;
+        submit(AudioBrowse,[b,t,section]{return library_categories(*client,b,t,section);});
+    }else audio_load("/library/sections/"+encode(active_library.id)+(audio.books?"/all?type=9":"/all?type=8"),active_library.title,false);
 }
-void audio_home(bool books) {
+void audio_home(bool books,bool load_default) {
     if(!listening_loaded){listening.load(std::string(plat_data_dir())+"/plexstation-listening.json");listening_loaded=true;}
     audio.screen=true;audio.books=books;audio.now_playing=false;audio.queue_view=false;audio.menu=false;
     audio.entries.clear();audio.history.clear();audio.path="sections";audio.title=books?"Audiobooks":"Music";audio.focus=0;
     for(const auto &s:home_sections)if(music_section(s) && book_section(s)==books)audio.entries.push_back(s);
     home_screen=false;sidebar=false;settings=false;in_detail=false;
     auto saved=pref_str((audio_scope()+(books?".default-books":".default-music")).c_str(),"");
-    for(const auto &section:audio.entries)if(section.id==saved){active_library=section;library_context=true;library_tab=0;audio_library_tab(0);break;}
+    library_kind=books?8:7;library_context=false;library_tabs_focus=false;
+    if(!audio.entries.empty()) {
+        active_library=audio.entries.front();for(const auto &section:audio.entries)if(section.id==saved)active_library=section;
+        library_context=true;library_tab=0;
+        if(load_default){pref_set((audio_scope()+(books?".default-books":".default-music")).c_str(),active_library.id);audio_library_tab(0);}
+    }
 }
 void audio_start() {
     if(job!=None || !audio.queue.current())return;
@@ -96,7 +105,7 @@ void audio_queue_load(const Item &item,bool shuffle=false) {
 void audio_finish(int kind,const Result &result) {
     if(!result){message=result.error;audio.start_pending=false;return;}
     if(kind==AudioScrobble)return;
-    if(kind==AudioFeed){library_context=true;library_tab=0;feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=false;home_title=audio.books?"Audiobooks":"Music";audio.screen=false;sidebar=false;return;}
+    if(kind==AudioFeed){page_path="audio-recommended";library_context=true;library_tab=0;feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=false;home_title=audio.books?"Audiobooks":"Music";audio.screen=false;sidebar=false;return;}
     if(kind==AudioBrowse) {
         if(audio.request_push) {
             if(audio.history.size()>=16)audio.history.erase(audio.history.begin());
@@ -106,6 +115,11 @@ void audio_finish(int kind,const Result &result) {
         audio.entries=items(result.data,false);audio.focus=0;audio.parent={};
         if(result.data.contains("audioParent")) {auto parent=items(result.data["audioParent"],false);if(!parent.empty())audio.parent=parent[0];}
         if(audio.path.find("/genre?")!=std::string::npos)for(auto &i:audio.entries){i.type="audio-route";i.key=audio.path.substr(0,audio.path.find("/genre?"))+"/all?type=9&genre="+encode(i.id); }
+        if(audio.path.find("/categories")!=std::string::npos){
+            for(auto &item:audio.entries)if(item.type=="category")item.type="audio-route";
+            Item playlists;playlists.id="audio-playlists";playlists.type="audio-route";playlists.title="Playlists";playlists.key="/playlists?playlistType=audio";
+            audio.entries.insert(audio.entries.begin(),playlists);
+        }
         auto mc=result.data.find("MediaContainer");
         audio.total=mc==result.data.end()?0:static_cast<int>(std::clamp<int64_t>(number(*mc,"totalSize",audio.entries.size()),0,INT32_MAX));
         return;
@@ -150,6 +164,7 @@ void book_save(bool finished) {
         if(n<audio.queue.cursor)total+=std::min<int64_t>(length,INT64_MAX/4000);
     }
     int64_t position=std::max<int64_t>(0,player_time());
+    existing["section"]=audio.current.section_id;
     existing["book"]=audio.book.id;existing["kind"]=audio.book.type;existing["title"]=audio.book.title;existing["thumb"]=audio.book.thumb;
     existing["track"]=audio.current.id;existing["position"]=position;existing["total_position"]=total+std::min<int64_t>(position,INT64_MAX/4000);
     existing["total_duration"]=duration;existing["finished"]=finished;existing["updated"]=static_cast<int64_t>(std::time(nullptr));
@@ -195,8 +210,7 @@ std::string audio_label(const Item &i) {
 }
 bool audio_frame(uint32_t hit,float) {
     if(audio.screen && !audio.now_playing && !audio.queue_view && !audio.menu && library_context && !sidebar && !settings) {
-        const char *tabs[]={"Recommended","Library","Categories"};
-        for(int i=0;i<3;++i){rect(390+i*320,145,300,48,library_tab==i?Theme::Selection:Theme::Surface);draw_text(405+i*320,155,Theme::Font::Caption,tabs[i]);}
+        library_tabs_frame();
         if(library_tabs_focus){if(hit & PAD_LEFT)library_tab=std::max(0,library_tab-1);if(hit & PAD_RIGHT)library_tab=std::min(2,library_tab+1);if(hit & PAD_CROSS){audio_library_tab(library_tab);library_tabs_focus=false;}if(hit & PAD_DOWN)library_tabs_focus=false;return true;}
         if((hit & PAD_UP) && audio.focus==0){library_tabs_focus=true;return true;}
     }
@@ -360,7 +374,8 @@ int audio_focus_state() {
 void open_audio_item(const Item &item){
     if(job!=None)return;
     bool books=false;for(const auto &section:home_sections)if(section.id==item.section_id)books=book_section(section);
-    audio_home(books);
+    audio_home(books,false); // Opening an item must not start an unrelated feed job.
+    for(const auto &section:home_sections)if(section.id==item.section_id && music_section(section))active_library=section;
     if(item.type=="track")audio_queue_load(item);
     else if(item.type=="playlist")audio_load("/playlists/"+encode(item.id)+"/items",item.title);
     else audio_load("/library/metadata/"+encode(item.id)+"/children",item.title);

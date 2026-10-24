@@ -6,6 +6,10 @@
 #include <cctype>
 #include <set>
 namespace plex {
+inline bool personal_library(const Item &section) {
+    auto name=section.title;std::transform(name.begin(),name.end(),name.begin(),[](unsigned char c){return std::tolower(c);});
+    return name=="home movies";
+}
 struct Hub {std::string id,title;bool continuing=false;std::vector<Item> entries;};
 inline std::vector<Hub> home_rows(const Json &data) {
     std::vector<Hub> rows;auto list=data.find("rows");if(list==data.end() || !list->is_array())return rows;
@@ -28,8 +32,8 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
         auto entries=items(data,false);if(entries.empty() || target.size()>=(extra ? 4u : 12u))return;
         Json metadata=Json::array();
         for(const auto &i:entries) {
-            if(i.type!="movie" && i.type!="episode" && i.type!="show" && i.type!="season")continue;
-            metadata.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"parentIndex",i.season},{"index",i.episode},{"grandparentTitle",i.series},{"originallyAvailableAt",i.released}});
+            if(i.type!="movie" && i.type!="episode" && i.type!="show" && i.type!="season" && i.type!="collection")continue;
+            metadata.push_back({{"ratingKey",i.id},{"librarySectionID",i.section_id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"parentIndex",i.season},{"index",i.episode},{"grandparentTitle",i.series},{"originallyAvailableAt",i.released}});
             if(metadata.size()==12)break;
         }
         if(!metadata.empty())target.push_back({{"id",id},{"title",title},{"continuing",continuing},{"payload",{{"MediaContainer",{{"Metadata",std::move(metadata)}}}}}});
@@ -70,14 +74,14 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
     auto aggregate=[&](const std::string &id,const std::string &title,const std::string &type,const std::string &suffix,bool released=false){
         Json merged=Json::array();std::set<std::string> seen;int queried=0;
         for(const auto &section:sections) {
-            if(section.type!=type || !current())continue;
-            if(++queried>32){warnings.push_back("Supplemental Home aggregation capped at 32 sections per category");break;}
+            if((type=="video"?(section.type!="movie" && section.type!="show"):section.type!=type) || personal_library(section) || !current())continue;
+            if(++queried>(id=="personalizedCollections"?4:32)){warnings.push_back("Supplemental Home aggregation capped at 32 sections per category");break;}
             auto response=get("/library/sections/"+encode(section.id)+suffix+"&X-Plex-Container-Size=12");if(!response)continue;
             auto mc=response.data.find("MediaContainer");if(mc==response.data.end() || !mc->is_object())continue;
             int count=0;for(const auto &i:items(response.data,false)){
                 if(++count>12)break;
-                if(!seen.insert(i.id).second)continue;
-                merged.push_back({{"ratingKey",i.id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"grandparentTitle",i.series},{"parentIndex",i.season},{"index",i.episode},{"addedAt",i.added},{"originallyAvailableAt",i.released}});
+                if((id=="personalizedCollections" && i.type!="collection") || !seen.insert(i.id).second)continue;
+                merged.push_back({{"ratingKey",i.id},{"librarySectionID",i.section_id},{"type",i.type},{"title",i.title},{"thumb",i.thumb},{"art",i.art},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"grandparentTitle",i.series},{"parentIndex",i.season},{"index",i.episode},{"addedAt",i.added},{"originallyAvailableAt",i.released}});
             }
             std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
             if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
@@ -90,6 +94,7 @@ inline Result home_feed(Client &client,const std::string &base,const std::string
     if(!has("recentlyreleasedmovies"))aggregate("recentlyReleasedMovies","Recently Released Movies","movie","/all?type=1&sort=originallyAvailableAt:desc",true);
     if(!has("recentlyaddedtv"))aggregate("recentlyAddedTV","Recently Added TV Shows","show","/recentlyAdded?type=2");
     if(!has("recentlyreleasedtv"))aggregate("recentlyReleasedTV","Recently Released TV Episodes","show","/all?type=4&sort=originallyAvailableAt:desc",true);
+    if(!has("collections"))aggregate("personalizedCollections","Personalized Collections","video","/collections?sort=titleSort:asc");
     if(!has("ondeck"))add("onDeck","On Deck / Next Episodes","/library/onDeck?X-Plex-Container-Size=12");
     if(!current())return {{},"Home loading cancelled",0};
     for(auto &row:extra_rows) {if(rows.size()==12)break;rows.push_back(std::move(row));}

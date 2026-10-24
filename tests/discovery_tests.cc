@@ -29,7 +29,7 @@ int main(){
   return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
  },"fixture");
  Item a,b;a.id="1";b.id="2";a.type=b.type="movie";
- rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==2 && second==2 && rows.size()==2 && std::any_of(rows.begin(),rows.end(),[](const Hub &h){return h.id=="recentlyAddedMovies" && h.entries.size()==2 && h.entries[0].id=="new";}));
+ rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==3 && second==3 && rows.size()==2 && std::any_of(rows.begin(),rows.end(),[](const Hub &h){return h.id=="recentlyAddedMovies" && h.entries.size()==2 && h.entries[0].id=="new";}));
  Client denied([](const Request &){return Reply{403,"private response must not be logged",""};},"fixture");assert(!cloud_watchlist(denied,"restricted"));
  Item music;music.id="music";music.type="artist";assert(home_rows(music_feed(denied,"https://pms.invalid","restricted",music,false).data).empty());
  Item home;a.title="Movies";home.id="personal";home.title="Home Movies";home.type="movie";
@@ -44,6 +44,8 @@ int main(){
    return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"real","type":"movie","title":"Fixture returned by server"}]}})",""};
  },"fixture");
  Item allowed;allowed.id="allowed";allowed.type="movie";
+ auto categories=items(library_categories(scoped,"https://pms.invalid","active-profile",allowed).data,false);
+ assert(categories.size()==1 && categories[0].type=="category" && categories[0].key=="/library/sections/allowed/all?genre=horror");
  auto seasonal=home_rows(library_feed(scoped,"https://pms.invalid","active-profile",allowed,true,10).data);
  assert(std::any_of(seasonal.begin(),seasonal.end(),[](const Hub &h){return h.id=="seasonal" && h.entries[0].id=="real";}));
  auto disabled=home_rows(library_feed(scoped,"https://pms.invalid","active-profile",allowed,false,10).data);
@@ -53,6 +55,19 @@ int main(){
  assert(home_rows(seasonal_home.data).size()==1 && home_rows(seasonal_home.data)[0].entries[0].id=="real");
  Result cancelled_home{Json{{"rows",Json::array()}},"",200};
  append_seasonal_home(cancelled_home,scoped,"https://pms.invalid","active-profile",{allowed},10,[]{return false;});assert(home_rows(cancelled_home.data).empty());
+ assert(seasonal_tag("Winter favorites",1) && seasonal_tag("Summer collection",7));
+ assert(!seasonal_tag("Horror",7) && !seasonal_tag("Summer",3));
+ int personal_calls=0;
+ Client exclusions([&](const Request &q){if(q.url.find("/sections/personal/")!=std::string::npos)++personal_calls;return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
+ home_feed(exclusions,"https://pms.invalid","active-profile",{home,allowed});assert(personal_calls==0);
+ Client seasons([](const Request &q){
+   if(q.url.find("/genre")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Directory":[]}})",""};
+   if(q.url.find("/collections?")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"winter","type":"collection","title":"Winter Favorites"}]}})",""};
+   assert(q.url.find("/library/collections/winter/children?")!=std::string::npos);
+   return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"snow","type":"movie","title":"Snow"}]}})",""};
+ },"fixture");
+ auto winter=seasonal_library(seasons,"https://pms.invalid","active-profile",allowed,1);assert(winter && items(winter.data)[0].id=="snow");
+ auto winter_categories=items(library_categories(seasons,"https://pms.invalid","active-profile",allowed).data);assert(winter_categories.size()==1 && winter_categories[0].type=="collection");
  int live_calls=0;
  Client live([&](const Request &q){
   ++live_calls;assert(q.headers.at("X-Plex-Token")=="profile");

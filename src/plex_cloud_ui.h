@@ -29,4 +29,4 @@ void change_cloud(bool add){
     auto token=profile_token;auto item=detail;submit(CloudChange,[token,item,add]{return cloud_change(*client,token,item,add);});
 }
 
-void request_cloud_check(){cloud_requested=true;cloud_checked=false;cloud_error.clear();message="Checking Plex Cloud Watchlist access; supported access adds Watchlist to the sidebar.";}
+void request_cloud_check(){library_context=false;home_screen=false;in_detail=false;sidebar=false;listing.clear();history.clear();page_path="cloud-pending";page_title="Watchlist";focus=0;cloud_requested=true;cloud_checked=false;cloud_error.clear();message="Checking Plex Cloud Watchlist access; supported access adds Watchlist to the sidebar.";}
