@@ -511,6 +511,19 @@ int main() {
     library_tools=true;tools_focus=9;frame();library_tools=false; // bottom of tool menu must stay in bounds
     for(int entry:{9,10,11}){sidebar=true;nav=entry;if(nav_visible(entry))assert(custom_focus_valid());}
     sidebar=false;
+    // Periodic Home refresh waits for idle input, coalesces jobs and restores item identity.
+    assert(job==None);base="https://fixture.invalid";server_token="profile";home_sections.clear();
+    home_title="Home";home_screen=true;sidebar=false;settings=false;in_detail=false;editor=0;
+    profile_screen=false;account_loading=false;library_context=false;search_screen=false;progress_pending=false;
+    home_refresh_at=clock_now-1;last_input_at=clock_now;
+    service_home_refresh(clock_now);assert(job==None);
+    Item prior_card;prior_card.id="prior";prior_card.type="movie";Item kept_card=prior_card;kept_card.id="kept";
+    feed_rows={{"continueWatching","Continue Watching",true,{prior_card,kept_card}}};feed_columns={1};feed_scroll={0};feed_focus=0;
+    client=std::make_unique<Client>([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"kept","type":"movie","title":"Kept","viewOffset":5},{"ratingKey":"prior","type":"movie","title":"Prior"}]}})",""};},"fixture");
+    last_input_at=clock_now-9;service_home_refresh(clock_now);assert(job==HomeFeed);
+    auto refresh_generation=feed_generation.load();service_home_refresh(clock_now);assert(feed_generation==refresh_generation);
+    pending.wait();finish_job();assert(job==None && feed_rows[feed_focus].entries[feed_columns[feed_focus]].id=="kept");
+    service_home_refresh(clock_now);assert(job==None && home_refresh_at>clock_now);
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

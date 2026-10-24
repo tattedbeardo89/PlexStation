@@ -84,7 +84,7 @@ class Client {
     Result switch_home(const std::string &primary_token,const std::string &id,const std::string &pin="");
     Result resources(const std::string &account_token);
     Result select(const Server &, bool allow_http, std::string &selected,
-                  std::vector<ConnectionAttempt> *attempts = nullptr);
+                  std::vector<ConnectionAttempt> *attempts = nullptr, const std::string &preferred = "");
     Result identity(const std::string &base, const std::string &token, const std::string &expected);
     Result sections(const std::string &base, const std::string &token);
     Result browse(const std::string &base, const std::string &token, const std::string &path,

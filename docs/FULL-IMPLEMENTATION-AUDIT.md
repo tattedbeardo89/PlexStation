@@ -87,3 +87,34 @@ README/architecture now reflect native video acceptance, persistent artwork,
 streaming, Watchlist and media features. Historical status tables are explicitly
 labeled historical. The initial matrix above retains the starting defects so
 reviewers can compare them against each correction below.
+
+## Milestone 2 — startup and background metadata
+
+The cached endpoint still requires current profile authorization, TLS, matching
+machineIdentifier and authenticated current sections. When discovery is needed,
+`Client::select` now prefers the last successful route only if it is present in
+the freshly authorized candidates; all HTTP/HTTPS-only policy checks remain.
+A missing saved route cannot inject an endpoint into that list.
+
+Idle Home refresh runs at most once per 120 seconds, only after eight seconds
+without input and outside details/settings/profile/video/search/library tabs.
+It shares the existing worker, does not overlap pending requests, leaves visible
+rows intact, and restores focus by hub/item identity. Failed refresh retries are
+spaced by 45 seconds. Cached Home remains scoped by profile/server/current IDs.
+
+`startup: first-home-ms` reports profile-submit through first populated Home,
+with cached-route/cached-home booleans and row count. The existing authorized
+server metric now also includes profile-switch authorization; it previously
+started after that work and underreported the user's wait. No endpoint/token or
+username is logged. Cold versus warm PS5 latency must still be measured on the
+console. Host evidence measures request count (warm: two bounded authorized
+endpoint requests); fixture CPU duration is not real network/device latency.
+
+Acceptance: five cold and five warm launches, measure profile-submit to usable
+Home, repeat saved-route outage, remote route, changed permissions and protected
+PIN profile. Retain focus through background changes and reject another
+profile's cached presentation.
+
+Milestone 2 local checks passed: real connection/framing/TLS fixtures and
+separate-process preference persistence, production controller startup/idle
+refresh/focus coalescing, pad/package/theme checks, strict native-source syntax.

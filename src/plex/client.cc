@@ -339,7 +339,7 @@ Result Client::identity(const std::string &base, const std::string &token, const
     return result;
 }
 Result Client::select(const Server &s, bool allow_http, std::string &selected,
-                      std::vector<ConnectionAttempt> *attempts) {
+                      std::vector<ConnectionAttempt> *attempts, const std::string &preferred) {
     selected.clear(); if(attempts) attempts->clear();
     Result last{{},"No permitted server connections",0,Failure::Policy};
     // Also sort callers' manually constructed candidates, not just resource JSON.
@@ -348,6 +348,10 @@ Result Client::select(const Server &s, bool allow_http, std::string &selected,
         auto rank=[](const Connection &c){return (c.uri.rfind("https://",0)==0 ? 0:10)+(c.relay ? 4:c.local ? 0:2);};
         return rank(a)<rank(b);
     });
+    // Prefer only an endpoint present in fresh authorized resources. Normal policy
+    // checks still reject forbidden HTTP, invalid addresses or HTTPS-only downgrade.
+    auto remembered=std::find_if(connections.begin(),connections.end(),[&](const Connection &c){return c.uri==preferred;});
+    if(remembered!=connections.end())std::rotate(connections.begin(),remembered,remembered+1);
     unsigned index=0;
     for(const auto &c:connections) {
         ConnectionAttempt report; Endpoint parsed;

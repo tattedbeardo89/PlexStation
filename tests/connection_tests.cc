@@ -59,6 +59,12 @@ int main() {
     assert(visited.front().find("bad-local")!=std::string::npos && attempts.size()==5);
     assert(attempts[0].result==failure_message(Failure::Dns) && attempts[1].identity.find("mismatch")!=std::string::npos);
     for(const auto &a:attempts) assert(a.endpoint.find("example")==std::string::npos && a.result.find("private")==std::string::npos);
+    visited.clear();
+    assert(client.select(server,false,selected,&attempts,"https://relay.example:443"));
+    assert(visited.size()==2 && visited.front().find("relay.example")!=std::string::npos && attempts.size()==1);
+    visited.clear();
+    assert(client.select(server,false,selected,&attempts,"https://not-in-authorized-resources.example"));
+    assert(visited.front().find("bad-local")!=std::string::npos); // no new unauthorized candidate
     server.connections={{"http://192.168.1.9:32400",true,false}};
     visited.clear(); assert(!client.select(server,false,selected,&attempts) && visited.empty());
     assert(client.select(server,true,selected,&attempts));

@@ -78,7 +78,9 @@ std::string live_error;
 void open_library(int kind);
 void activate_library_tab();
 bool warm_discovery_pending=false;
-double startup_begin=0;
+double startup_begin=0,profile_select_begin=0,home_refresh_at=0,last_input_at=0;
+bool startup_cached_route=false,startup_warm_home=false,startup_home_drawn=false;
+void service_home_refresh(double now);
 int settings_page=0;
 uint64_t screen_generation=0, pending_generation=0;
 bool grid_checkpoint=false;
@@ -278,7 +280,8 @@ void connect_server(const Server &s) {
     connection_diagnostics=false; reconnect_screen=true; discard_connection=false;
     message.clear(); bool http=allow_http;
     auto root=cache_root(plat_data_dir()),scope=account_id;
-    submit(Select,[s,http,root,scope]{return restore_presentation(client->select(s,http,next_base,&next_attempts),root,scope,s.id);});
+    auto preferred=s.id==account_pref("plex_preferred_server")?account_pref("plex_verified_endpoint_v2"):"";
+    submit(Select,[s,http,root,scope,preferred]{return restore_presentation(client->select(s,http,next_base,&next_attempts,preferred),root,scope,s.id);});
 }
 DiskCache home_presentation_cache;
 std::string presentation_scope() {
@@ -309,6 +312,7 @@ void connected(const Json &data) {
     reconnect_screen=false; connection_diagnostics=false; editor=0;
     listing=items(data,false); page_path="/library/sections"; page_title="Libraries";
     page_start=0; page_total=listing.size();
+    home_refresh_at=plat_time()+120;startup_warm_home=false;
     home_sections=listing; home_screen=true;feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_vertical=0;
     if(listing.empty()) message="Connected; no accessible libraries were returned.";
     if(diagnostic(SafeHome)){home_screen=false;message="Safe startup: automatic Home loading paused. Options opens Developer Options.";}
@@ -316,7 +320,7 @@ void connected(const Json &data) {
         home_presentation_cache=DiskCache(cache_root(plat_data_dir())+"/plexstation-home-cache",presentation_scope(),4u*1024*1024);
         auto cached=data.find("_presentation");
         if(cached!=data.end()) {
-            feed_rows=home_rows(*cached);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);
+            feed_rows=home_rows(*cached);startup_warm_home=!feed_rows.empty();feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);
             message="Refreshing your Home…";
         }
         load_home();
@@ -326,10 +330,17 @@ void load_home() {
     library_context=false;
     if(job!=None || base.empty())return;
     search_screen=false;home_title="Home";
+    home_refresh_at=plat_time()+120;
     auto b=base,t=server_token;auto sections=home_sections;
     home_active=true;home_draw_ready=false;home_checkpoint(7,"Home hubs requested");
     auto epoch=++feed_generation;feed_error.clear();home_screen=true;auto cache=home_presentation_cache;bool seasonal=pref_int(account_key("plex_seasonal_v1").c_str(),1)!=0;
     submit(HomeFeed,[b,t,sections,epoch,cache,seasonal] {auto current=[epoch]{return feed_generation.load()==epoch;};auto result=home_feed(*client,b,t,sections,current);if(seasonal)append_seasonal_home(result,*client,b,t,sections,season_month(),current);if(result && feed_generation.load()==epoch)cache.put("home",result.data.dump());return result;});
+}
+void service_home_refresh(double now) {
+    if(now<home_refresh_at || now-last_input_at<8 || job!=None || progress_pending || base.empty() ||
+       account_loading || profile_screen || sidebar || settings || in_detail || editor || video ||
+       !home_screen || library_context || search_screen || home_title!="Home")return;
+    load_home(); // Keep existing rows; completion reconciles focused row/item IDs.
 }
 void refresh() {
     if(!primary_id.empty() && profile_token.empty()) {profile_screen=true;profile_error="Select and authorize a profile first.";return;}
@@ -380,7 +391,8 @@ void activate_profile() {
     restore_video_preferences();
     profile_screen=false;profile_pin=false;profile_error.clear();erase_pin();
     account_loading=true;
-    startup_begin=plat_time();
+    startup_begin=profile_select_begin>0?profile_select_begin:plat_time();
+    startup_cached_route=false;startup_warm_home=false;startup_home_drawn=false;
     auto saved=account_pref("plex_verified_endpoint_v2");
     auto id=account_pref("plex_preferred_server");
     if(!saved.empty() && !id.empty() && valid_base(saved,allow_http)) {
@@ -399,6 +411,7 @@ void activate_profile() {
 void choose_profile() {
     home_checkpoint(1,"profile selection received");
     if(job!=None)return;
+    profile_select_begin=plat_time();
     if(requested_profile.protected_user && !valid_pin(pin_digits)) {profile_pin=true;pin_focus=0;erase_pin();return;}
     if(!home_enabled) {profile_token=account;activate_profile();return;}
     auto token=account,id=requested_profile.id,secret=pin_digits;erase_pin();
@@ -522,7 +535,7 @@ void finish_job() {
     if(done==FastConnect) {
         account_loading=false;
         if(!result){fprintf(stderr,"startup: cached-route=fallback status=%d\n",result.status);refresh();return;}
-        warm_discovery_pending=true;connected(result.data);return;
+        startup_cached_route=true;warm_discovery_pending=true;connected(result.data);return;
     }
     if(done==BackgroundResources) {
         if(result)for(const auto &server:servers(result.data))if(server.id==selected_server.id && !server.token.empty()) {selected_server=server;server_token=server.token;break;}
@@ -553,7 +566,7 @@ void finish_job() {
     }
     if(done==HomeFeed || done==LibraryFeed) {
         home_checkpoint(8,"Home hub response ready",result?0:(result.status?result.status:-1));
-        if(!result) {feed_error=result.error;return;}
+        if(!result) {feed_error=result.error;home_refresh_at=plat_time()+45;return;}
         auto updated=home_rows(result.data);std::vector<int> columns(updated.size(),0);std::vector<float> scroll(updated.size(),0);
         std::string selected_row=feed_focus>=0 && feed_focus<static_cast<int>(feed_rows.size())?feed_rows[feed_focus].id:"";
         for(size_t i=0;i<updated.size();++i)for(size_t j=0;j<feed_rows.size();++j)if(updated[i].id==feed_rows[j].id){
@@ -896,6 +909,10 @@ void poster(float x,float y,float width,float height,const Item &item,bool selec
 }
 void home_frame(uint32_t hit,float dt) {
     home_draw_ready=true;
+    if(!startup_home_drawn && !feed_rows.empty() && !library_context && !search_screen){
+        startup_home_drawn=true;
+        fprintf(stderr,"startup: first-home-ms=%d cached-route=%d cached-home=%d rows=%zu\n",startup_begin>0?static_cast<int>((plat_time()-startup_begin)*1000):-1,startup_cached_route,startup_warm_home,feed_rows.size());
+    }
     if(!feed_rows.empty() && !grid_checkpoint) {checkpoint(15,"first Home carousel",feed_rows.size());grid_checkpoint=true;}
     if(feed_rows.empty()) {
         draw_text(390,250, Theme::Font::Heading,search_screen?"No search results":job==HomeFeed ? "Loading your Home..." : "No Home items are available");
@@ -1150,6 +1167,7 @@ void ui_frame(const PadState &pad, float dt) {
     uint32_t hit = controller.update(pad, dt);
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
+    if(hit)last_input_at=now;
     service_video_retry();
     retry_progress();
     service_cleanup();
@@ -1159,6 +1177,7 @@ void ui_frame(const PadState &pad, float dt) {
     }
     service_next();
     service_cloud();
+    service_home_refresh(now);
     audio_tick(now);
     auth.tick(now);
     if (auth.poll_due(now) && job == None) {
