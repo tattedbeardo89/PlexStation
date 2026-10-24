@@ -1,5 +1,10 @@
 # Remaining-features implementation and acceptance record
 
+> Historical October 23 checkpoint. The [October 24 full implementation audit](FULL-IMPLEMENTATION-AUDIT.md)
+> supersedes its current-state statements, including seasonal selection, stable
+> library-pin reordering, category routing and supported DVR recording controls.
+
+
 The owner physically accepted launch, primary authentication, server connection,
 native video, subtitles initially Off, and normal JSON numeric parsing at
 `5d8adb9ca74d051b8154e01dafb0ad0848c372f7`. Those are owner observations about that

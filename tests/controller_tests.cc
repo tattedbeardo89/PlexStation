@@ -559,6 +559,23 @@ int main() {
     assert(!nav_visible(12) && !nav_visible(13));settings=false;
     active_profile.managed=true;profile_token="profile";request_cloud_check();assert(page_path=="cloud-pending" && listing.empty());
     service_cloud();assert(job==None && !cloud_ok && !cloud_error.empty());active_profile.managed=false;reset_cloud();
+    // Every non-audio sidebar route closes the audio browsing layer before early return.
+    reset_cloud();warm_discovery_pending=false;progress_pending=false;profile_screen=false;account_loading=false;editor=0;
+    Item personal_section;personal_section.id="home-movies";personal_section.type="movie";personal_section.title="Home Movies";
+    Item professional_section;professional_section.id="films";professional_section.type="movie";professional_section.title="Movies";
+    home_sections={personal_section,professional_section};
+    pref_set((account_key("plex_pinned_library_v1")+"."+encode(selected_server.id)+"."+encode(personal_section.id)).c_str(),1);
+    client=std::make_unique<Client>([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
+    for(int target:{9,10,11,12}){
+        audio.screen=true;audio.now_playing=true;sidebar=true;settings=true;in_detail=true;library_context=false;nav=target;page_path.clear();
+        press(PAD_CROSS);if(job!=None){pending.wait();finish_job();}
+        assert(!audio.screen && !audio.now_playing && !sidebar && !settings && !in_detail);
+    }
+    active_library=personal_section;library_context=true;search_screen=true;
+    Item film;film.section_id="films";assert(!personal_item(film));
+    film.section_id="home-movies";assert(personal_item(film));
+    film.section_id.clear();assert(!personal_item(film));
+    search_screen=false;library_context=false;
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

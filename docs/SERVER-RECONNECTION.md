@@ -1,5 +1,14 @@
 # Remembered server and automatic reconnection
 
+Current startup first attempts the last verified endpoint after fresh profile/PIN
+authorization, before full resource discovery. It still checks TLS, server
+identity and authenticated current library access, then falls back to discovery.
+Fresh authorized candidates prefer the previous successful route. Idle Home
+refresh preserves row/item focus. See [the current audit and metrics](FULL-IMPLEMENTATION-AUDIT.md)
+and [cold/warm physical measurement procedure](HARDWARE-ACCEPTANCE.md). The older
+checkpoint narrative below predates these optimizations.
+
+
 PlexStation validates the restored private account token with Plex before
 loading servers. The validated primary account ID and freshly validated active Plex Home profile
 identity scope the preferred PMS machineIdentifier in the existing `prefs.txt`

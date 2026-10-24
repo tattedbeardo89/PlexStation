@@ -517,7 +517,7 @@ void finish_job() {
     }
     if(done==VideoPlan){if(pending_generation==screen_generation)video_plan_ready(result);return;}
     if(done==CloudProbe || done==CloudList || done==CloudResolve || done==CloudChange){if(pending_generation==screen_generation)finish_cloud(done,result);return;}
-    if(done==GlobalSearch){if(pending_generation==screen_generation){if(result){feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=true;page_title="Search";}else message=result.error;}return;}
+    if(done==GlobalSearch){if(pending_generation==screen_generation){if(result){library_context=false;feed_rows=home_rows(result.data);feed_columns.assign(feed_rows.size(),0);feed_scroll.assign(feed_rows.size(),0);feed_focus=0;home_screen=true;search_screen=true;page_title="Search";}else message=result.error;}return;}
     if(done==FilterValues){
         filter_values.clear();filter_picker=false;
         if(!result){message=result.error;return;}
@@ -921,9 +921,8 @@ void library_tabs_frame() {
     for(int i=0;i<3;++i){rect(390+i*320,145,300,48,library_tab==i?Theme::Selection:Theme::Surface);draw_text(405+i*320,155,Theme::Font::Caption,tabs[i]);}
 }
 bool personal_item(const Item &item){
-    if(library_context && personal_library(active_library))return true;
     for(const auto &section:home_sections)if(section.id==item.section_id)return personal_library(section);
-    return false;
+    return library_context && !search_screen && personal_library(active_library);
 }
 std::string card_metadata(const Item &item){
     if(personal_item(item)){
@@ -1550,13 +1549,13 @@ void ui_frame(const PadState &pad, float dt) {
         if ((hit & PAD_CROSS) && job == None) {
             if(nav==-1) {settings=true;settings_page=3;sidebar=false;focus=0;return;}
             if(nav==7 || nav==8) {library_context=false;audio_home(nav==8);return;}
-            library_context=false;
+            audio_leave_browse();
+            library_context=false;settings=false;in_detail=false;
             if(nav>=12){active_library=home_sections[nav-12];library_context=true;library_kind=personal_library(active_library)?9:active_library.type=="show"?2:1;library_tab=0;activate_library_tab();return;}
             if(nav==9){open_library(9);return;}
             if(nav==10 || nav==11){home_screen=false;listing.clear();page_title=navigation[nav];page_path=nav==10?"live-tv":"rentals";sidebar=false;
                 if(nav==10){live_channel_list=Json::array();live_program_list=Json::array();live_guide_screen=false;live_error.clear();auto b=base,t=server_token;submit(LiveChannels,[b,t]{return live_channels(*client,b,t);});}
                 return;}
-            audio_leave_browse();
             settings = nav == 6; settings_page=0;
             in_detail = false;
             sidebar = false;

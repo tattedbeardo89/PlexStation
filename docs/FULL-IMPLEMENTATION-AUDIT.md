@@ -3,7 +3,7 @@
 Audit base: `7513c0e307a911b902dc8e5f370a600bb5d13361`, fetched feature branch,
 clean working tree. Native source checkpoint `208b5be1ec73f6fa11797dbd3ae2b21262eafce3`
 passed [run 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391).
-`5d8adb9` and `1ad4f6c4ab562762bd4c2ffa958cc098e234528a` remain rollback references.
+`5d8adb9ca74d051b8154e01dafb0ad0848c372f7` and `1ad4f6c4ab562762bd4c2ffa958cc098e234528a` remain rollback references.
 
 The matrix records the corrected source state; milestone sections below identify
 the original defects and the evidence for each change. Partial and externally
@@ -47,8 +47,8 @@ the current task's layout requirements govern the audit.
 | Personalized Collections on Home | Implemented | home_feed collection serialization/aggregation; open_media; f6d853b | Real server collections and images pending live acceptance | discovery_tests; home_feed_tests | Pending |
 | Watchlist sync/grid/count/filter/pages | Requires physical PS5 verification | cloud.h cloud_watchlist/cloud_change/resolve_cloud; plex_cloud_ui.h; grid renderer | Circle interception is already implemented; recommended cloud feed unavailable | discovery_tests; controller_tests | Cloud access/write acceptance pending; managed profiles blocked |
 | Movies/TV default routing/tabs | Implemented | navigation.h default_library; open_library/activate_library_tab; scoped prefs | Recommended TV added endpoint may return episodes; request type=2 explicitly | discovery_tests; controller_tests | Pending |
-| Categories genres/collections | Requires physical PS5 verification | library_categories and explicit category types; open_item/open_media; f6d853b | Bounded genres/collections and drill-through corrected; live category acceptance pending | New controller/discovery cases required | Pending |
-| Library tools/sorts/search/pages | Implemented | library_tools loop bounded by actual labels; 192707d | Real controller behavior and library filter availability pending | New controller rendering case required | Pending |
+| Categories genres/collections | Requires physical PS5 verification | library_categories and explicit category types; open_item/open_media; f6d853b | Bounded genres/collections and drill-through corrected; live category acceptance pending | controller_tests category→movie; discovery_tests genre/collection/seasonal | Pending |
+| Library tools/sorts/search/pages | Implemented | library_tools loop bounded by actual labels; 192707d | Real controller behavior and library filter availability pending | controller_tests bottom-of-tools rendering; ASan/UBSan | Pending |
 | Home Movies | Requires physical PS5 verification | personal_library/default_library; persisted section designation; landscape/card_metadata | Stable ID across rename and personal duration/date added; physical validation pending | discovery_tests; controller_tests | Pending |
 | Music browsing/queue/audio-only | Implemented | audio.h; plex_audio_ui.h audio_queue_load/audio_start/audio_frame; player :no-video | Genre route handling exists; sole-library defaults absent; direct-item/default-feed race | audio_tests; controller_tests | Audible formats not yet accepted |
 | Music Recommended/categories/default | Partially implemented | music_feed.h; audio_home/audio_library_tab | Improve sole/default routing, genre+collections+playlists, artists; avoid stale video library kind | discovery_tests; controller_tests | Pending |
@@ -56,7 +56,7 @@ the current task's layout requirements govern the audit.
 | Audiobook chapters/rates/bookmarks/timer | Implemented | player chapters/rate; SleepTimer; audio_frame | Narrator/series unavailable unless actual server metadata; no invented type | listening_tests; controller_tests | Audibility/pitch/timer hardware acceptance pending |
 | Seasonal Home/library recommendations | Implemented | seasonal_library/seasonal_tag/append_seasonal_home; recommendation_month | Winter/summer and real collection fallback/custom season selection added; live matches pending | discovery_tests | Pending |
 | Sidebar hide/order/pins/theme | Implemented | sidebar_order/library_pin_order/nav_visible; settings 10/11; Theme | Stable pin reorder/reset and requested default order added; device usability pending | controller_tests; test_theme.py | Pending |
-| Personal Live TV guide/tune | Requires physical PS5 verification | live_tv.h live_channels/live_guide/live_tune; LiveChannels/Guide/Tune jobs | Current-day bounded guide; idle tuner release unverified; recording controls missing | discovery_tests; controller_tests | No tuner/device acceptance |
+| Personal Live TV guide/tune | Requires physical PS5 verification | live_tv.h live_channels/live_guide/live_tune; LiveChannels/Guide/Tune jobs | Current-day bounded guide; schedule/rules and confirmed cancellation added; creation/edit and idle tuner release unverified | discovery_tests; controller_tests | No tuner/device acceptance |
 | DVR recordings | Partially implemented | live_recordings/cancel_recording_rule; LiveRecordings/LiveCancel jobs; live-recordings UI | Scheduled/rule lists and confirmed owner rule cancellation added; creation/edit/storage template and tuner cleanup remain incomplete | No existing end-to-end test | Not tested |
 | Free cloud Live TV | Blocked by external API/platform | Live TV unavailable state separates personal tuner from cloud | No verified cloud authorization/playback adapter; do not use fake channels | Unsupported UI inspection | Not supported |
 | Rentals catalog/entitlements/DRM | Blocked by external API/platform | rentals screen; no licensed DRM path or supported catalog binding | Accurate unavailable state; no pricing/payment/entitlement fabrication | Unsupported UI inspection | Not supported |
@@ -86,8 +86,8 @@ workflow; intermediate commits remain rollback points without duplicate builds.
 
 README/architecture now reflect native video acceptance, persistent artwork,
 streaming, Watchlist and media features. Historical status tables are explicitly
-labeled historical. The initial matrix above retains the starting defects so
-reviewers can compare them against each correction below.
+labeled historical. The milestone sections retain the starting defects so reviewers can compare
+them against the corrected matrix above.
 
 ## Milestone 2 — startup and background metadata
 
@@ -236,3 +236,37 @@ book-scope fixtures; audio/listening persistence; production controller includin
 recording confirmation/cancel/owner gate, stable pin ordering/reset, managed cloud
 unavailable state; pad backend, package permissions, theme boundary and strict
 native-source syntax. A live account, actual tuner or physical PS5 was not used.
+
+## Exact milestone commits
+
+| Milestone | Full source SHA |
+|---|---|
+| Correctness and audit | `192707d81ec1ce1ba2c9ec7b1ef157e292611a99` |
+| Startup and idle Home | `568f95f9e54d7eceb5490b7db863918439e4a161` |
+| Navigation and media rows | `f6d853b66bee56a9c5819871d1410a49132073cb` |
+| DVR/isolation combined candidate | `fdeec1d28020ac1a362b4386aed3952795dba97f` |
+
+One native workflow builds the combined candidate, avoiding overlapping builds.
+Each earlier commit is retained as a source rollback point; it has not been
+separately cross-built. The latest native artifacts contain all four milestones.
+
+## Final review follow-up — shared sidebar transition
+
+Review while the first combined native gate ran found another reachable early-
+return defect: Home Movies/pinned libraries/Live TV/Rentals activated before
+closing Music's browse layer, so that layer could consume the next frame and
+hide the destination. Those branches also retained Details/Settings flags.
+All non-audio sidebar routes now clear the old browse/details/settings layers
+before dispatching the selected destination, preserving active background audio
+until actual video playback starts. The production controller test enters each
+of the four routes with all three old states active and verifies the destination
+owns the screen. Search also clears stale library-tab context; a media item's
+actual section identity takes precedence over Home Movies thumbnail styling.
+
+The active first build is allowed to finish. A single subsequent native build
+will validate the final follow-up; neither run is represented as physical
+acceptance. This extra build is justified by the confirmed navigation defect,
+not an overlapping or cosmetic-only rebuild.
+
+Follow-up local production controller/pad/package/theme and strict native-source
+checks passed with the final shared transition and search styling changes.
