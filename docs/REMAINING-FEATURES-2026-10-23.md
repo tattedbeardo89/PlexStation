@@ -125,3 +125,24 @@ production controller/UI including the alternate subtitle entry, PS5 pad mocks,
 ZIP permissions/theme boundary, ten native GnuTLS transport scenarios and strict
 native-source host syntax. Loopback fixtures require the execution sandbox's
 network permission. Hosted native and sanitizer gates are reported separately.
+
+### Resume follow-up native result
+
+[Run 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391)
+completed successfully for `208b5be1ec73f6fa11797dbd3ae2b21262eafce3`.
+Full hosted host/sanitizer regressions, actual native compilation/validation,
+matching debug collection, package permissions and artifact uploads passed.
+
+- [Installation artifact](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391/artifacts/12546553507):
+  `PlexStation-PPSA85301-208b5be1ec73f6fa11797dbd3ae2b21262eafce3`, 39,460,749 bytes;
+  outer artifact SHA-256 `a04c326412d6b72090b460569675919c857eb12816aae3f39187e42ba6b14405`.
+- [Matching symbols](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391/artifacts/12546688166):
+  `PlexStation-native-debug-208b5be1ec73f6fa11797dbd3ae2b21262eafce3`, 92,656,101 bytes;
+  outer artifact SHA-256 `ed40a1615f5803caa92c6c3ff5ecc864e1027f4cd4f9878c1f1f3409d4206bc9`.
+
+Evidence is GitHub run/job states and artifact metadata; these archives were
+not downloaded or independently binary-inspected during this follow-up.
+Physical PS5 acceptance of this build remains pending. Preserve runtime account,
+preferences, listening and progress files when installing the complete title.
+The documentation-only commit recording this result does not change the built
+source or start another native build.
