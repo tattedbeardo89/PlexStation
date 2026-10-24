@@ -12,6 +12,7 @@ static std::vector<std::string> last_opened_options;
 extern "C" void plat_pad_set_private(bool enabled) {private_input=enabled;}
 static int64_t position = 20000;
 static int64_t last_opened_start;
+static int player_open_calls=0;
 static float test_rate=1.f;
 const VideoInfo &player_video_info(){static VideoInfo info{};return info;}
 static int64_t test_sub_delay=0;
@@ -55,7 +56,7 @@ ImTextureID Artwork::landscape(const std::string &,const std::string &,const std
 ImTextureID Artwork::avatar(const std::string &,const std::string &) {return 0;}
 ImTextureID Artwork::get(const std::string &, const std::string &, const std::string &) { return 0; }
 }
-bool player_open(const std::string &url, int64_t start, const std::vector<std::string> &options) {last_opened_start=start;last_opened_url=url;last_opened_options=options;return true;}
+bool player_open(const std::string &url, int64_t start, const std::vector<std::string> &options) {++player_open_calls;last_opened_start=start;last_opened_url=url;last_opened_options=options;return true;}
 void player_stop() {}
 PlayerEvent player_tick() { return PLAYER_EVENT_NONE; }
 bool player_ended() { return false; }
@@ -482,10 +483,11 @@ int main() {
     subtitle_default_mode=0;subtitle_language_choice=0;subtitle_selection.reset();version=0;
     detail.id="subtitle-movie";detail.type="movie";detail.media=Json::array({{{"Part",Json::array({{{"Stream",Json::array({{{"id",9001},{"streamType",3},{"languageCode","eng"},{"title","English"}}})}}})}}});
     prepare_subtitle_selection();assert(subtitle_selection.choice==-1);
-    subtitle_focus=3;subtitle_picker_frame(PAD_CROSS);assert(subtitle_selection.choice==0 && subtitle_default_mode==0);
+    auto preselect_opens=player_open_calls;
+    subtitle_focus=3;subtitle_picker_frame(PAD_CROSS);assert(subtitle_selection.choice==0 && subtitle_default_mode==0 && player_open_calls==preselect_opens);
     native_subtitles={{7,"English","en"}};playing=detail;video=true;begin_session_subtitles();service_subtitle_selection();
     assert(player_subtitle_track()==7 && !subtitle_pending && subtitle_default_mode==0);
-    auto before_switch_url=last_opened_url;auto before_switch_position=position;
+    auto before_switch_url=last_opened_url;auto before_switch_position=position;auto before_switch_opens=player_open_calls;
     video_info=true;video_info_focus=6;tracks=false;subtitle_menu=false;
     video_tools(PAD_CROSS);
     assert(!video_info && tracks && subtitle_menu);
@@ -504,7 +506,7 @@ int main() {
     choose_subtitle_mode(0);assert(player_subtitle_track()==-42);
     subtitle_selection.choice=1;begin_session_subtitles();service_subtitle_selection();
     assert(player_subtitle_track()==23 && !subtitle_pending && subtitle_attach_calls==1);
-    assert(position==before_switch_position+1000 && last_opened_url==before_switch_url);
+    assert(position==before_switch_position+1000 && last_opened_url==before_switch_url && player_open_calls==before_switch_opens);
     reset_session_subtitles();assert(subtitle_attached.empty());
     video=false;native_subtitles.clear();detail_subtitles=false;
     sidebar=false;settings=false;in_detail=false;home_screen=false;available.clear();profile_screen=false;
