@@ -1,5 +1,11 @@
 # Media expansion checkpoints
 
+> Historical checkpoint evidence follows. For the current source, defects,
+> corrections and owner-confirmed baseline, use [the full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
+> Older statements that music, Watchlist, persistent artwork, streaming or
+> native video are absent describe the named old build, not the current tree.
+
+
 ## Preserved physical-testing baseline
 
 Source tag: `baseline/ps5-physical-test-d52e5cd`, pointing to

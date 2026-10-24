@@ -20,12 +20,14 @@ void service_cleanup() {
     submit(Cleanup,[task]{return client->call("GET",task.base,task.path,task.token);});
 }
 void begin_session_subtitles();
+void reset_session_subtitles();
 void apply_video_plan(const StreamPlan &plan) {
     if(plan.playback.mode==Mode::Unsupported){message=plan.playback.error;return;}
     prepare_subtitle_selection();
     if(plan.playback.mode!=Mode::DirectPlay && subtitle_selection.choice>=0){message="Selected subtitles require Original / Direct Play. Server stream reconfiguration is not supported; playback has not restarted.";return;}
     audio_reset();retire_stream();stream_plan=plan;
     if(!player_open(plan.playback.url,detail.offset)){message="VLC could not open media";retire_stream();return;}
+    reset_session_subtitles();
     next_candidate={};next_requested=false;autoplay_deadline=0;
     playing=detail;video=true;tracks=false;subtitle_menu=false;progress={};video_info=false;stream_fallback=detail.type=="live" || plan.playback.mode!=Mode::DirectPlay;
     auto offset=std::clamp(pref_int((account_key("plex_media_audio")+"."+encode(selected_server.id)+"."+encode(detail.id)).c_str(),global_delay),-500,500);
@@ -82,6 +84,8 @@ bool subtitle_pending=false,subtitle_external_pending=false;
 int subtitle_native_id=-1;
 double subtitle_deadline=0;
 std::vector<int> subtitle_before_external;
+std::map<std::string,int> subtitle_attached;
+void reset_session_subtitles(){subtitle_attached.clear();subtitle_before_external.clear();}
 std::string subtitle_status;
 const char *subtitle_languages[]={"en","es","fr","ja","de","it","pt"};
 const char *subtitle_mode_names[]={"Off","Automatic","Preferred Language"};
@@ -142,6 +146,11 @@ void service_subtitle_selection() {
     const auto &entry=entries[choice];
     int native=-1;
     if(entry.external.empty())native=match_subtitle(entry,player_subtitle_catalog());
+    else if(!subtitle_external_pending && subtitle_attached.count(entry.id)) {
+        const int attached=subtitle_attached.at(entry.id);
+        for(const auto &track:player_subtitle_tracks())if(track.id==attached)native=attached;
+        if(native<0)subtitle_attached.erase(entry.id); // rediscover if VLC removed it
+    }
     else if(!subtitle_external_pending && !player_subtitle_tracks().empty()) {
         std::string url;
         auto parts=playing.media[version].find("Part");
@@ -157,7 +166,7 @@ void service_subtitle_selection() {
     }
     if(native>=0) {
         player_set_subtitle_track(native);
-        if(player_subtitle_track()==native){subtitle_pending=false;subtitle_status=entry.label;return;}
+        if(player_subtitle_track()==native){if(!entry.external.empty())subtitle_attached[entry.id]=native;subtitle_pending=false;subtitle_status=entry.label;return;}
     }
     if(plat_time()>subtitle_deadline) {
         player_subtitles_off();subtitle_pending=false;subtitle_selection.choice=-1;

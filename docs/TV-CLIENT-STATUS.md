@@ -1,5 +1,11 @@
 # Coordinated stability, profiles and TV interface delivery
 
+> Historical checkpoint evidence follows. For the current source, defects,
+> corrections and owner-confirmed baseline, use [the full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
+> Older statements that music, Watchlist, persistent artwork, streaming or
+> native video are absent describe the named old build, not the current tree.
+
+
 This page records the preserved d52e5cd baseline. For subsequent Music,
 Audiobooks, streaming and discovery development, current limitations and test
 results, see [MEDIA-EXPANSION.md](MEDIA-EXPANSION.md).

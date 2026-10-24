@@ -184,7 +184,9 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
         int w, h, c;
         if (!stbi_info_from_memory(bytes, reply.body.size(), &w, &h, &c) || w <= 0 || h <= 0 ||
             w > (avatar_image?2048:640) || h > (avatar_image?2048:960)) {
-            ++state->decode_failures;out.failure="Unsupported image format or dimensions";
+            ++state->decode_failures;
+            out.failure=reply.content_type.rfind("image/webp",0)==0?"WebP avatar is unsupported":
+                reply.content_type.rfind("image/svg",0)==0?"SVG avatar is unsupported":"Unsupported image format or dimensions";
             if(avatar_image)avatar_checkpoint("header-or-dimensions-rejected",0,reply.body.size());
             return out;
         }

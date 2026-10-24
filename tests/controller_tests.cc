@@ -19,7 +19,10 @@ int64_t player_subtitle_delay(){return test_sub_delay;}
 void player_set_subtitle_delay(int64_t n){test_sub_delay=n;}
 SubStyle player_sub_style(){return {100,0,false};}
 void player_set_sub_style(const SubStyle &){}
-bool player_add_subtitle(const std::string &,bool){return true;}
+static int subtitle_attach_calls=0;
+static bool subtitle_attach_allowed=true;
+static bool subtitle_attach_reopen=false;
+bool player_add_subtitle(const std::string &,bool allow_reopen){++subtitle_attach_calls;subtitle_attach_reopen=allow_reopen;return subtitle_attach_allowed;}
 static std::vector<SubtitleTrack> native_subtitles;
 std::vector<SubtitleTrack> player_subtitle_catalog(){return native_subtitles;}
 std::string player_audio_language(){return "";}
@@ -493,7 +496,21 @@ int main() {
     player_seek(position+1000);player_toggle_pause();service_subtitle_selection();assert(player_subtitle_track()==-42);
     subtitle_selection.choice=-3;begin_session_subtitles();service_subtitle_selection();assert(player_subtitle_track()==7 && subtitle_selection.choice==-3);
     native_subtitles.clear();subtitle_selection.choice=-3;begin_session_subtitles();clock_now+=13;service_subtitle_selection();assert(player_subtitle_track()==-42 && subtitle_selection.choice==-1);
+    // Re-select an already attached external track without duplicate attachment or reopening.
+    playing.media[0]["Part"][0]["Stream"].push_back({{"id",9002},{"streamType",3},{"languageCode","spa"},{"key","/library/streams/9002.srt"},{"codec","srt"}});
+    reset_session_subtitles();subtitle_selection.choice=1;begin_session_subtitles();service_subtitle_selection();
+    assert(subtitle_external_pending && subtitle_attach_calls==1 && !subtitle_attach_reopen);
+    native_subtitles={{23,"Spanish","es"}};service_subtitle_selection();assert(player_subtitle_track()==23 && !subtitle_pending);
+    choose_subtitle_mode(0);assert(player_subtitle_track()==-42);
+    subtitle_selection.choice=1;begin_session_subtitles();service_subtitle_selection();
+    assert(player_subtitle_track()==23 && !subtitle_pending && subtitle_attach_calls==1);
+    assert(position==before_switch_position+1000 && last_opened_url==before_switch_url);
+    reset_session_subtitles();assert(subtitle_attached.empty());
     video=false;native_subtitles.clear();detail_subtitles=false;
+    sidebar=false;settings=false;in_detail=false;home_screen=false;available.clear();profile_screen=false;
+    library_tools=true;tools_focus=9;frame();library_tools=false; // bottom of tool menu must stay in bounds
+    for(int entry:{9,10,11}){sidebar=true;nav=entry;if(nav_visible(entry))assert(custom_focus_valid());}
+    sidebar=false;
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");

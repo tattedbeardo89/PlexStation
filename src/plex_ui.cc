@@ -818,7 +818,7 @@ bool custom_focus_valid() {
     if(profile_screen)return profile_pin ? pin_focus>=0 && pin_focus<10 : profile_focus>=0 && profile_focus<static_cast<int>(home_profiles.size());
     if(video)return !tracks || playback_tracks_focus_valid();
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
-    if(sidebar)return nav>=-1 && nav<9 && (nav<0 || nav_visible(nav));
+    if(sidebar)return nav>=-1 && nav<12+static_cast<int>(home_sections.size()) && (nav<0 || nav_visible(nav));
     if(settings)return focus>=0 && focus<(settings_page==2 ? 13 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==10 ? 13 : settings_page==11 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==9 ? 6 : settings_page==8 ? 8 : settings_page==7 ? 4 : settings_page==6 ? 4 : settings_page==5 ? 8 : settings_page==1 ? 2 : settings_page ? 1 : 13);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?6:4);
@@ -1008,6 +1008,7 @@ void profile_screen_frame(uint32_t hit) {
     }
     int first=(profile_focus/5)*5;
     int count=std::min(5,static_cast<int>(home_profiles.size())-first);
+    if(hit & PAD_SQUARE)artwork->retry_avatars();
     artwork->avatar(home_profiles[profile_focus].avatar,account);
     for(int i=first;i<first+count;++i) {
         float x=960-count*150+(i-first)*300;
@@ -1019,7 +1020,7 @@ void profile_screen_frame(uint32_t hit) {
         centered(510,Theme::Font::Body,home_profiles[i].name,x+130,240);
         if(home_profiles[i].protected_user)centered(560, Theme::Font::Caption,"PIN protected",x+130);
     }
-    centered(720, Theme::Font::Body,"D-pad / Stick: choose   Cross: select   Options: sign out");
+    centered(720, Theme::Font::Body,"D-pad / Stick: choose   Cross: select   Square: retry avatars   Options: sign out");
     if((hit & PAD_CROSS) && job==None) {requested_profile=home_profiles[profile_focus];profile_error.clear();choose_profile();}
 }
 void login_screen(uint32_t hit, double now) {
@@ -1387,7 +1388,7 @@ void ui_frame(const PadState &pad, float dt) {
         if(hit & PAD_CIRCLE)library_tools=false;
         if(hit & PAD_UP)tools_focus=std::max(0,tools_focus-1);
         if(hit & PAD_DOWN)tools_focus=std::min(9,tools_focus+1);
-        int first=std::max(0,tools_focus-6);for(int i=first;i<13 && i<first+7;++i)row(i,tools_focus,210+(i-first)*Theme::Metric::RowStep,labels[i]);
+        int first=std::max(0,tools_focus-6);for(int i=first;i<static_cast<int>(sizeof(labels)/sizeof(labels[0])) && i<first+7;++i)row(i,tools_focus,210+(i-first)*Theme::Metric::RowStep,labels[i]);
         if((hit & PAD_CROSS) && job==None) {
             library_tools=false;
             if(tools_focus==5){editor=1;edit_text.clear();edit_focus=0;}

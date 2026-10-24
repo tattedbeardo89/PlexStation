@@ -1,131 +1,97 @@
-# Architecture and implementation boundaries
+# Native architecture and evidence boundaries
 
-## Upstream inspected
+Current feature inventory and corrections: [full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
+Historical implementation snapshots in other documents describe their named
+commits, not the current tree. The owner's accepted visual direction is dark
+navy/charcoal with indigo/blue accents, superseding the original gold spec.
 
-Imported ZiZc3/VLC commit a91113b9731241dbfc159fd671290ff42afb2db3.
-`src/main.cc` owns the frame loop, `gfx.cc` the Vulkan render pass and uploads,
-`platform_ps5.c` DualSense, display, audio and runtime imports. Linux uses
-`platform_host.c`: an offscreen Vulkan renderer and scripted pad, with audio
-output discarded. It is not a desktop TV-player preview.
+## Preserved playback and platform
 
-`player.cc` owns a single libVLC player. Video callbacks write frames into
-host-visible Vulkan buffers. Audio callbacks use VLC presentation timestamps
-and a paced platform audio thread. `ps5/modules/ps5vdec.c` implements console
-hardware decoding. `ps5http.c` implements native HTTP access, with VLC's own
-HTTP backend as fallback. `patches/` modifies VLC and dependencies. The build
-uses static plugin tables from `ps5/plugins.txt`. Existing decoding, rendering,
-audio timing, track selection, and libVLC delay APIs are preserved.
+Imported ZiZc3/VLC foundation `a91113b9731241dbfc159fd671290ff42afb2db3`.
+`main.cc` owns the frame loop; `gfx.cc` owns Vulkan rendering and uploads.
+`platform_ps5.c` provides DualSense, display and timestamped audio integration;
+`ps5/modules/ps5vdec.c` provides hardware decode. `player.cc` owns one native
+libVLC player with video/audio callbacks, track APIs, seek, rate and delay.
+The audio callback requests 48 kHz signed 16-bit PCM; lossless source playback
+does not establish bit-perfect output. `platform_host.c` is a test backend,
+not a real desktop media-player acceptance environment.
 
-Original `ui.cc` is retained for reference but no longer linked. PlexStation
-builds `plex_ui.cc`, a separate controller-first ImGui UI. Application identity
-is PPSA85301, distinct from VLC PPSA85300. This is a development title ID;
-check for local collisions before installing. Application data is within its
-own /app0, with /data/plexstation as its optional media folder.
+The title remains PPSA85301, separate from upstream VLC PPSA85300. Existing
+codec/decoder, Vulkan and audio-clock paths are retained. No browser runtime.
+`ui.cc` is historical upstream UI; PlexStation links `plex_ui.cc` instead.
 
-## New layers
+## Application layers
 
-- `plex/client.*`: typed media/resource parsing, device PIN requests, server
-  endpoint verification against machineIdentifier, page requests, progress,
-  watched state, conservative direct-play URL generation, credential files.
-- `plex/transport_curl.cc`: Linux transport, proxy-aware libcurl, verified TLS,
-  no automatic redirects, 5 s connect / 15 s whole-request timeout, 8 MiB limit.
-- `plex/transport_ps5.cc`: GnuTLS/socket transport, verified app CA store and
-  hostname, bounded connect/record waits and response size. Compiled and linked
-  in successful native PS5 builds; owner-confirmed authentication on build 2458e45; new profile flows still need acceptance. DNS resolution
-  runs on a worker but OS resolver duration remains platform-dependent.
-- `plex/artwork.*`: single asynchronous poster request/decode, server-sized
-  images, max 640x960 poster decode, max 12 cached GPU textures, LRU eviction.
-  Plex Home avatars accept validated Plex HTTPS/relative URLs and bounded safe
-  redirects, decode at most 2048 square and retain at most 256-square RGBA.
-  Credentials are confined to plex.tv; failed images retry after 300 frames. GPU
-  upload/free stays on the render thread. Obsolete account generations are
-  discarded. This is an in-memory cache, not a persistent disk cache.
-- `plex_ui.cc`: asynchronous metadata tasks, device linking, server selection,
-  libraries, show/season children, details, title search, manual endpoint
-  keyboard, paging, original-quality playback request, pause/seek/track
-  controls and live +/-500 ms audio offsets in 25 ms steps. Global audio
-  defaults and HTTP preference use the existing prefs layer.
+- `plex/client.*`: typed metadata, numeric bounds, JSON/XML account/profile
+  responses, PIN auth, Plex resources, endpoint identity and authenticated
+  library checks, paging, timeline/watched requests and direct-play adapter.
+- `plex/transport_curl.cc` and `transport_ps5.cc`: bounded HTTP, verified TLS,
+  hostname/CA checks and no general redirect following. The native backend
+  uses GnuTLS/socket I/O. DNS resolution duration remains OS-dependent.
+- `plex_ui.cc`: async job dispatch with screen/profile generation rejection,
+  profile/PIN controller navigation, verified cached endpoint startup, scoped
+  warm Home data, shared sidebar, poster grid, carousels, tabs and details.
+- `plex_video_ui.h`, `subtitles.h`, `subtitle_latch.h`: session/default subtitle
+  selection, unique language/title mapping to actual VLC IDs, external text
+  attachment with cancellation and no reopen, verified active selection, Off
+  across seek/pause. Plex stream IDs are never passed as VLC IDs.
+- `streaming.h`: original single-part H.264/HEVC MKV/MP4, PMS copy/transcode
+  decisions and HLS output with known codecs; separate local/remote quality
+  caps. Automatic is a deterministic policy, not measured bandwidth adaptation.
+  Burned subtitles and unknown decisions are rejected. Native runtime streaming
+  and session cleanup remain live/device acceptance requirements.
+- `audio.h`, `plex_audio_ui.h`, `music_feed.h`, `listening.h`: audio-only native
+  playback, artists/albums/tracks/playlists, bounded session queue, shuffle and
+  repeat. Audiobooks are explicitly designated music libraries, with separate
+  local book progress/bookmarks, chapter/rate/timer controls and server timestamp
+  reconciliation. No invented server audiobook type or normalized narrator API.
+- `home_feed.h`, `navigation.h`, `search.h`: actual permitted server hubs,
+  multi-library supplemental rows, default section IDs, categories and search.
+- `cloud.h`, `plex_cloud_ui.h`: real Plex Cloud Watchlist read/write endpoints,
+  filter/page/sort and GUID-to-local resolution. Managed-user cloud access is
+  disabled; no owner's cloud token is substituted. Provider acceptance pending.
+- `live_tv.h`: authorized personal DVR/provider channel/guide/tuning adapter.
+  No verified free-cloud-TV adapter or licensed Rentals DRM path. These remain
+  explicit capability limits, not simulated supported media.
 
-## Security and current limits
+## Image storage and GPU lifetime
 
-Credentials use a stable random device identifier, atomic writes and mode
-0600, with ownership and symlink checks on read. This is filesystem protection,
-not hardware-backed encryption. PS5 filesystem permission behavior and random
-source availability require device verification. Sign-out clears local tokens;
-it does not revoke the account's device authorization remotely. Do not include
-account files in backups or releases.
+`artwork.*` runs bounded image downloads/decodes on one asynchronous worker;
+GPU uploads/frees stay on the render thread. Poster and landscape requests use
+PMS image sizing. Up to 64 entries and 64 MiB retained RGBA are allowed; recently
+visible images and avatars receive eviction protection. `library_free_image`
+waits for submitted GPU work. Same-frame clears defer destruction to update.
 
-Requests send Plex tokens as headers. VLC playback currently uses a tokenized
-media-part URL, so unstructured VLC logging is suppressed and player-open
-messages redact URLs. No token is printed by the new client. Raw HTTP is
-explicitly opt-in; automatic discovery accepts it only for local-marked
-connections. Manual HTTP is the user's explicit choice and sends credentials
-unencrypted. General API redirects are refused. Avatar loading alone follows up to three
-validated Plex image redirects, withholding credentials from CDN hosts. Remote Plex endpoints need environment network access to
-that actual hostname; do not add a global wildcard speculatively.
+`cache.h` persists validated compressed images with hashed scope/keys, owned
+private directories/files, bounded reads, atomic writes and LRU byte/entry
+limits. Scopes include account/profile/server; avatars have a separate primary
+account cache. PS5 prefers `/data/plexstation-client`, falling back to the app
+path when needed. Disk persistence/permissions still require console testing.
+Corrupt cache entries are discarded and repaired. Valid disk copies are read
+without redownloading. PNG/JPEG avatars are decoded and bounded to 256 square;
+WebP/SVG are unsupported. Avatar redirects are limited to permitted Plex HTTPS
+origins, at most three hops, with credentials withheld from image CDNs.
 
-Only Original-quality single-part H.264/HEVC MKV/MP4 direct-play is implemented.
-It is a requested mode, not proof of active decoding or working playback.
-Direct Stream, transcoding decisions, bandwidth adaptation, external subtitle
-retrieval and subtitle appearance UI are not implemented. Existing libVLC
-embedded track controls are exposed. No JWT flow is claimed: device PIN
-requests now use non-strong TV PINs, corrected browser-auth QR URLs and a tested
-asynchronous lifecycle. See AUTHENTICATION.md for accessible references and
-official-site access limits; owner-confirmed primary-account authentication is distinct from pending Plex Home acceptance.
+## Persistence, privacy and validation
 
-The native TV UI includes actual Home carousels, cast/genre presentation,
-basic sorting/filtering and account/profile-scoped automatic server reconnection.
-The full requested Plex experience remains incomplete: cloud Watchlist, advanced
-filters, automatic next episode, per-item offsets and full localization are not
-implemented. Progress updates are coalesced at 10-second intervals and on state
-changes; a failed update is reported, but an offline retry queue is not
-implemented. New Home/profile flows have fixture coverage, with live PMS and
-physical acceptance still pending. See TV-CLIENT-STATUS.md for the full matrix.
+Account credentials are mode 0600, ownership/symlink checked and atomically
+written. Primary token persists only in the private account file; switched
+profile tokens stay in memory. PINs are masked and cleared; PIN input logging
+is suppressed. Profile restore never bypasses a required PIN. Cached Home is
+presented only after current identity and authenticated library access checks.
+Tokens/playback URLs are absent from preferences, cache keys and public logs.
+Native player logging redacts authenticated sources. HTTP is explicit local
+opt-in; no TLS downgrade or certificate bypass.
 
+`plex_progress_ui.h` and `progress_outbox.h` coalesce timeline requests and keep
+a token-free scoped durable retry queue with freshness reconciliation. Local
+book progress is distinct from music and per-track server progress. Live TV
+must not generate library timeline/scrobble updates.
 
-Plex Home now keeps the primary linked token in the existing private credential
-file and switched tokens in memory. Fresh validated profile identity scopes
-resource discovery, server preferences and timeline/playback authorization.
-PIN entry suppresses raw/focus input diagnostics. Home feeds use actual
-Continue Watching/server hubs and bounded supplemental metadata queries.
-There are 12 cached textures, one asynchronous fetch/decode at a time, no
-bulk library image preload, and generation checks on screen/profile changes.
-See PLEX-HOME.md and CRASH-DIAGNOSTICS.md for protocol references, matching debug
-artifacts and the still-unconfirmed physical abort diagnosis.
-
-
-## Media expansion after the physical-testing baseline
-
-The native UI now includes small audio/video/progress/cloud UI adapters, using
-the same render thread, bounded Artwork cache, controller and single async
-metadata worker. Audio-only playback passes :no-video to the original VLC player;
-it never requires a video texture. Music queues are bounded to 2000 lightweight
-items and resolve each track on demand. Artist/album/track metadata is typed.
-
-PlexStation-local listening and durable progress files use stable profile/PMS
-scope and contain no authentication token or playback URL. Atomic writes, owner/
-mode checks and caps protect their storage. Newer known PMS timestamps take
-precedence over stale retries; absence of reliable timestamps/clock correlation
-limits cross-device reconciliation. Switched profile tokens stay memory-only.
-
-Universal streaming decisions distinguish video copy from transcode and reject
-unknown output codecs. Original playback remains available. HLS startup, segment
-authorization and actual PS5 codec/output behavior are acceptance requirements.
-Cloud Watchlist uses the actual provider and validated profile token, then maps
-cloud GUIDs to permitted local media before playback; managed-user cloud access
-is disabled pending isolation verification. See MEDIA-EXPANSION.md for the
-current source/fixture/native/device matrix. Older incomplete-feature statements
-above describe the original foundation and are superseded by that matrix.
-
-## October 23 continuation
-
-The current cache/subtitle/startup/navigation behavior supersedes the original
-foundation limits above. `plex/subtitles.h` separates Plex stream metadata from
-VLC IDs; `player.cc` cancels stale external selections and supports a no-reopen
-attachment mode. `plex/storage.h` configures private persistent cache storage;
-artwork state diagnostics distinguish per-image loading, retrieval, decode and
-upload failures. `plex/navigation.h` scopes default routing and recommendations
-to authorized libraries. `plex/live_tv.h` uses the official PMS DVR/provider/EPG/
-tune/session APIs with the active profile token; it does not implement Plex's
-separate cloud/free-TV or rental/DRM service. See the October 23 status matrix for
-source, host, native and physical acceptance boundaries.
+Host fixtures validate application behavior using fake player/GPU/services;
+transport suites use real loopback HTTP/TLS. ASan/UBSan catch host memory errors.
+GitHub Actions `build-ps5.yml` performs real compilation, SELF conversion,
+package validation and matching debug collection. Only the owner's device tests
+establish firmware/controller/codec/display/avatar/synchronization acceptance.
+See [validation](VALIDATION.md) and the audit for exact evidence and remaining
+limits, including bandwidth adaptation, localization and external service APIs.

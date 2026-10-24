@@ -1,5 +1,11 @@
 # Validation record
 
+> Historical checkpoint evidence follows. For the current source, defects,
+> corrections and owner-confirmed baseline, use [the full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
+> Older statements that music, Watchlist, persistent artwork, streaming or
+> native video are absent describe the named old build, not the current tree.
+
+
 Host observations in the Linux cloud environment on 2026-10-20 are preserved
 below. Successful hosted native build evidence from 2026-10-21 follows.
 

@@ -1,26 +1,21 @@
 # PlexStation
 
-Current continuation: [October 23 remaining-features status and PS5 checklist](docs/REMAINING-FEATURES-2026-10-23.md). Source implementation and host tests are distinct from the owner-tested `5d8adb9` baseline.
+Native PS5 Plex client built on [ZiZc3/VLC](https://github.com/ZiZc3/VLC),
+using the existing native VLC decoder, Vulkan renderer and timestamped audio.
+The owner confirms launch, Plex authentication, Home profile selection, server
+connection, native video and subtitles initially Off at `5d8adb9`. The earlier
+working baseline `1ad4f6c4ab562762bd4c2ffa958cc098e234528a` is preserved.
 
+Current source audit: [full feature matrix, defects and acceptance evidence](docs/FULL-IMPLEMENTATION-AUDIT.md).
+[Native build 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391)
+passed for `208b5be1ec73f6fa11797dbd3ae2b21262eafce3`, with installation and
+matching symbols. Later feature changes require their own build and PS5 tests.
+Historical crash reports remain in the investigation documents; they do not
+supersede the owner's newer confirmed working video baseline.
 
-Native PS5 homebrew Plex client under development, derived from
-[ZiZc3/VLC](https://github.com/ZiZc3/VLC). This repository contains real client
-and native UI code, but **is not yet a complete or verified PS5 application**.
-A real native PS5 build and complete installation artifact are available from
-[native stability, Plex Home and TV UI build 39702538057](https://github.com/tattedbeardo89/PlexStation/actions/runs/39702538057),
-built from `d52e5cd39ad6689f1f917179a6d1761132adde03`.
-This is the preserved physical-testing baseline, tagged
-`baseline/ps5-physical-test-d52e5cd`. New development does not replace its artifacts.
-See [artifact names, implemented scope and device test checklist](docs/TV-CLIENT-STATUS.md).
-The owner confirms launch, Plex authentication, PMS connection and available
-library retrieval on connectivity build 2458e45. Entering Movies then aborts on
-that build. Separate ShadowMountPlus SIGSYS evidence is not yet correlated to
-a build/launch. No physical crash resolution or playback acceptance is claimed.
-
-Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**.
-Launch/UI rendering is owner-confirmed; input and playback need verification. PlexStation
-uses independent development identity **PPSA85301**; VLC's **PPSA85300** is
-preserved. No replacement jailbreak or browser runtime is introduced.
+Target: firmware **13.40**, **kstuff Lite**, **ShadowMountPlus 1.7 Beta 5 Fix 1**,
+DualSense and independent title **PPSA85301**. Keep VLC **PPSA85300** separate.
+No replacement jailbreak, browser player or new rendering framework is used.
 
 ## Build the native title in GitHub Actions
 
@@ -48,7 +43,7 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 - Resource parsing and endpoint fallback with selected-server identity checks.
 - Asynchronous native ImGui library browsing, show/season children, details,
   controller keyboard search/manual entry, paging and version selection.
-- Bounded asynchronous poster fetch/decode and a 12-texture memory cache.
+- Bounded asynchronous poster fetch/decode and a bounded 64-entry / 64 MiB GPU cache and scoped persistent disk cache.
 - Original single-part H.264/HEVC MKV/MP4 playback, plus asynchronous PMS
   copy/transcode decisions, local/remote quality caps and HLS fallback paths.
 - Native Music artists/albums/tracks/playlists, content shelves, audio-only
@@ -62,13 +57,16 @@ PS5 build succeeds on GitHub Actions. See the build guide.
   from -500 to +500 ms in 25 ms steps; persistent global delay preference.
 - Coalesced timelines, token-free durable retry/reconciliation, configurable
   completion thresholds and cancellable next-episode autoplay.
-- Original PlexStation icon/loading assets and independent title metadata.
+- Scoped cached-endpoint fast reconnect, warm Home presentation, library tabs,
+  automatic video defaults, Home Movies, seasonal rows and sidebar controls.
+- Personal Live TV channel/guide/tune adapter; free cloud TV and protected
+  Rentals explicitly unavailable without verified supported authorization/DRM.
+- Original angular SVG/PNG/DXT1 branding and independent PPSA85301 metadata.
 
-These are implemented source paths. Native compilation, linking and package
-checks passed in Actions, and the owner confirmed PS5 launch/UI rendering.
-Plex linking, PMS connection and library discovery are owner-confirmed on the
-older build. Full browsing, revised profile/Home flows, playback and audio sync
-still require acceptance.
+These are implemented source paths, with host fixtures and successful native
+builds. Only the baseline behaviors described above have owner acceptance.
+Subtitle changes, avatars, artwork retention, new Home/navigation, music,
+audiobooks, streaming and external-service behavior need device/live testing.
 
 ## Incomplete features
 
