@@ -60,7 +60,8 @@ void audio_load(const std::string &path,const std::string &title,bool push=true,
 }
 void audio_library_tab(int tab) {
     if(job!=None || active_library.id.empty())return;
-    if(tab==0){auto b=base,t=server_token;auto section=active_library;bool books=audio.books;auto local=listening.books(audio_scope());submit(AudioFeed,[b,t,section,books,local]{return music_feed(*client,b,t,section,books,local);});return;}
+    highlight_library(active_library);
+    if(tab==0){audio.screen=false;home_screen=true;feed_rows.clear();feed_columns.clear();feed_scroll.clear();feed_focus=0;feed_vertical=0;home_title=audio.books?"Audiobooks":"Music";auto b=base,t=server_token;auto section=active_library;bool books=audio.books;auto local=listening.books(audio_scope());submit(AudioFeed,[b,t,section,books,local]{return music_feed(*client,b,t,section,books,local);});return;}
     audio.screen=true;audio.now_playing=false;home_screen=false;
     if(tab==2){
         audio.request_path="/library/sections/"+encode(active_library.id)+"/categories";audio.request_title=active_library.title+" / Categories";audio.request_start=0;audio.request_push=false;
@@ -222,8 +223,8 @@ std::string audio_label(const Item &i) {
 bool audio_frame(uint32_t hit,float) {
     if(audio.screen && !audio.now_playing && !audio.queue_view && !audio.menu && library_context && !sidebar && !settings) {
         library_tabs_frame();
-        if(library_tabs_focus){if(hit & PAD_LEFT)library_tab=std::max(0,library_tab-1);if(hit & PAD_RIGHT)library_tab=std::min(2,library_tab+1);if(hit & PAD_CROSS){audio_library_tab(library_tab);library_tabs_focus=false;}if(hit & PAD_DOWN)library_tabs_focus=false;return true;}
-        if((hit & PAD_UP) && audio.focus==0){library_tabs_focus=true;return true;}
+        if(library_tabs_focus){if(hit & PAD_LEFT)library_tab=std::max(0,library_tab-1);if(hit & PAD_RIGHT)library_tab=std::min(2,library_tab+1);if(hit & PAD_CROSS){audio_library_tab(library_tab);library_tabs_focus=false;}if(hit & PAD_DOWN)library_tabs_focus=false;hit=0;}
+        if((hit & PAD_UP) && audio.focus==0){library_tabs_focus=true;hit=0;}
     }
 
     if(audio.active && !audio.now_playing && !video && !settings && !profile_screen)

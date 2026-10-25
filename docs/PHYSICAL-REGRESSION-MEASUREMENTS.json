@@ -1,0 +1,87 @@
+{
+  "method": "Five runs each, identical common host client/compiler, controlled 10 ms per request, feed composition only; not PS5 boot, live latency, authorization selection or GPU measurement.",
+  "baseline_commit": "e79d5bd3a882cb6c841de4d0a8cd084bd1eb840a",
+  "candidate": "physical-regression source; final source SHA recorded in build evidence",
+  "samples": [
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.299,
+      "complete_metadata_ms": 152.299,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 156.113,
+      "complete_metadata_ms": 156.113,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 156.432,
+      "complete_metadata_ms": 156.433,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.695,
+      "complete_metadata_ms": 152.695,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.854,
+      "complete_metadata_ms": 152.854,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.261,
+      "complete_metadata_ms": 101.953,
+      "requests": 10,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.249,
+      "complete_metadata_ms": 101.982,
+      "requests": 10,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.273,
+      "complete_metadata_ms": 102.158,
+      "requests": 10,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.29,
+      "complete_metadata_ms": 103.151,
+      "requests": 10,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.314,
+      "complete_metadata_ms": 102.173,
+      "requests": 10,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    }
+  ]
+}

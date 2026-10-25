@@ -1,5 +1,13 @@
 # Validation record
 
+Current owner-reported PS5 regressions and targeted validation:
+[physical-regression checkpoint](PS5-PHYSICAL-REGRESSIONS.md). The owner tested
+native source f5f34a4; the new source requires a fresh native build and separate
+physical acceptance. Initial-frame tests rasterize completed native ImGui commands
+with fixture textures at 1080p/4K; they are not console GPU screenshots. The
+Windows FTP artwork reporter is tested with a read-only fake FTP boundary; this
+environment has not contacted the console or established the stale-icon cause.
+
 > Historical checkpoint evidence follows. For the current source, defects,
 > corrections and owner-confirmed baseline, use [the full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
 > Older statements that music, Watchlist, persistent artwork, streaming or

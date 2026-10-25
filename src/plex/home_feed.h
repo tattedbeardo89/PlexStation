@@ -13,6 +13,7 @@ inline bool personal_library(const Item &section) {
     return name=="home movies";
 }
 struct Hub {std::string id,title;bool continuing=false;std::vector<Item> entries;};
+inline std::string stable_media_identity(const Item &item){return item.type+":"+(item.guid.empty()?item.id:item.guid);}
 inline std::vector<Hub> home_rows(const Json &data) {
     std::vector<Hub> rows;auto list=data.find("rows");if(list==data.end() || !list->is_array())return rows;
     for(const auto &row:*list) {
@@ -24,109 +25,76 @@ inline std::vector<Hub> home_rows(const Json &data) {
     }
     return rows;
 }
+// Home is a closed six-slot composition. Global/scoped aliases feed one slot,
+// never independent rails; IDs remain stable through refresh and warm snapshots.
+inline const std::vector<std::string> &home_order(){
+    static const std::vector<std::string> value={"continueWatching","recentlyReleasedMovies","recentlyReleasedTV","recentlyAddedMovies","recentlyAddedTV","seasonal"};return value;
+}
+inline Json ordered_home(const Json &source){
+    Json rows=Json::array();auto list=source.find("rows");
+    if(list!=source.end() && list->is_array())for(const auto &id:home_order())for(const auto &row:*list)
+        if(text(row,"id")==id){rows.push_back(row);break;}
+    return Json{{"rows",rows},{"warnings",source.value("warnings",Json::array())}};
+}
 inline Result home_feed(Client &client,const std::string &base,const std::string &token,
                         const std::vector<Item> &sections,const std::function<bool()> &current=[] {return true;},
                         const std::function<void(const Json&)> &publish={}) {
-    Json rows=Json::array(), warnings=Json::array(), extra_rows=Json::array();
-    auto row=[&](const std::string &id,const std::string &title,const Json &data,bool continuing=false,bool extra=false) {
-        Json &target=extra ? extra_rows : rows;
-        if(continuing)for(const auto &r:rows)if(flag(r,"continuing"))return;
-        for(const auto *list:{&rows,&extra_rows})for(const auto &r:*list)if(text(r,"id")==id)return;
-        auto entries=items(data,false);if(entries.empty() || target.size()>=(extra ? 4u : 12u))return;
-        Json metadata=Json::array();std::set<std::string> item_ids;
-        for(const auto &i:entries) {
-            if(i.type!="movie" && i.type!="episode" && i.type!="show" && i.type!="season" && i.type!="collection")continue;
-            if(id.rfind("recentlyAddedTV",0)==0 && i.type!="show")continue;
-            if(id.rfind("recentlyReleasedTV",0)==0 && i.type!="episode")continue;
-            if((id.rfind("recentlyAddedMovies",0)==0 || id.rfind("recentlyReleasedMovies",0)==0) && i.type!="movie")continue;
-            if(id.find("recentlyReleased")!=std::string::npos && !released_date(i.released))continue;
-            if(!item_ids.insert(i.type+":"+i.id).second)continue;
-            metadata.push_back(item_json(i));
-            if(metadata.size()==12)break;
-        }
-        if(id.rfind("recentlyReleased",0)==0)std::stable_sort(metadata.begin(),metadata.end(),[](const Json &a,const Json &b){return text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt");});
-        if(id.rfind("recentlyAdded",0)==0)std::stable_sort(metadata.begin(),metadata.end(),[](const Json &a,const Json &b){return number(a,"addedAt")>number(b,"addedAt");});
-        // A global/scoped alias with identical content is one logical rail.
-        // Distinct explicit library scopes remain distinct even with similar titles.
-        auto at=id.find('@');auto semantic=id.substr(0,at);
-        if(!metadata.empty())for(const auto &old:rows){auto old_id=text(old,"id");auto split=old_id.find('@');
-            if(old_id.substr(0,split)!=semantic || (at!=std::string::npos && split!=std::string::npos))continue;
-            std::set<std::string> before,after;for(const auto &item:items(old["payload"],false))before.insert(item.type+":"+item.id);
-            for(const auto &item:metadata)after.insert(text(item,"type")+":"+text(item,"ratingKey"));
-            if(before==after)return;
-        }
-        if(!metadata.empty())target.push_back({{"id",id},{"title",title},{"continuing",continuing},{"payload",{{"MediaContainer",{{"Metadata",std::move(metadata)}}}}}});
-        if(publish && current())publish(Json{{"rows",rows}});
+    std::map<std::string,std::vector<Item>> slots;Json warnings=Json::array();
+    std::set<std::string> authorized;for(const auto &section:sections)authorized.insert(section.id);
+    auto snapshot=[&] {
+        Json rows=Json::array();for(const auto &id:home_order()) {
+            auto &entries=slots[id];if(entries.empty())continue;
+            if(id.find("Released")!=std::string::npos)std::stable_sort(entries.begin(),entries.end(),[](const Item &a,const Item &b){return a.released==b.released?stable_media_identity(a)<stable_media_identity(b):a.released>b.released;});
+            else if(id.find("Added")!=std::string::npos)std::stable_sort(entries.begin(),entries.end(),[](const Item &a,const Item &b){return a.added==b.added?stable_media_identity(a)<stable_media_identity(b):a.added>b.added;});
+            Json values=Json::array();for(const auto &item:entries){values.push_back(item_json(item));if(values.size()==12)break;}
+            rows.push_back({{"id",id},{"title",semantic_title(id,id)},{"continuing",id=="continueWatching"},{"payload",{{"MediaContainer",{{"Metadata",values}}}}}});
+        }return Json{{"rows",rows},{"warnings",warnings}};
     };
-    auto get=[&](const std::string &path) {
-        if(!current())return Result{{},"Home loading cancelled",0};
-        return client.call("GET",base,path,token);
-    };
-    auto cw=get("/hubs/continueWatching?X-Plex-Container-Start=0&X-Plex-Container-Size=12");
-    if(cw)row("continueWatching","Continue Watching",cw.data,true);
-    else warnings.push_back("Continue Watching unavailable on this server (HTTP "+std::to_string(cw.status)+")");
-    if(!current())return {{},"Home loading cancelled",0};
-    auto hubs=get("/hubs?count=12&includeEmpty=0");
-    if(hubs) {
-        auto c=hubs.data.find("MediaContainer");
-        if(c!=hubs.data.end() && c->is_object()) {
-            auto h=c->find("Hub");if(h!=c->end() && h->is_array())
-                for(const auto &hub:*h) {
-                    auto original=text(hub,"hubIdentifier",text(hub,"key"));auto semantic=hub_semantic(hub);
-                    auto scope=text(hub,"librarySectionID",number(hub,"librarySectionID")>0?std::to_string(number(hub,"librarySectionID")):"");
-                    if(scope.empty()){
-                        auto entries=items(Json{{"MediaContainer",hub}},false);std::string common;bool mixed=false;
-                        for(const auto &item:entries){if(item.section_id.empty()){mixed=true;break;}if(common.empty())common=item.section_id;else if(common!=item.section_id){mixed=true;break;}}
-                        if(!mixed)scope=common;
-                    }
-                    std::string suffix;
-                    if(!scope.empty())for(const auto &section:sections)if(section.id==scope){suffix=" • "+section.title;break;}
-                    auto id=semantic.empty()?"hub:"+original:semantic+(scope.empty()?"":"@"+scope);
-                    row(id,semantic_title(semantic,text(hub,"title","From your server"))+suffix,Json{{"MediaContainer",hub}},semantic=="continueWatching",semantic.empty());
-                }
-        }
-    }
-    auto has=[&](const std::string &part) {for(const auto &r:rows){auto id=text(r,"id");std::transform(id.begin(),id.end(),id.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});if(id.find(part)!=std::string::npos)return true;}return false;};
-    auto add=[&](const std::string &id,const std::string &title,const std::string &path) {
-        if(rows.size()>=12 || !current())return;
-        auto r=get(path);if(r)row(id,title,r.data);
-    };
-    auto aggregate=[&](const std::string &id,const std::string &title,const std::string &type,const std::string &suffix,bool released=false){
-        Json merged=Json::array();std::set<std::string> seen;int queried=0;
-        for(const auto &section:sections) {
-            if((type=="video"?(section.type!="movie" && section.type!="show"):section.type!=type) || personal_library(section) || !current())continue;
-            if(++queried>(id=="personalizedCollections"?4:32)){warnings.push_back("Supplemental Home aggregation capped at 32 sections per category");break;}
-            auto response=get("/library/sections/"+encode(section.id)+suffix+"&X-Plex-Container-Size=12");if(!response)continue;
-            auto mc=response.data.find("MediaContainer");if(mc==response.data.end() || !mc->is_object())continue;
-            int count=0;for(const auto &i:items(response.data,false)){
-                if(++count>12)break;
-                if((id=="personalizedCollections" && i.type!="collection") || !seen.insert(i.id).second)continue;
-                if(released && !released_date(i.released))continue;
-                auto value=item_json(i);if(i.section_id.empty())value["librarySectionID"]=section.id;
-                merged.push_back(std::move(value));
+    auto merge=[&](const std::string &id,const Json &payload,const std::string &section="") {
+        if(std::find(home_order().begin(),home_order().end(),id)==home_order().end())return;
+        auto &target=slots[id];std::set<std::string> seen;for(const auto &item:target)seen.insert(stable_media_identity(item));
+        for(auto item:items(payload,false)) {
+            if(item.id.empty() || (!item.section_id.empty() && !authorized.count(item.section_id)))continue;
+            if(item.section_id.empty())item.section_id=section;
+            if(id=="continueWatching") {if(item.type!="movie" && item.type!="episode")continue;if(item.watched && item.offset<=0)continue;if(item.duration>0 && item.offset>=item.duration)continue;}
+            else if(id=="recentlyAddedTV") {if(item.type!="show")continue;}
+            else if(item.type!=(id=="recentlyReleasedTV"?"episode":"movie"))continue;
+            if(id.find("Released")!=std::string::npos && !released_date(item.released))continue;
+            if(seen.insert(stable_media_identity(item)).second && target.size()<384)target.push_back(std::move(item));
+            else if(id!="continueWatching")for(auto &old:target)if(old.id==item.id){
+                auto fill=[](std::string &value,const std::string &fallback){if(value.empty())value=fallback;};
+                fill(old.thumb,item.thumb);fill(old.art,item.art);fill(old.parent_thumb,item.parent_thumb);fill(old.grandparent_thumb,item.grandparent_thumb);fill(old.parent_art,item.parent_art);fill(old.grandparent_art,item.grandparent_art);
+                old.added=std::max(old.added,item.added);if(old.released.empty())old.released=item.released;
+                break;
             }
-            std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
-            if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
         }
-        std::stable_sort(merged.begin(),merged.end(),[&](const Json &a,const Json &b){return released?text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt"):number(a,"addedAt")>number(b,"addedAt");});
-        if(merged.size()>12)merged.erase(merged.begin()+12,merged.end());
-        row(id,title,Json{{"MediaContainer",{{"Metadata",std::move(merged)}}}});
+        if(publish && current())publish(snapshot());
     };
-    if(!has("recentlyaddedmovies"))aggregate("recentlyAddedMovies","Recently Added Movies","movie","/recentlyAdded?type=1");
-    if(!has("recentlyreleasedmovies"))aggregate("recentlyReleasedMovies","Recently Released Movies","movie","/all?type=1&sort=originallyAvailableAt:desc",true);
-    if(!has("recentlyaddedtv"))aggregate("recentlyAddedTV","Recently Added TV Shows","show","/all?type=2&sort=addedAt:desc");
-    if(!has("recentlyreleasedtv"))aggregate("recentlyReleasedTV","Recently Released TV Episodes","show","/all?type=4&sort=originallyAvailableAt:desc",true);
-    if(!has("collections"))aggregate("personalizedCollections","Personalized Collections","video","/collections?sort=titleSort:asc");
-    if(!has("ondeck"))add("onDeck","On Deck / Next Episodes","/library/onDeck?X-Plex-Container-Size=12");
+    auto get=[&](const std::string &path){return current()?client.call("GET",base,path,token):Result{{},"Home loading cancelled",0};};
+    auto cw=get("/hubs/continueWatching?X-Plex-Container-Start=0&X-Plex-Container-Size=12");
+    if(cw)merge("continueWatching",cw.data);else warnings.push_back("Continue Watching unavailable on this server (HTTP "+std::to_string(cw.status)+")");
+    auto hubs=get("/hubs?count=12&includeEmpty=0");
+    if(hubs){auto mc=hubs.data.find("MediaContainer");if(mc!=hubs.data.end() && mc->is_object()){
+        auto list=mc->find("Hub");if(list!=mc->end() && list->is_array())for(const auto &hub:*list){
+            auto scope=text(hub,"librarySectionID",number(hub,"librarySectionID")>0?std::to_string(number(hub,"librarySectionID")):"");
+            if(!scope.empty() && !authorized.count(scope))continue;
+            merge(hub_semantic(hub),Json{{"MediaContainer",hub}},scope);
+        }
+    }}
+    struct Category {const char *id,*type,*path;};
+    const Category categories[]={
+        {"recentlyReleasedMovies","movie","/all?type=1&sort=originallyAvailableAt:desc"},
+        {"recentlyReleasedTV","show","/all?type=4&sort=originallyAvailableAt:desc"},
+        {"recentlyAddedMovies","movie","/recentlyAdded?type=1"},
+        {"recentlyAddedTV","show","/all?type=2&sort=addedAt:desc"}};
+    for(const auto &category:categories){int queried=0;for(const auto &section:sections){
+        if(!current())return {{},"Home loading cancelled",0};
+        if(section.type!=category.type || personal_library(section))continue;
+        if(++queried>32){warnings.push_back("Home aggregation capped at 32 authorized sections per category");break;}
+        auto result=get("/library/sections/"+encode(section.id)+category.path+"&X-Plex-Container-Size=12");
+        if(result)merge(category.id,result.data,section.id);
+    }}
     if(!current())return {{},"Home loading cancelled",0};
-    for(auto &row:extra_rows) {if(rows.size()==12)break;rows.push_back(std::move(row));}
-    Json ordered=Json::array();bool continuing=false;
-    for(const auto &row:rows)if(flag(row,"continuing")) {ordered.push_back(row);continuing=true;}
-    const char *preferred[]={"recentlyReleasedMovies","recentlyAddedMovies","recentlyReleasedTV","recentlyAddedTV"};
-    std::set<std::string> placed;
-    for(const auto *id:preferred)for(const auto &row:rows)if(text(row,"id")==id || text(row,"id").rfind(std::string(id)+"@",0)==0){ordered.push_back(row);placed.insert(text(row,"id"));}
-    for(const auto &row:rows)if(!flag(row,"continuing") && !placed.count(text(row,"id")))ordered.push_back(row);
-    if(continuing)warnings=Json::array();
-    return {Json{{"rows",std::move(ordered)},{"warnings",std::move(warnings)}},"",200};
+    return {snapshot(),"",200};
 }
 }

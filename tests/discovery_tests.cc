@@ -29,7 +29,7 @@ int main(){
   return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
  },"fixture");
  Item a,b;a.id="1";b.id="2";a.type=b.type="movie";
- rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==3 && second==3 && rows.size()==2 && std::any_of(rows.begin(),rows.end(),[](const Hub &h){return h.id=="recentlyAddedMovies" && h.entries.size()==2 && h.entries[0].id=="new";}));
+ rows=home_rows(home_feed(aggregate,"https://pms.invalid","active-profile",{a,b}).data);assert(first==2 && second==2 && rows.size()==2 && std::any_of(rows.begin(),rows.end(),[](const Hub &h){return h.id=="recentlyAddedMovies" && h.entries.size()==2 && h.entries[0].id=="new";}));
  Client denied([](const Request &){return Reply{403,"private response must not be logged",""};},"fixture");assert(!cloud_watchlist(denied,"restricted"));
  Item music;music.id="music";music.type="artist";assert(home_rows(music_feed(denied,"https://pms.invalid","restricted",music,false).data).empty());
  Item home;a.title="Movies";home.id="personal";home.title="Home Movies";home.type="movie";

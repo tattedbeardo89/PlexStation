@@ -7,6 +7,11 @@
 #include <ctime>
 #include <set>
 namespace plex {
+inline std::string utf8_prefix(const std::string &value,size_t limit){
+    if(value.size()<=limit)return value;
+    while(limit && (static_cast<unsigned char>(value[limit])&0xc0)==0x80)--limit;
+    return value.substr(0,limit);
+}
 enum class CardKind {Poster,Episode,Square,Book,Category};
 inline CardKind card_kind(const Item &item,bool books=false,bool personal=false) {
     if(item.type=="category" || item.type=="audio-route" || item.type=="collection")return CardKind::Category;
@@ -71,13 +76,13 @@ inline bool released_date(const std::string &date){
 }
 inline std::string safe_image_identity(std::string value){return clean_image_url(value)?value:std::string();}
 inline Json item_json(const Item &i) {
-    return {{"ratingKey",i.id},{"key",i.key},{"librarySectionID",i.section_id},{"type",i.type},{"title",i.title},{"summary",i.summary},{"thumb",safe_image_identity(i.thumb)},{"art",safe_image_identity(i.art)},{"parentThumb",safe_image_identity(i.parent_thumb)},{"grandparentThumb",safe_image_identity(i.grandparent_thumb)},{"parentArt",safe_image_identity(i.parent_art)},{"grandparentArt",safe_image_identity(i.grandparent_art)},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"parentIndex",i.season},{"index",i.episode},{"grandparentTitle",i.series},{"originallyAvailableAt",i.released},{"addedAt",i.added}};
+    return {{"ratingKey",i.id},{"guid",i.guid},{"key",i.key},{"librarySectionID",i.section_id},{"type",i.type},{"title",i.title},{"summary",i.summary},{"thumb",safe_image_identity(i.thumb)},{"art",safe_image_identity(i.art)},{"parentThumb",safe_image_identity(i.parent_thumb)},{"grandparentThumb",safe_image_identity(i.grandparent_thumb)},{"parentArt",safe_image_identity(i.parent_art)},{"grandparentArt",safe_image_identity(i.grandparent_art)},{"year",i.year},{"duration",i.duration},{"viewOffset",i.offset},{"viewCount",i.watched?1:0},{"parentIndex",i.season},{"index",i.episode},{"grandparentTitle",i.series},{"originallyAvailableAt",i.released},{"addedAt",i.added}};
 }
 inline std::string hub_semantic(const Json &hub) {
-    auto id=compact_key(text(hub,"hubIdentifier",text(hub,"key"))),type=text(hub,"type");
+    auto id=compact_key(text(hub,"hubIdentifier",text(hub,"key")))+compact_key(text(hub,"title")),type=text(hub,"type");
     if(type.empty()){auto entries=items(Json{{"MediaContainer",hub}},false);if(!entries.empty())type=entries.front().type;}
-    if(id.find("continuewatching")!=std::string::npos)return "continueWatching";
     if(id.find("ondeck")!=std::string::npos)return "onDeck";
+    if(id.find("continuewatching")!=std::string::npos || id.find("inprogress")!=std::string::npos)return "continueWatching";
     if(id.find("recentlyadded")!=std::string::npos){if(type=="movie")return "recentlyAddedMovies";if(type=="show")return "recentlyAddedTV";if(type=="episode")return "recentlyAddedEpisodes";}
     if(id.find("recentlyreleased")!=std::string::npos || id.find("recentlyaired")!=std::string::npos){if(type=="movie")return "recentlyReleasedMovies";if(type=="episode")return "recentlyReleasedTV";}
     if(type=="collection" || id.find("collection")!=std::string::npos)return "collections";

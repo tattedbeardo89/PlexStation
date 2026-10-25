@@ -1,6 +1,8 @@
 # PlexStation
 
-Current stabilization candidate: [PS5 UI/artwork/startup changes, measurements and acceptance evidence](docs/PS5-STABILIZATION.md).
+Current candidate: [physical PS5 regression fixes, authorized libraries, exact Home composition, initial rendering, and Windows read-only icon diagnostics](docs/PS5-PHYSICAL-REGRESSIONS.md).
+
+Earlier stabilization: [PS5 UI/artwork/startup changes, measurements and acceptance evidence](docs/PS5-STABILIZATION.md).
 
 Native PS5 Plex client built on [ZiZc3/VLC](https://github.com/ZiZc3/VLC),
 using the existing native VLC decoder, Vulkan renderer and timestamped audio.

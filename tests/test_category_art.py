@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-import hashlib,json,pathlib,shutil,struct,subprocess,tempfile,zlib
+import hashlib,json,pathlib,shutil,struct,subprocess,tempfile,zlib,xml.etree.ElementTree as ET,importlib.util
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+spec=importlib.util.spec_from_file_location('category_art',ROOT/'tools/make-category-art.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+label='Κωμωδία & Криминал / An unknown, long category'
+assert ET.fromstring(module.svg(label)).find('{http://www.w3.org/2000/svg}text').text==label
 with tempfile.TemporaryDirectory() as tmp:
  root=pathlib.Path(tmp);a=root/'a';b=root/'b'
  for out in [a,b]:subprocess.run(['python3',str(ROOT/'tools/make-category-art.py'),'--output',str(out)],check=True,capture_output=True)
@@ -8,6 +11,9 @@ with tempfile.TemporaryDirectory() as tmp:
  assert len({hashlib.sha256(p.read_bytes()).hexdigest() for p in images})==16
  for path in images:
   data=path.read_bytes();assert data==(b/path.name).read_bytes() and struct.unpack('>II',data[16:24])==(320,180)
+  master=ET.parse(ROOT/'assets/categories'/(path.stem+'.svg')).getroot()
+  assert any(node.tag.endswith('text') and node.text for node in master)
+  assert not any(node.tag.endswith(('polygon','circle','path')) for node in master)
  stage=root/'PPSA85301';(stage/'sce_sys').mkdir(parents=True);shutil.copy(ROOT/'ps5/sce_sys/param.json',stage/'sce_sys/param.json');shutil.copy(ROOT/'ps5/sce_sys/icon0.png',stage/'sce_sys/icon0.png');(stage/'prefs.txt').write_text('preserve')
  def run(*args,check=True):return subprocess.run(['python3',str(ROOT/'tools/artwork-diagnostics.py'),*map(str,args)],capture_output=True,check=check)
  before={str(p.relative_to(stage)):p.read_bytes() for p in stage.rglob('*') if p.is_file()}

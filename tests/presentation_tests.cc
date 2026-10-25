@@ -8,6 +8,7 @@
 #include <cassert>
 #include <iostream>
 using namespace plex;
+#include "physical_composition_cases.h"
 int main(){
  Item movie;movie.type="movie";Item show=movie;show.type="show";Item episode=movie;episode.type="episode";Item album=movie;album.type="album";Item category=movie;category.type="category";
  assert(card_kind(movie)==CardKind::Poster && card_kind(show)==CardKind::Poster && card_kind(episode)==CardKind::Episode);
@@ -24,6 +25,7 @@ int main(){
  auto sources=image_candidates(episode,true);assert(sources.front()=="/episode" && sources.back()=="/show");
  episode.thumb=episode.parent_thumb;sources=image_candidates(episode,true);assert(sources.front()=="/series-art");
  assert(initials("Alice Beardo")=="AB" && initials("")=="?" && category_art("Genre: Science Fiction")=="science-fiction" && category_art("Unknown category")=="other");
+ physical_composition_cases();
  Request q;std::string key;
  assert(!image_request("https://server.invalid","private","?X-Plex-Token=secret",false,q,key));
  assert(image_request("https://server.invalid","private","/library/a?ts=1",false,q,key) && q.headers.at("X-Plex-Token")=="private");
@@ -60,7 +62,7 @@ int main(){
  Item token_thumb;token_thumb.thumb="https://metadata-static.plex.tv/image?X-Plex-Token=secret&width=320";assert(text(item_json(token_thumb),"thumb")=="https://metadata-static.plex.tv/image?width=320");
  Client scoped_hubs([](const Request &r){if(r.url.find("/hubs?")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Hub":[{"hubIdentifier":"movie.recently_added","type":"movie","Metadata":[{"ratingKey":"one","type":"movie","title":"One","librarySectionID":1}]},{"hubIdentifier":"movie.recently_added","type":"movie","Metadata":[{"ratingKey":"two","type":"movie","title":"Two","librarySectionID":2}]}]}})",""};return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
  Item second_section=section;section.type=second_section.type="movie";second_section.id="2";
- auto scoped_rows=home_rows(home_feed(scoped_hubs,"https://server.invalid","profile",{section,second_section}).data);assert(scoped_rows.size()==2 && scoped_rows[0].id!=scoped_rows[1].id);
+ auto scoped_rows=home_rows(home_feed(scoped_hubs,"https://server.invalid","profile",{section,second_section}).data);assert(scoped_rows.size()==1 && scoped_rows[0].id=="recentlyAddedMovies" && scoped_rows[0].entries.size()==2);
  auto audit_root=std::filesystem::temp_directory_path()/"plex-icon-audit-fixture";std::filesystem::remove_all(audit_root);std::filesystem::create_directories(audit_root/"sce_sys");
  {std::ofstream icon(audit_root/"sce_sys/icon0.png");icon<<"fixture image";std::ofstream manifest(audit_root/"artwork-manifest.json");manifest<<Json{{"title_id","PPSA85301"},{"expected",{{"sce_sys/icon0.png",{{"sha256",cache_digest("fixture image")}}}}}}.dump();}
  auto audit=audit_installed_icon(audit_root.string());assert(audit && flag(audit.data,"matches") && !flag(audit.data,"registrationInspected"));

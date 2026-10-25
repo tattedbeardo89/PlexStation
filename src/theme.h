@@ -6,6 +6,7 @@
 #include <cmath>
 #include <initializer_list>
 namespace Theme {
+inline const ImWchar *glyph_ranges(){static const ImWchar ranges[]={0x0020,0x024f,0x0370,0x052f,0x1e00,0x1eff,0x2000,0x206f,0};return ranges;}
 inline constexpr ImU32 Background=IM_COL32(17,24,39,255), Sidebar=IM_COL32(31,41,55,255);
 inline constexpr ImU32 Surface=IM_COL32(55,65,81,255), Text=IM_COL32(249,250,251,255);
 inline constexpr ImU32 Secondary=IM_COL32(156,163,175,255), Accent=IM_COL32(99,102,241,255);

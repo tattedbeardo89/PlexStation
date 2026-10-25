@@ -1,5 +1,12 @@
 # Native architecture and evidence boundaries
 
+The physical-regression checkpoint replaces fixed media sidebar groups with
+active-user authorized section-ID routes, adds explicit Music/Audiobooks
+classification controls, and closes Home composition to six ordered semantic
+slots. Library tab focus never gates body painting. Personal DVR availability
+uses a separate bounded future; unsupported Free Live TV has no destination.
+See [root causes, data boundaries and render evidence](PS5-PHYSICAL-REGRESSIONS.md).
+
 Current feature inventory and corrections: [full implementation audit](FULL-IMPLEMENTATION-AUDIT.md).
 Historical implementation snapshots in other documents describe their named
 commits, not the current tree. The owner's accepted visual direction is dark

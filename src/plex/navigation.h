@@ -41,7 +41,7 @@ inline Result library_categories(Client &client,const std::string &base,const st
     if(genres){auto mc=genres.data.find("MediaContainer");if(mc!=genres.data.end()){auto list=mc->find("Directory");if(list!=mc->end() && list->is_array())for(const auto &genre:*list){
         auto key=text(genre,"key"),title=text(genre,"title",text(genre,"tag"));
         if(key.empty() || key.size()>256 || title.empty() || entries.size()>=100)continue;
-        entries.push_back({{"ratingKey","genre-"+std::to_string(entries.size())},{"type","category"},{"thumb",safe_image_identity(text(genre,"thumb"))},{"art",safe_image_identity(text(genre,"art"))},{"title","Genre: "+title.substr(0,240)},{"key",path+"/all?"+(section.type=="artist"?"type=9&":"")+"genre="+encode(key)}});
+        entries.push_back({{"ratingKey","genre-"+std::to_string(entries.size())},{"type","category"},{"thumb",safe_image_identity(text(genre,"thumb"))},{"art",safe_image_identity(text(genre,"art"))},{"title","Genre: "+utf8_prefix(title,240)},{"key",path+"/all?"+(section.type=="artist"?"type=9&":"")+"genre="+encode(key)}});
     }}}
     auto collections=client.browse(base,token,path+"/collections",0,100);
     if(collections)for(const auto &item:items(collections.data,false))if(item.type=="collection" && entries.size()<200)
@@ -61,13 +61,14 @@ inline void append_seasonal_home(Result &home,Client &client,const std::string &
         if(++queried>4)break;
         auto matched=seasonal_library(client,base,token,section,month,current);
         if(matched)for(const auto &item:items(matched.data,false)){
-            if((item.type!="movie" && item.type!="show" && item.type!="episode") || !seen.insert(item.id).second || metadata.size()>=12)continue;
-            metadata.push_back({{"ratingKey",item.id},{"librarySectionID",section.id},{"type",item.type},{"title",item.title},{"thumb",item.thumb},{"art",item.art},{"year",item.year},{"duration",item.duration},{"viewOffset",item.offset},{"viewCount",item.watched?1:0},{"grandparentTitle",item.series},{"parentIndex",item.season},{"index",item.episode}});
+            if((item.type!="movie" && item.type!="show" && item.type!="episode") || !seen.insert(stable_media_identity(item)).second || metadata.size()>=12)continue;
+            auto value=item_json(item);value["librarySectionID"]=section.id;metadata.push_back(std::move(value));
         }
     }
     auto rows=home.data.find("rows");
     if(!metadata.empty() && rows!=home.data.end() && rows->is_array() && current()){
-        auto at=rows->begin()+std::min<size_t>(5,rows->size());
+        rows->erase(std::remove_if(rows->begin(),rows->end(),[](const Json &row){return text(row,"id")=="seasonal";}),rows->end());
+        auto at=rows->end();
         rows->insert(at,Json{{"id","seasonal"},{"title","Seasonal Recommendations"},{"payload",{{"MediaContainer",{{"Metadata",std::move(metadata)}}}}}});
         if(rows->size()>12)rows->erase(rows->begin()+12,rows->end());
     }
@@ -77,14 +78,18 @@ inline Result library_feed(Client &client,const std::string &base,const std::str
     auto add=[&](std::string id,const std::string &title,const Result &response,bool continuing=false){
         if(id=="added")id=section.type=="show"?"recentlyAddedTV":"recentlyAddedMovies";
         if(id=="released")id=section.type=="show"?"recentlyReleasedTV":"recentlyReleasedMovies";
-        if(id=="continuing")id="continueWatching";
+        if(id=="continuing" || id=="onDeck")id="continueWatching";
+        if(section.type=="show" && id=="recentlyAddedEpisodes")id="recentlyAddedTV";
         for(const auto &row:rows)if(text(row,"id")==id)return;
+        continuing=continuing || id=="continueWatching";
         if(!response || rows.size()>=12)return;
         Json metadata=Json::array();std::set<std::string> seen;
         for(const auto &item:items(response.data,false)){
+            if(!item.section_id.empty() && item.section_id!=section.id)continue;
+            if(id=="continueWatching" && item.type!=(section.type=="show"?"episode":"movie"))continue;
             if(id=="recentlyAddedTV" && item.type!="show")continue;
             if((id=="recentlyReleasedTV" || id=="recentlyReleasedMovies") && !released_date(item.released))continue;
-            if(!seen.insert(item.id).second)continue;
+            if(!seen.insert(stable_media_identity(item)).second)continue;
             auto value=item_json(item);if(item.section_id.empty())value["librarySectionID"]=section.id;metadata.push_back(std::move(value));
         }
         if(id.rfind("recentlyReleased",0)==0)std::stable_sort(metadata.begin(),metadata.end(),[](const Json &a,const Json &b){return text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt");});

@@ -139,7 +139,8 @@ std::vector<Server> servers(const Json &j) {
         if (text(v, "provides").find("server") == std::string::npos)
             continue;
         Server s;
-        s.id = text(v, "clientIdentifier");
+        s.id = text(v, "machineIdentifier", text(v, "clientIdentifier"));
+        if (s.id.empty()) continue;
         s.name = text(v, "name");
         s.token = text(v, "accessToken");
         auto required=v.find("httpsRequired");
@@ -153,7 +154,9 @@ std::vector<Server> servers(const Json &j) {
                     return p != c.end() && ((p->is_boolean() && p->get<bool>()) ||
                                             (p->is_number_integer() && p->get<int>() != 0));
                 };
-                s.connections.push_back({text(c, "uri"), flag("local"), flag("relay")});
+                auto uri=text(c,"uri");
+                if(std::none_of(s.connections.begin(),s.connections.end(),[&](const Connection &old){return old.uri==uri;}))
+                    s.connections.push_back({uri, flag("local"), flag("relay")});
             }
         std::stable_sort(s.connections.begin(), s.connections.end(),
                          [](const Connection &a, const Connection &b) {
@@ -162,7 +165,14 @@ std::vector<Server> servers(const Json &j) {
                              };
                              return rank(a) < rank(b);
                          });
-        out.push_back(std::move(s));
+        auto existing=std::find_if(out.begin(),out.end(),[&](const Server &old){return old.id==s.id;});
+        if(existing==out.end())out.push_back(std::move(s));
+        else {
+            existing->https_required=existing->https_required || s.https_required;
+            if(existing->token.empty())existing->token=s.token;
+            for(const auto &connection:s.connections)
+                if(std::none_of(existing->connections.begin(),existing->connections.end(),[&](const Connection &old){return old.uri==connection.uri;}))existing->connections.push_back(connection);
+        }
     }
     return out;
 }

@@ -18,6 +18,7 @@ on:
       - 'tools/package-title.py'
       - 'tools/make-category-art.py'
       - 'tools/artwork-diagnostics.py'
+      - 'tools/ps5-artwork-report.py'
 
 permissions:
   contents: read
@@ -156,6 +157,7 @@ jobs:
             artifacts/packages.txt
             artifacts/source-SHA256SUMS.txt
             artifacts/radv-provenance.txt
+            build/initial-*.bmp
           if-no-files-found: error
           retention-days: 30
           compression-level: 0

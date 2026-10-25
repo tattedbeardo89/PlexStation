@@ -39,6 +39,7 @@ void player_set_chapter(int n){position=n*50000;}
 extern "C" double plat_time() { return clock_now; }
 extern "C" const char *plat_data_dir() { return test_data_dir.c_str(); }
 static std::map<std::string,std::string> test_prefs;
+static bool rendered_test_art=false;
 int pref_int(const char *key, int v) {auto it=test_prefs.find(key); return it==test_prefs.end() ? v : std::stoi(it->second);}
 void pref_set(const char *key, int v) {test_prefs[key]=std::to_string(v);}
 std::string pref_str(const char *key,const char *fallback) {auto it=test_prefs.find(key); return it==test_prefs.end() ? fallback:it->second;}
@@ -47,7 +48,7 @@ namespace plex {
 Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
-ImTextureID Artwork::media(const std::string &,const std::string &,const Item &,bool){return 0;}
+ImTextureID Artwork::media(const std::string &,const std::string &,const Item &,bool){return rendered_test_art?9001:0;}
 ImTextureID Artwork::asset(const std::string &,const std::string &){return 0;}
 void Artwork::clear() {}
 void Artwork::retry_avatars() {}
@@ -89,6 +90,7 @@ static void frame(uint32_t buttons = 0, float lx = 0, float ly = 0, float dt = 1
     ImGui::NewFrame(); ui_frame(pad, dt); ImGui::Render();
 }
 static void press(uint32_t button) { frame(); frame(button); frame(); }
+#include "controller_physical_cases.h"
 int main() {
     ImGui::CreateContext();
     auto &io = ImGui::GetIO(); io.IniFilename = nullptr; io.DisplaySize = {1920,1080};
@@ -175,6 +177,7 @@ int main() {
     complete(PinPoll,pin_reply); assert(account.empty());
     int warm_requests=0;
     auto fixture_transport = [&](const Request &q) {
+        if(q.url.find("/livetv/dvrs")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Dvr":[]}})",""};
         if(q.timeout_ms==1400){assert(q.connect_timeout_ms==800);++warm_requests;}
         if(q.url.find("/hubs")!=std::string::npos || q.url.find("/library/onDeck")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
         if(q.url=="https://plex.tv/api/v2/user")
@@ -205,6 +208,7 @@ int main() {
     press(PAD_CIRCLE); assert(!connection_diagnostics);
     connection_target=available.front();
     auto manual_transport=[](const Request &q) {
+        if(q.url.find("/livetv/dvrs")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Dvr":[]}})",""};
         assert(q.headers.at("X-Plex-Token")=="fixture-scoped-token");
         if(q.url.find("/identity")!=std::string::npos)
             return Reply{200,"<MediaContainer machineIdentifier='server'/>",""};
@@ -322,8 +326,8 @@ int main() {
     press(PAD_RIGHT);press(PAD_CROSS); // 3
     drain();frame();assert(!private_input && !ui_sensitive_input());
     assert(active_profile.id=="84" && account=="fixture-account-token" && profile_token=="child-account-token");
-    assert(account_id=="id:42/profile:child" && child_resources==1 && available.size()==1);
-    connect_server(available.front());drain();assert(listing.size()==1 && listing[0].id=="99");
+    assert(account_id=="id:42/profile:child" && child_resources==1 && available.empty() && selected_server.id=="child-server");
+    assert(listing.size()==1 && listing[0].id=="99");
     assert(server_token=="child-server-token" && account_pref("plex_preferred_server")=="child-server");
     playing.id="child-movie";playing.duration=100000;queue_progress("paused",1000);frame();drain();assert(child_timelines==1);
     for(const auto &entry:test_prefs)assert(entry.second.find("token")==std::string::npos);
@@ -397,13 +401,13 @@ int main() {
     account="owner";account_id="owner/profile:child";profile_token="child";
     base="https://audio.invalid";server_token="child-pms";account_loading=false;profile_screen=false;
     selected_server.id="audio-pms";home_sections.clear();Item section;section.id="12";section.type="artist";section.title="Music";home_sections.push_back(section);
-    assert(audio_available() && !audio_available(true) && nav_visible(7));
+    assert(audio_available() && !audio_available(true) && !nav_visible(7));
     client=std::make_unique<Client>([](const Request &q) {
         assert(q.headers.at("X-Plex-Token")=="child-pms");
         return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"101","type":"track","title":"Song","parentTitle":"Album","grandparentTitle":"Artist","Media":[{"audioCodec":"flac","container":"flac","Part":[{"key":"/library/parts/101/song.flac"}]}]}]}})",""};
     },device);
     auto audio_drain=[&] {for(int n=0;n<20;++n){frame();if(job!=None){pending.wait();finish_job();}if(!audio.start_pending && !progress_pending && job==None)return;}assert(false);};
-    audio_home();assert(audio.screen && audio.entries.size()==1 && !video && job==AudioFeed);
+    audio_home();assert(!audio.screen && home_screen && audio.entries.size()==1 && !video && job==AudioFeed);
     audio_drain();assert(home_screen && library_context && library_kind==7 && active_library.id=="12");
     Item song;song.id="101";song.type="track";song.title="Song";
     audio_queue_load(song);audio_drain();
@@ -558,9 +562,9 @@ int main() {
     pref_set(pin_order_key().c_str(),Json::array({"pin-b","pin-a"}).dump());
     auto pins=library_pin_order();assert(pins.size()==2 && home_sections[pins[0]].id=="pin-b");
     home_sections={pin_b,pin_a};pins=library_pin_order();assert(home_sections[pins[0]].id=="pin-b");
-    account_id="different-pin-profile";assert(!nav_visible(12) && !nav_visible(13));account_id="pin-owner";
-    settings=true;settings_page=10;focus=12;sidebar=false;press(PAD_CROSS);
-    assert(!nav_visible(12) && !nav_visible(13));settings=false;
+    account_id="different-pin-profile";assert(library_pin_order().size()==2);account_id="pin-owner";
+    settings=true;settings_page=10;focus=2;sidebar=false;press(PAD_CROSS);
+    assert(!nav_visible(12) && nav_visible(13));settings=false;
     active_profile.managed=true;profile_token="profile";request_cloud_check();assert(page_path=="cloud-pending" && listing.empty());
     service_cloud();assert(job==None && !cloud_ok && !cloud_error.empty());active_profile.managed=false;reset_cloud();
     // Every non-audio sidebar route closes the audio browsing layer before early return.
@@ -569,8 +573,10 @@ int main() {
     Item professional_section;professional_section.id="films";professional_section.type="movie";professional_section.title="Movies";
     home_sections={personal_section,professional_section};
     pref_set((account_key("plex_pinned_library_v1")+"."+encode(selected_server.id)+"."+encode(personal_section.id)).c_str(),1);
-    client=std::make_unique<Client>([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
-    for(int target:{9,10,11,12}){
+    client=std::make_unique<Client>([](const Request &request){if(request.url.find("/library/sections")==request.url.size()-17)return Reply{200,R"({"MediaContainer":{"Directory":[{"key":"home-movies","title":"Home Movies","type":"movie"},{"key":"films","title":"Movies","type":"movie"}]}})",""};return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"fixture");
+    personal_dvr_available=true;
+    for(int target:{0,11,12,13}){
+        home_sections={personal_section,professional_section};
         audio.screen=true;audio.now_playing=true;sidebar=true;settings=true;in_detail=true;library_context=false;nav=target;page_path.clear();
         press(PAD_CROSS);if(job!=None){pending.wait();finish_job();}
         assert(!audio.screen && !audio.now_playing && !sidebar && !settings && !in_detail);
@@ -599,18 +605,17 @@ int main() {
         }
     }
     gfx.width=1920;gfx.height=1080;io.DisplaySize={1920,1080};
-    // Free Live TV is not a DVR setup route; Rentals has no registry or route.
-    home_screen=false;sidebar=true;nav=10;press(PAD_CROSS);assert(page_path=="free-live-tv" && job==None);
-    assert(std::string(navigation[8])=="Audiobooks" && nav_visible(8));for(const auto *label:navigation)assert(std::string(label)!="Rentals");
-    auto order=sidebar_order();auto live_pos=std::find(order.begin(),order.end(),10),book_pos=std::find(order.begin(),order.end(),8);assert(live_pos!=order.end() && book_pos!=order.end());
-    auto nav_owner=account_id;account_id="fresh-navigation-profile";auto defaults=sidebar_order();
-    auto free_position=std::find(defaults.begin(),defaults.end(),10);assert(free_position!=defaults.end() && free_position+2<defaults.end() && *(free_position+1)==8 && *(free_position+2)==7);
-    account_id="legacy-navigation-profile";pref_set(account_key("plex_sidebar_order_v1").c_str(),Json::array({0,7,10,11,6}).dump());pref_set(account_key("plex_sidebar_hidden_v1").c_str(),1<<11);
-    auto migrated=sidebar_order();assert(migrated[3]==8 && std::count(migrated.begin(),migrated.end(),8)==1 && nav_visible(11));account_id=nav_owner;
+    // Unsupported free cloud TV has no registry destination. Audio routes are
+    // authorized library destinations; Continue Watching precedes Home.
+    assert(!nav_visible(10) && !nav_visible(7) && !nav_visible(8));
+    for(const auto *label:navigation)assert(std::string(label)!="Rentals");
+    auto order=sidebar_order();assert(order[0]==3 && order[1]==0);
+    assert(std::find(order.begin(),order.end(),10)==order.end());
+    assert(std::find(order.begin(),order.end(),12)!=order.end() && nav_visible(12));
     assert(initials("Admin User")=="AU" && initials("Guest")=="G");
     // A partial Home is visible and navigation cancels the rest without blocking.
     std::promise<Result> slow_home;pending=slow_home.get_future();job=HomeFeed;pending_generation=screen_generation;
-    auto epoch=++feed_generation;Json partial={{"rows",Json::array({{{"id","partial"},{"title","Continue Watching"},{"payload",{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","partial-film"},{"type","movie"},{"title","First usable item"}}})}}}}}}})}};
+    auto epoch=++feed_generation;Json partial={{"rows",Json::array({{{"id","continueWatching"},{"title","Continue Watching"},{"payload",{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","partial-film"},{"type","movie"},{"title","First usable item"}}})}}}}}}})}};
     feed_rows.clear();feed_columns.clear();feed_scroll.clear();publish_home(partial,epoch);consume_home();assert(!feed_rows.empty() && feed_rows[0].entries[0].id=="partial-film");
     home_screen=true;sidebar=false;open_media(feed_rows[0].entries[0]);assert(deferred_media.id=="partial-film" && feed_generation!=epoch && job==HomeFeed);
     slow_home.set_value(Result{{},"cancelled",0});frame();assert(deferred_media.id.empty() && (job==Details || in_detail));if(job!=None){pending.wait();finish_job();}
@@ -619,6 +624,7 @@ int main() {
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
+    permission_and_selection_cases();initial_frame_cases();
     ui_shutdown();assert(!artwork && !client && job==None);
     ImGui::DestroyContext();
     puts("Controller UI scenarios passed: focus, D-pad, Cross, Back, repeat, analog, tabs, playback return, async responsiveness");
