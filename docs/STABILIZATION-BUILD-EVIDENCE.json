@@ -1,0 +1,75 @@
+{
+  "feature_branch": "feature/ps5-ui-artwork-stabilization",
+  "pull_request": "https://github.com/tattedbeardo89/PlexStation/pull/1",
+  "integration_baseline": "e79d5bd3a882cb6c841de4d0a8cd084bd1eb840a",
+  "physical_references": [
+    "5d8adb9ca74d051b8154e01dafb0ad0848c372f7",
+    "1ad4f6c4ab562762bd4c2ffa958cc098e234528a"
+  ],
+  "hardware_verified": false,
+  "earlier_native_checkpoint": {
+    "commit": "9ab5831b138a7f51e0021d4077624c482ada6195",
+    "run_id": 40149258304,
+    "conclusion": "success",
+    "artifacts": [
+      {
+        "name": "PlexStation-native-debug-9ab5831b138a7f51e0021d4077624c482ada6195",
+        "id": 12582562087,
+        "sha256": "sha256:e1181ada656ba34b7d5e418fe403379d90ccc8164d4f5d646e15c45e4cd6ec04",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40149258304/artifacts/12582562087"
+      },
+      {
+        "name": "PlexStation-PPSA85301-9ab5831b138a7f51e0021d4077624c482ada6195",
+        "id": 12582383342,
+        "sha256": "sha256:83cbe9000b9056519c5cdaf1a46e8c716a4db21e0a406f3c677063bb079acf4c",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40149258304/artifacts/12582383342"
+      },
+      {
+        "name": "PlexStation-build-diagnostics-9ab5831b138a7f51e0021d4077624c482ada6195",
+        "id": 12582068729,
+        "sha256": "sha256:f86ec9a0d1a72481f0c0074e0aa680a93c92effc8de5904cfc1ad300411fea03",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40149258304/artifacts/12582068729"
+      }
+    ]
+  },
+  "final_native_build": {
+    "commit": "f5f34a412573710ce95e37e16d7e92105a820c30",
+    "run_id": 40150211815,
+    "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815",
+    "conclusion": "success",
+    "artifacts": [
+      {
+        "name": "PlexStation-native-debug-f5f34a412573710ce95e37e16d7e92105a820c30",
+        "id": 12582730096,
+        "size_bytes": 93267500,
+        "sha256": "sha256:7aec493cc069eca94fe1c49bea8f34ea4cb62e657bf91496ef11b998e03f18b5",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582730096",
+        "expires_at": "2026-11-24T01:28:53Z"
+      },
+      {
+        "name": "PlexStation-PPSA85301-f5f34a412573710ce95e37e16d7e92105a820c30",
+        "id": 12582680065,
+        "size_bytes": 39568790,
+        "sha256": "sha256:75e6302144bdfe89413154f31e300608d1f72634e8aa2a2003a688bb5cb4e5e9",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582680065",
+        "expires_at": "2026-11-24T01:28:51Z"
+      },
+      {
+        "name": "PlexStation-build-diagnostics-f5f34a412573710ce95e37e16d7e92105a820c30",
+        "id": 12582563258,
+        "size_bytes": 199544,
+        "sha256": "sha256:461c55a987ff474f6cacb9588e3eab6952ad835d0cedbc38052be6d5442376f0",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582563258",
+        "expires_at": "2026-11-08T01:28:59Z"
+      }
+    ]
+  },
+  "verification": {
+    "host_regressions": "All required workflow suites passed, including ASan/UBSan, controller, presentation, artwork, subtitles, cached connections, native GnuTLS, strict native syntax and packaging checks.",
+    "native": "Real PS5 compile, signed SELF/static plugin gates, matching debug collection, package identity/assets and ZIP permissions passed.",
+    "diagnostics": "Downloaded and independently SHA-256 verified; validation.json confirms final source SHA, success=true and hardware NOT TESTED.",
+    "large_archives": "Installation/debug hashes are GitHub Actions archive digests. CI collected and hashed matching native files in debug/build.json; installation artifact includes SHA256SUMS for the inner installation ZIP. Large archives were not independently re-downloaded here: file downloader is limited to 32 MiB and direct network access returned Forbidden.",
+    "physical": "Pending owner's console testing; no deployment/merge/release performed.",
+    "external": "Live Plex avatar/CDN response diagnosis and free cloud TV catalog/playback remain unverified; unsupported free TV reports availability honestly."
+  }
+}

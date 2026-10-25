@@ -224,5 +224,35 @@ real media bounds (640×960), with an explicit retained 256×256 avatar assertio
 and the original oversized-PMS-response rejection; a new larger-CDN-original
 case verifies downsampling. These are updated contracts, not removed safeguards.
 
-Native build/source/artifact/PR evidence is appended after the hosted workflow
-actually completes. No physical pass is inferred from compilation.
+## Completed native checkpoint
+
+Final native source: `f5f34a412573710ce95e37e16d7e92105a820c30`.
+[Draft PR #1](https://github.com/tattedbeardo89/PlexStation/pull/1) targets the
+existing integration branch; no merge, release or device deployment occurred.
+[Workflow 40150211815](https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815)
+completed successfully, including the full host gate, ASan/UBSan, actual native
+compile, signed SELF/static plugin gates, matching debug collection, package
+identity/artwork validation and ZIP permissions. The earlier source `9ab5831`
+also passed [run 40149258304](https://github.com/tattedbeardo89/PlexStation/actions/runs/40149258304).
+The final correction rejects image sources made empty by credential stripping.
+
+Download artifacts for the final source only:
+
+- [Installation package](https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582680065)
+- [Matching debug symbols and build.json](https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582730096)
+- [Logs and validation report](https://github.com/tattedbeardo89/PlexStation/actions/runs/40150211815/artifacts/12582563258)
+
+[Build evidence and SHA-256 archive digests](STABILIZATION-BUILD-EVIDENCE.json)
+record exact IDs, sizes and expiry dates (installation/debug: November 24;
+diagnostics: November 8, 2026). GitHub downloads may require sign-in. The install
+artifact contains the title ZIP and `SHA256SUMS`; verify that checksum before
+extracting the title. Debug `build.json` records source and executable/runtime/ELF
+hashes. Preserve these exact symbols with the tested package.
+
+The diagnostics archive was independently downloaded and hash-checked here; its
+`validation.json` confirms the final source SHA and successful native build.
+Installation/debug archive digests come from GitHub Actions, and matching-file
+checks ran in CI. They were not independently re-downloaded here: the file tool's
+32 MiB limit and direct network restrictions prevent those larger downloads.
+No physical pass is inferred from compilation. Follow the backup/install and
+device acceptance instructions above before reporting hardware results.
