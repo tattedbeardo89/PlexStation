@@ -162,7 +162,9 @@ fixtures, and software-rasterize completed production ImGui commands including
 clips, textured triangles, the bundled Inter font and mock uploaded artwork.
 They validate visible image pixels at 1920×1080 and 3840×2160 for all three pages,
 including retained tab focus and delayed artwork. Six compact BMP views are retained
-in diagnostics. These are host-rendered fixture frames, **not PS5 GPU screenshots**;
+in the installation artifact's `build/` folder alongside its `artifacts/` package
+and checksum folder. Logs are in the separate diagnostics artifact. These are
+host-rendered fixture frames, **not PS5 GPU screenshots**;
 the console fix still requires owner acceptance.
 
 ### Text-only categories and Live TV decision
@@ -248,8 +250,11 @@ backups private: they may contain credentials. The artwork diagnostic intentiona
 does not perform or include that backup. Do not overwrite/delete unrelated titles,
 PPSA85300, jailbreak files, or another PPSA85301 launch copy.
 
-Extract the installation artifact, verify `SHA256SUMS`, then extract the inner
-ZIP preserving its PPSA85301 root and Unix permissions. With the app stopped,
+Extract the installation artifact. Its `artifacts/` directory contains the inner
+`PlexStation-PPSA85301.zip`, `SHA256SUMS` and validation metadata; its `build/`
+directory contains host fixture BMPs. Verify the inner ZIP against `SHA256SUMS`,
+then extract that ZIP preserving its PPSA85301 root and Unix permissions. Only
+the extracted PPSA85301 application folder is intended for the console. With the app stopped,
 update the intended title's application resources while retaining backed-up user
 files and `/data/plexstation-client`. Preserve directory/executable modes 755,
 resource modes 644, private files 600 and ownership. Retain exact matching debug
@@ -282,5 +287,30 @@ step is not authorized or automated by these tools.
   preselection/runtime changes, audio track selection, Watchlist, Search, seasonal
   rows, artwork cache/retention, controller and private preferences.
 
-Native workflow/source/artifact/checksum evidence is appended only after the
-hosted build completes. No hardware pass is inferred from host tests or a build.
+## Completed hosted checkpoint
+
+Final native source: **`53a766675c42d5b4f6b1496f94c3b56ad32a1653`**.
+[Workflow 40211142558](https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558)
+completed successfully. All 17 required hosted regression suites passed, including
+ASan/UBSan, controller/pad, initial-frame rasterization, profile/PIN, artwork,
+presentation, subtitles, cached connections, native GnuTLS, strict native source,
+crash/symbolization, package identity/assets and ZIP permissions. Real native
+compilation, signed SELF/static VLC gates and exact matching debug collection
+also passed. Six completed initial-frame cases passed in both the normal and
+sanitizer controller runs. The earlier eaf82d1 checkpoint also passed native
+[run 40210604266](https://github.com/tattedbeardo89/PlexStation/actions/runs/40210604266).
+
+- [Final installation and fixture-frame artifact](https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606027477)
+- [Exact matching debug symbols/build.json](https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606326998)
+- [Final diagnostics and validation.json](https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606177297)
+- [Source, checksums, workflow and verification evidence](PHYSICAL-REGRESSION-BUILD-EVIDENCE.json)
+
+The diagnostics archive was independently downloaded and SHA-256 verified, then
+checked for the exact final source/title/success and all required host logs.
+Installation/debug archive digests come from GitHub Actions; inner `SHA256SUMS`
+and debug `build.json` retain package/executable/runtime/ELF identities verified
+in CI. Those larger archives were not independently re-downloaded here because
+they exceed the file tool's 32 MiB limit. GitHub downloads may require sign-in.
+Documentation-only follow-ups can advance the PR head without changing the native
+source above. [PR #1](https://github.com/tattedbeardo89/PlexStation/pull/1) remains
+draft and unmerged. No hardware pass is inferred from these successful checks.

@@ -1,0 +1,141 @@
+{
+  "repository": "tattedbeardo89/PlexStation",
+  "branch": "feature/ps5-ui-artwork-stabilization",
+  "pull_request": "https://github.com/tattedbeardo89/PlexStation/pull/1",
+  "integration_baseline": "e79d5bd3a882cb6c841de4d0a8cd084bd1eb840a",
+  "owner_tested_source": "f5f34a412573710ce95e37e16d7e92105a820c30",
+  "preserved_physical_references": [
+    "5d8adb9ca74d051b8154e01dafb0ad0848c372f7",
+    "1ad4f6c4ab562762bd4c2ffa958cc098e234528a"
+  ],
+  "final_native_source": "53a766675c42d5b4f6b1496f94c3b56ad32a1653",
+  "workflow": {
+    "id": 40211142558,
+    "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558",
+    "conclusion": "success"
+  },
+  "artifacts": [
+    {
+      "id": 12606326998,
+      "name": "PlexStation-native-debug-53a766675c42d5b4f6b1496f94c3b56ad32a1653",
+      "bytes": 93245689,
+      "sha256": "sha256:c2834e9710ddf168a1f25218e32f20aad53e3685bafcf759b15c2bd7ffcfb05b",
+      "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606326998",
+      "expires_at": "2026-11-24T16:36:08Z"
+    },
+    {
+      "id": 12606177297,
+      "name": "PlexStation-build-diagnostics-53a766675c42d5b4f6b1496f94c3b56ad32a1653",
+      "bytes": 200923,
+      "sha256": "sha256:6ce6e0c35e49888968ebfff057b5b2979d2d0dcec34a55f84f33b84038ea999b",
+      "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606177297",
+      "expires_at": "2026-11-08T16:36:16Z"
+    },
+    {
+      "id": 12606027477,
+      "name": "PlexStation-PPSA85301-53a766675c42d5b4f6b1496f94c3b56ad32a1653",
+      "bytes": 52101435,
+      "sha256": "sha256:e5cb5a7a5eb0e90a9ea5606826441b4c45ea0aadc251028953e832ec84ab49f6",
+      "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40211142558/artifacts/12606027477",
+      "expires_at": "2026-11-24T16:36:06Z"
+    }
+  ],
+  "earlier_checkpoint": {
+    "source": "eaf82d1125ccc00bb12322b407a3ca8e64f90be8",
+    "workflow_id": 40210604266,
+    "conclusion": "success",
+    "artifacts": [
+      {
+        "id": 12606120981,
+        "name": "PlexStation-PPSA85301-eaf82d1125ccc00bb12322b407a3ca8e64f90be8",
+        "bytes": 52100927,
+        "sha256": "sha256:0bb439ecb2b8d5124e5a348e6cee353abe474edc335b269d4bbc0fba215e485e",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40210604266/artifacts/12606120981",
+        "expires_at": "2026-11-24T16:22:49Z"
+      },
+      {
+        "id": 12606026114,
+        "name": "PlexStation-build-diagnostics-eaf82d1125ccc00bb12322b407a3ca8e64f90be8",
+        "bytes": 200811,
+        "sha256": "sha256:14bfe5e3cb50745db827045f061604d7fc11a45eb500690756dee78197ca5370",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40210604266/artifacts/12606026114",
+        "expires_at": "2026-11-08T16:22:57Z"
+      },
+      {
+        "id": 12605956191,
+        "name": "PlexStation-native-debug-eaf82d1125ccc00bb12322b407a3ca8e64f90be8",
+        "bytes": 93253235,
+        "sha256": "sha256:648e944bda90938a3297cde91749d1f02123ca4473989c66f38ec8f73fcedfa0",
+        "url": "https://github.com/tattedbeardo89/PlexStation/actions/runs/40210604266/artifacts/12605956191",
+        "expires_at": "2026-11-24T16:22:51Z"
+      }
+    ]
+  },
+  "verification": {
+    "validation": {
+      "success": true,
+      "exit_code": 0,
+      "last_stage": "complete",
+      "application_commit": "53a766675c42d5b4f6b1496f94c3b56ad32a1653",
+      "pins": {
+        "arch_image": "archlinux@sha256:a25b54cf4b9c0de8752f5417c81810fb41bbfa5cdd6a504a9b6816a3b86b1e59",
+        "arch_snapshot": "2026/10/20",
+        "PS5_Vulkan": "f410e67a0241b3e8edcdbcd2a9b285dfc4a412ed",
+        "PS5_PayloadSDK": "b83202be73e930050e00de0f1b4d9ec46c0391bf",
+        "PS5_Mesa": "1ba9874f478657ccf6da72ce55f0260164cc0bd0",
+        "vlc_version": "3.0.24",
+        "vlc_url": "https://download.videolan.org/pub/videolan/vlc/3.0.24/vlc-3.0.24.tar.xz",
+        "title_id": "PPSA85301"
+      },
+      "native_build": "completed",
+      "host_tests": "passed required workflow regression gate; see artifacts/logs/host-*.log",
+      "hardware_target": "PS5 13.40, kstuff Lite, ShadowMountPlus 1.7 Beta 5 Fix 1",
+      "hardware_verification": "NOT TESTED; live Plex Home permissions, library crash resolution and playback remain pending",
+      "debug_manifest": "debug/build.json"
+    },
+    "required_host_suites": [
+      "build-core",
+      "test-json-numeric",
+      "test-auth",
+      "test-home",
+      "test-audio",
+      "test-streaming",
+      "test-discovery",
+      "test-artwork",
+      "test-presentation",
+      "test-subtitles",
+      "test-cache",
+      "test-controller",
+      "test-connections",
+      "test-native-transport",
+      "test-crash",
+      "check-native-source",
+      "test-sanitizers"
+    ],
+    "completed_frame_checks": [
+      "Completed initial native frame: Movies 1920x1080 visible fixture artwork pixels=61349, no controller input",
+      "Completed initial native frame: TV Shows 1920x1080 visible fixture artwork pixels=62352, no controller input",
+      "Completed initial native frame: Home Movies 1920x1080 visible fixture artwork pixels=80429, no controller input",
+      "Completed initial native frame: Movies 3840x2160 visible fixture artwork pixels=245489, no controller input",
+      "Completed initial native frame: TV Shows 3840x2160 visible fixture artwork pixels=249516, no controller input",
+      "Completed initial native frame: Home Movies 3840x2160 visible fixture artwork pixels=321809, no controller input"
+    ],
+    "diagnostics_sha256": "6ce6e0c35e49888968ebfff057b5b2979d2d0dcec34a55f84f33b84038ea999b",
+    "independent_diagnostics_verification": true,
+    "new_hardware_acceptance": false
+  },
+  "verification_limits": {
+    "large_artifacts": "Install/debug SHA-256 values are GitHub Actions archive digests. CI verified native/package gates and collected exact matching debug-file identities. Archives over the 32 MiB file-download limit were not independently re-downloaded in this environment.",
+    "diagnostics": "Final diagnostics archive independently downloaded, SHA-256 verified, source/title/success matched, all 17 required host logs present, six completed-frame checks present in both controller and ASan/UBSan logs.",
+    "hardware": "New source has not been accepted on PS5. Host software-rasterized fixture frames are not console GPU screenshots.",
+    "icon": "Actual stale shell-artwork source remains unknown. No PS5 connection was attempted; user must run Windows read-only reporter.",
+    "free_cloud_tv": "Unsupported entry and page removed; no authorized complete third-party free-cloud channel/playback contract established.",
+    "publication": "Draft PR only; no merge, release, deployment, uninstall or console database/file modification."
+  },
+  "installation_artifact_layout": {
+    "application_zip": "artifacts/PlexStation-PPSA85301.zip",
+    "inner_zip_checksum": "artifacts/SHA256SUMS",
+    "fixture_frames": "build/initial-*.bmp",
+    "console_copy": "Only the PPSA85301 root extracted from the inner application ZIP, preserving user files and permissions."
+  }
+}
