@@ -199,7 +199,9 @@ cp "$repo/assets/fonts/"Selawik-*.ttf "$repo/assets/fonts/Selawik-OFL.txt" "$app
 # The text viewer (.txt, .nfo art): DejaVu Sans Mono, box drawing and shades included.
 cp "$repo/assets/fonts/DejaVuSansMono.ttf" "$repo/assets/fonts/DejaVu-LICENSE.txt" "$app/fonts/"
 mkdir -p "$app/assets"
-cp "$repo/assets/plexstation.svg" "$app/assets/"
+cp "$repo/assets/plexstation.svg" "$repo/assets/avatar-placeholder.svg" "$app/assets/"
+python3 "$repo/tools/make-category-art.py" --output "$app/artwork/categories"
+python3 "$repo/tools/artwork-diagnostics.py" --expected-root "$repo" --package "$app" > "$app/artwork-manifest.json"
 cp "$repo/LICENSE" "$app/"
 cp "$repo/THIRD_PARTY.md" "$app/"
 mkdir -p "$app/licenses"

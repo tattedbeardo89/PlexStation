@@ -88,13 +88,15 @@ std::vector<Item> items(const Json &j,bool include_media) {
         tags("Genre",x.genres);tags("Role",x.cast);
         x.thumb = display_text(text(v, "thumb"),4096);
         x.art = display_text(text(v, "art"),4096);
+        x.parent_thumb=display_text(text(v,"parentThumb"),4096);x.grandparent_thumb=display_text(text(v,"grandparentThumb"),4096);
+        x.parent_art=display_text(text(v,"parentArt"),4096);x.grandparent_art=display_text(text(v,"grandparentArt"),4096);
         x.year = static_cast<int>(std::clamp<int64_t>(number(v,"year"),0,9999));
         x.duration = std::max<int64_t>(0,number(v,"duration"));
         x.offset = std::max<int64_t>(0,number(v,"viewOffset"));
         x.watched = number(v, "viewCount") > 0;
         x.artist=display_text(text(v,"grandparentTitle",text(v,"originalTitle")),256);
         x.album=display_text(text(v,"parentTitle"),256);
-        x.section_id=display_text(text(v,"librarySectionID"),128);x.guid=display_text(text(v,"guid"),256);
+        x.section_id=display_text(text(v,"librarySectionID",number(v,"librarySectionID")>0?std::to_string(number(v,"librarySectionID")):""),128);x.guid=display_text(text(v,"guid"),256);
         if(x.guid.rfind("plex://",0)!=0){auto guids=v.find("Guid");if(guids!=v.end() && guids->is_array())for(const auto &g:*guids){auto id=text(g,"id");if(id.rfind("plex://",0)==0){x.guid=display_text(id,256);break;}}}
         x.parent_id=display_text(text(v,"parentRatingKey"),128);x.grandparent_id=display_text(text(v,"grandparentRatingKey"),128);
         x.disc=static_cast<int>(std::clamp<int64_t>(number(v,"parentIndex"),0,10000));
@@ -337,6 +339,10 @@ Result Client::identity(const std::string &base, const std::string &token, const
     if (id!=expected)
         return {{},failure_message(Failure::IdentityMismatch),result.status,Failure::IdentityMismatch};
     return result;
+}
+Client Client::bounded(int connect_ms,int total_ms) const {
+    auto network=transport;
+    return Client([network,connect_ms,total_ms](const Request &request){auto q=request;q.connect_timeout_ms=connect_ms;q.timeout_ms=total_ms;return network(q);},client_id);
 }
 Result Client::select(const Server &s, bool allow_http, std::string &selected,
                       std::vector<ConnectionAttempt> *attempts, const std::string &preferred) {

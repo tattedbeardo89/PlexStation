@@ -16,7 +16,7 @@ inline constexpr ImU32 White=IM_COL32(255,255,255,255), Black=IM_COL32(0,0,0,255
 constexpr ImU32 alpha(ImU32 color,int opacity) {return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(opacity)<<IM_COL32_A_SHIFT);}
 inline constexpr ImU32 Selection=IM_COL32(55,61,103,255);
 namespace Font {inline constexpr float Hero=52,Title=46,Brand=38,Heading=34,Body=28,Caption=22,Key=42,Avatar=70,Activation=58,LargeActivation=72,DeviceCode=110;}
-namespace Metric {inline constexpr float Radius=14,ImageRadius=10,FocusWidth=2,Gap=16,RowHeight=70,RowStep=90,CompactStep=85,NavStep=78,CarouselStep=390,CardStep=280,SidebarWidth=330;}
+namespace Metric {inline constexpr float Radius=14,ImageRadius=10,FocusWidth=2,Gap=16,RowHeight=70,RowStep=90,CompactStep=85,NavStep=78,CarouselStep=435,CardStep=280,SidebarWidth=330;}
 inline bool reduced_motion=false;
 inline float motion(float dt) {return reduced_motion?1.f:std::clamp(dt*14.f,0.f,1.f);}
 inline ImU32 focus_color(double seconds) {return reduced_motion?Focus:alpha(Focus,220+static_cast<int>(35*(.5+.5*std::sin(seconds*4))));}
@@ -32,6 +32,11 @@ inline void brand(ImDrawList *draw,float x,float y,float size) {
     polygon({{88,72},{208,144},{208,424},{88,424}},Focus);
     polygon({{208,144},{316,212},{208,280}},Text);
     polygon({{288,72},{392,176},{316,212},{208,144}},Blue);
+}
+// Native equivalent of assets/avatar-placeholder.svg; no decoding or network dependency.
+inline void profile_placeholder(ImDrawList *draw,float x,float y,float size,bool neutral){
+    draw->AddCircleFilled({x+size*.5f,y+size*.5f},size*.5f,Background,32);
+    if(neutral){draw->AddCircleFilled({x+size*.5f,y+size*.35f},size*.175f,Focus,24);draw->AddRectFilled({x+size*.15f,y+size*.575f},{x+size*.85f,y+size},Focus,size*.2125f);}
 }
 inline void cover_uv(float source_aspect,float width,float height,ImVec2 &uv0,ImVec2 &uv1) {
     uv0=ImVec2(0,0);uv1=ImVec2(1,1);

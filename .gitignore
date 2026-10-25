@@ -11,3 +11,6 @@
 /artifacts/
 
 __pycache__/
+
+# Task-local benchmark sources, request copies and logs.
+/work/

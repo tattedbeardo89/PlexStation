@@ -1,5 +1,7 @@
 # Full implementation audit — October 24, 2026
 
+> Historical audit candidate. For this stabilization branch use [the current report](PS5-STABILIZATION.md), including Rentals removal, free TV/DVR separation, shared card geometry and icon diagnostics.
+
 Audit base: `7513c0e307a911b902dc8e5f370a600bb5d13361`, fetched feature branch,
 clean working tree. Native source checkpoint `208b5be1ec73f6fa11797dbd3ae2b21262eafce3`
 passed [run 40060131391](https://github.com/tattedbeardo89/PlexStation/actions/runs/40060131391).

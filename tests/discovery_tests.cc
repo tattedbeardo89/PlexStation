@@ -24,8 +24,8 @@ int main(){
  assert(library_query("/library/sections/1/all?old=1",{{"genre","A&B"},{"year","2020"}},"duration:asc")=="/library/sections/1/all?sort=duration%3Aasc&genre=A%26B&year=2020");
  int first=0,second=0;
  Client aggregate([&](const Request &q){
-  if(q.url.find("/library/sections/1/")!=std::string::npos){++first;return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"same","type":"movie","title":"Duplicate","addedAt":1}]}})",""};}
-  if(q.url.find("/library/sections/2/")!=std::string::npos){++second;return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"new","type":"movie","title":"Newer","addedAt":2},{"ratingKey":"same","type":"movie","title":"Duplicate","addedAt":1}]}})",""};}
+  if(q.url.find("/library/sections/1/")!=std::string::npos){++first;return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"same","type":"movie","title":"Duplicate","addedAt":1,"originallyAvailableAt":"2000-01-01"}]}})",""};}
+  if(q.url.find("/library/sections/2/")!=std::string::npos){++second;return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"new","type":"movie","title":"Newer","addedAt":2,"originallyAvailableAt":"2020-01-01"},{"ratingKey":"same","type":"movie","title":"Duplicate","addedAt":1,"originallyAvailableAt":"2000-01-01"}]}})",""};}
   return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
  },"fixture");
  Item a,b;a.id="1";b.id="2";a.type=b.type="movie";

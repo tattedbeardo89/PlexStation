@@ -1,0 +1,105 @@
+{
+  "scope": "Controlled mock-transport benchmark of Home feed publication only; not PS5/native initialization/live Plex latency",
+  "baseline_feed_source": "e79d5bd3a882cb6c841de4d0a8cd084bd1eb840a",
+  "reproduction": "bash host/benchmark-startup.sh",
+  "samples": [
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.083,
+      "complete_metadata_ms": 152.083,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.043,
+      "complete_metadata_ms": 152.043,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.089,
+      "complete_metadata_ms": 152.089,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.05,
+      "complete_metadata_ms": 152.05,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "baseline-complete-only",
+      "first_usable_metadata_ms": 152.135,
+      "complete_metadata_ms": 152.135,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.231,
+      "complete_metadata_ms": 152.601,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.244,
+      "complete_metadata_ms": 152.327,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.243,
+      "complete_metadata_ms": 152.377,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.265,
+      "complete_metadata_ms": 152.415,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    },
+    {
+      "mode": "incremental",
+      "first_usable_metadata_ms": 10.232,
+      "complete_metadata_ms": 152.341,
+      "requests": 15,
+      "controlled_delay_per_request_ms": 10,
+      "scope": "mock transport; not PS5 or live Plex latency"
+    }
+  ],
+  "summary": {
+    "baseline-complete-only": {
+      "samples": 5,
+      "first_metadata_median_ms": 152.083,
+      "first_metadata_min_ms": 152.043,
+      "first_metadata_max_ms": 152.135,
+      "complete_metadata_median_ms": 152.083,
+      "requests_per_run": 15
+    },
+    "incremental": {
+      "samples": 5,
+      "first_metadata_median_ms": 10.243,
+      "first_metadata_min_ms": 10.231,
+      "first_metadata_max_ms": 10.265,
+      "complete_metadata_median_ms": 152.377,
+      "requests_per_run": 15
+    }
+  }
+}

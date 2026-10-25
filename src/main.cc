@@ -13,6 +13,7 @@
 #include <string>
 #include <stdlib.h>
 #include <exception>
+#include <chrono>
 
 #include "backends/imgui_impl_vulkan.h"
 #include "gfx.h"
@@ -61,7 +62,9 @@ static bool imgui_init()
 
 int main(void)
 {
-    plat_init();
+    auto boot_clock=std::chrono::steady_clock::now();double boot_previous=0;
+    auto boot_stage=[&](const char *name){double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-boot_clock).count();fprintf(stderr,"startup:native phase=%s phase-ms=%.3f total-ms=%.3f\n",name,ms-boot_previous,ms);boot_previous=ms;};
+    plat_init();boot_stage("platform");
     if (!plex::json_numeric_selftest()) {
         plat_notify("PlexStation: numeric runtime self-test failed (see plexstation.log)");
         return 1;
@@ -73,28 +76,28 @@ int main(void)
         plat_notify("PlexStation: no display (see plexstation.log)");
         return 1;
     }
-    fprintf(stderr, "start: display ready\n");
+    fprintf(stderr, "start: display ready\n");boot_stage("display");
     if (!imgui_init()) {
         plat_notify("PlexStation: interface failed (see plexstation.log)");
         return 1;
     }
-    fprintf(stderr, "start: interface renderer ready\n");
+    fprintf(stderr, "start: interface renderer ready\n");boot_stage("imgui");
     if (!player_init()) {
         plat_notify("PlexStation: VLC failed to start (see plexstation.log)");
         return 1;
     }
-    fprintf(stderr, "start: player ready\n");
+    fprintf(stderr, "start: player ready\n");boot_stage("vlc");
     library_init();
-    fprintf(stderr, "start: library scanned\n");
+    fprintf(stderr, "start: library scanned\n");boot_stage("local-library");
     if (!ui_init()) {
         plat_notify("PlexStation: account storage or UI initialization failed");
         return 1;
     }
-    fprintf(stderr, "start: interface ready, first frame next\n");
+    fprintf(stderr, "start: interface ready, first frame next\n");boot_stage("account-ui");
 
     double last = plat_time(), stats_at = last + 10;
     int frames = 0;
-    float worst = 0;
+    float worst = 0;bool boot_submitted=false;
     for (;;) {
         double t = plat_time();
         float dt = (float)(t - last);
@@ -213,6 +216,7 @@ int main(void)
         }
         gfx_end_frame(cmd);
         ui_frame_presented();
+        if(!boot_submitted){boot_submitted=true;boot_stage("first-frame-submitted");}
         double t_end = plat_time();
 
         if (gfx.frame_number == 1)

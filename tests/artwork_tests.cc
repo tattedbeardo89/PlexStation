@@ -12,9 +12,9 @@
 #include <chrono>
 #include <thread>
 #include <filesystem>
-static int uploaded,freed;
+static int uploaded,freed,last_width,last_height;
 ImTextureID library_upload_rgba(const unsigned char *rgba,int w,int h) {
-    assert(rgba && w>0 && h>0 && w<=256 && h<=256); return ++uploaded;
+    assert(rgba && w>0 && h>0 && w<=640 && h<=960);last_width=w;last_height=h;return ++uploaded;
 }
 void library_free_image(ImTextureID texture) {if(texture) ++freed;}
 static void settle(plex::Artwork &art) {
@@ -82,7 +82,7 @@ int main() {
     image.append(1024*1024*3,'\x7f');
     plex::Artwork large([&](const plex::Request &){return plex::Reply{200,image,""};});
     large.avatar("https://images.plex.tv/large","fixture");settle(large);
-    assert(large.avatar("https://images.plex.tv/large","fixture"));large.clear();large.update();
+    assert(large.avatar("https://images.plex.tv/large","fixture") && last_width==256 && last_height==256);large.clear();large.update();
     for(int format=0;format<2;++format) {
         const auto *bytes=format?fixture_jpeg:fixture_png;
         const size_t size=format?sizeof(fixture_jpeg):sizeof(fixture_png);
@@ -149,6 +149,37 @@ int main() {
     for(int i=0;i<70;++i){pinned.get("https://fixture.invalid","fixture","/churn/"+std::to_string(i));settle(pinned);}
     assert(pinned.avatar("/users/pinned","fixture")==pinned_texture);
     pinned.clear();pinned.update();
+    // A slow avatar must not serialize or starve independently visible media.
+    std::promise<void> release_avatar;auto permit=release_avatar.get_future().share();
+    plex::Artwork independent([&](const plex::Request &q){if(q.url.find("/users/slow")!=std::string::npos)permit.wait();return plex::Reply{200,image,""};});
+    independent.avatar("/users/slow","account");independent.get("https://fixture.invalid","profile","/ready");
+    bool media_ready=false;for(int n=0;n<500;++n){independent.update();if(independent.get("https://fixture.invalid","profile","/ready")){media_ready=true;break;}std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    release_avatar.set_value();settle(independent);assert(media_ready);independent.clear();independent.update();
+    // A stalled backdrop also cannot block a second media image. Duplicate requests coalesce.
+    std::promise<void> release_backdrop;auto backdrop_permit=release_backdrop.get_future().share();std::atomic<int> backdrop_calls{0};
+    plex::Artwork media_lanes([&](const plex::Request &q){if(q.url.find("url=%2Fslow-backdrop")!=std::string::npos){++backdrop_calls;backdrop_permit.wait();}return plex::Reply{200,image,""};});
+    media_lanes.landscape("https://fixture.invalid","profile","/slow-backdrop");media_lanes.landscape("https://fixture.invalid","profile","/slow-backdrop");
+    media_lanes.get("https://fixture.invalid","profile","/fast-poster");bool poster_ready=false;
+    for(int n=0;n<500;++n){media_lanes.update();if(media_lanes.get("https://fixture.invalid","profile","/fast-poster")){poster_ready=true;break;}std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+    release_backdrop.set_value();settle(media_lanes);assert(poster_ready && backdrop_calls==1);media_lanes.clear();media_lanes.update();
+    int missing=0,series=0;
+    plex::Artwork fallback([&](const plex::Request &q){if(q.url.find("url=%2Fmissing")!=std::string::npos){++missing;return plex::Reply{404,"",""};}++series;return plex::Reply{200,image,""};});
+    plex::Item episode;episode.type="episode";episode.thumb="/missing";episode.grandparent_thumb="/series";
+    fallback.media("https://fixture.invalid","profile",episode,true);settle(fallback);
+    fallback.media("https://fixture.invalid","profile",episode,true);settle(fallback);
+    auto retained=fallback.media("https://fixture.invalid","profile",episode,true);assert(retained && missing==1 && series==1);
+    for(int i=0;i<10;++i)assert(fallback.media("https://fixture.invalid","profile",episode,true)==retained);
+    assert(missing==1 && series==1);fallback.clear();fallback.update();
+    int attempts=0;plex::Artwork bounded_retry([&](const plex::Request &){++attempts;return plex::Reply{0,"","timeout"};});
+    for(int attempt=0;attempt<6;++attempt){bounded_retry.get("https://fixture.invalid","profile","/timeout");settle(bounded_retry);for(int frame=0;frame<1000;++frame)bounded_retry.update();}
+    assert(attempts==3);bounded_retry.clear();bounded_retry.update();
+    plex::Artwork cloud([&](const plex::Request &q){assert(q.url=="https://metadata-static.plex.tv/poster?width=320" && q.headers.count("X-Plex-Token")==0);return plex::Reply{200,image,""};});
+    cloud.get("https://fixture.invalid","profile","https://metadata-static.plex.tv/poster?width=320&X-Plex-Token=secret");settle(cloud);
+    assert(cloud.get("https://fixture.invalid","profile","https://metadata-static.plex.tv/poster?width=320"));cloud.clear();cloud.update();
+    // Direct authorized CDN originals may be larger than PMS-sized responses; retain bounded RGBA.
+    std::string original_image(18,'\0');original_image[2]=2;original_image[12]=static_cast<char>(641&255);original_image[13]=static_cast<char>(641>>8);original_image[14]=1;original_image[16]=24;original_image.append(641*3,'\x7f');
+    plex::Artwork original_cdn([&](const plex::Request &q){assert(q.headers.count("X-Plex-Token")==0);return plex::Reply{200,original_image,""};});
+    original_cdn.get("https://fixture.invalid","profile","https://metadata-static.plex.tv/original");settle(original_cdn);assert(original_cdn.get("https://fixture.invalid","profile","https://metadata-static.plex.tv/original") && last_width==640 && last_height==1);original_cdn.clear();original_cdn.update();
     std::filesystem::remove_all(temporary);
     puts("Artwork regression passed: real decode, malformed input, cancellation, bounded cache, texture cleanup");
 }

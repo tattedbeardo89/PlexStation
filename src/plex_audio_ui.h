@@ -28,6 +28,10 @@ bool listening_loaded=false;
 void book_save(bool finished=false);
 std::string audio_scope() {return account_key("plex_audio")+"."+encode(selected_server.id);}
 bool book_section(const Item &i) {return music_section(i) && pref_int((audio_scope()+".books."+encode(i.id)).c_str(),0)!=0;}
+bool audiobook_card(const Item &item){
+    for(const auto &section:home_sections)if(section.id==item.section_id)return book_section(section);
+    return !search_screen && library_context && audio.books && music_section(active_library);
+}
 bool audio_available(bool books) {
     for(const auto &s:home_sections)if(music_section(s) && book_section(s)==books)return true;
     return false;
@@ -114,6 +118,9 @@ void audio_finish(int kind,const Result &result) {
         audio.path=audio.request_path;audio.title=audio.request_title;audio.start=audio.request_start;
         audio.entries=items(result.data,false);audio.focus=0;audio.parent={};
         if(result.data.contains("audioParent")) {auto parent=items(result.data["audioParent"],false);if(!parent.empty())audio.parent=parent[0];}
+        if(audio.books && audio.path.rfind("/search?",0)==0){
+            audio.entries.erase(std::remove_if(audio.entries.begin(),audio.entries.end(),[&](const Item &item){for(const auto &section:home_sections)if(section.id==item.section_id)return !book_section(section);return true;}),audio.entries.end());
+        }
         if(audio.path.find("/genre?")!=std::string::npos)for(auto &i:audio.entries){i.type="audio-route";i.key=audio.path.substr(0,audio.path.find("/genre?"))+"/all?type=9&genre="+encode(i.id); }
         if(audio.path.find("/categories")!=std::string::npos){
             for(auto &item:audio.entries)if(item.type=="category")item.type="audio-route";
@@ -321,8 +328,11 @@ bool audio_frame(uint32_t hit,float) {
     if(!audio.entries.empty() && !diagnostic(TextOnly))poster(1490,235,320,320,audio.entries[std::clamp(audio.focus,0,static_cast<int>(audio.entries.size())-1)],false);
     if(!audio.parent.summary.empty()) {float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(),20*scale,{1490*scale,590*scale},Theme::Text,audio.parent.summary.substr(0,250).c_str(),nullptr,320*scale);}
     int64_t total_duration=0;for(const auto &i:audio.entries)total_duration+=std::min<int64_t>(i.duration,INT64_MAX/4000);
-    if(audio.parent.type=="album")draw_text(1490,560, Theme::Font::Caption,"Album: "+std::to_string(total_duration/60000)+" min (loaded tracks)");
-    if(audio.entries.empty())draw_text(420,300, Theme::Font::Body,job==None?"No accessible content":"Loading audio library...");
+    if(audio.parent.type=="album")draw_text(1490,560, Theme::Font::Caption,std::string(audio.books?"Book: ":"Album: ")+std::to_string(total_duration/60000)+" min (loaded tracks)");
+    if(audio.entries.empty()){
+        draw_text(420,300,Theme::Font::Body,job!=None?"Loading audio library…":audio.books?!audio_available(true)?"No audiobook library is designated for this profile/server":"No matching audiobook content":"No accessible music content");
+        if(audio.books && !audio_available(true) && job==None)draw_text(420,390,Theme::Font::Caption,"Options → Audio / Audiobook Libraries: designate an accessible music-type library.");
+    }
     if((hit & PAD_R2) && audio.start+200<audio.total)audio_load(audio.path,audio.title,false,audio.start+200);
     if((hit & PAD_L2) && audio.start>=200)audio_load(audio.path,audio.title,false,audio.start-200);
     if((hit & PAD_CROSS) && job==None && !audio.entries.empty()) {
@@ -340,7 +350,7 @@ bool audio_frame(uint32_t hit,float) {
                 auto continuing=listening.books(audio_scope());if(!continuing.empty()){Item choice;choice.type="local-listening";choice.title="Continue Listening (PlexStation-local)";choice.id="progress";audio.entries.push_back(choice);}
                 auto completed=listening.books(audio_scope(),1);if(!completed.empty()){Item choice;choice.type="local-listening";choice.title="Completed (PlexStation-local)";choice.id="completed";audio.entries.push_back(choice);}
             }
-            for(int j=0;j<10;++j) {Item choice;choice.title=audio.books && j==0?"Authors":audio.books && j==1?"Books":names[j];choice.type="audio-route";choice.key=j==5?"/playlists?playlistType=audio":"/library/sections/"+encode(item.id)+suffix[j];choice.id=item.id;audio.entries.push_back(choice);}
+            for(int j=0;j<10;++j) {if(audio.books && (j==5 || j==8))continue;Item choice;choice.title=audio.books && j==0?"Authors":audio.books && j==1?"Books":audio.books && j==3?"Recently Added Audiobooks":audio.books && j==4?"Recently Played Chapters":audio.books && j==9?"Search Audiobooks":names[j];choice.type="audio-route";choice.key=j==5?"/playlists?playlistType=audio":"/library/sections/"+encode(item.id)+suffix[j];choice.id=item.id;audio.entries.push_back(choice);}
         } else if(item.type=="local-listening") {audio.entries=listening.books(audio_scope(),item.id=="completed"?1:0);audio.path="local-listening";audio.title=item.title;audio.focus=0;}
         else if(item.type=="audio-shelf"){
             auto b=base,t=server_token;bool books=audio.books;auto local=listening.books(audio_scope());

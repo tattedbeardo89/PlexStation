@@ -5,6 +5,7 @@
 #include "theme.h"
 #include "player.h"
 #include "plex/artwork.h"
+#include "plex/artwork_audit.h"
 #include "plex/client.h"
 #include "plex/diagnostics.h"
 #include "plex/home.h"
@@ -31,6 +32,7 @@
 #include <chrono>
 #include <fstream>
 #include <future>
+#include <mutex>
 #include <memory>
 #include <unistd.h>
 #ifndef PLEX_BUILD_COMMIT
@@ -78,6 +80,7 @@ std::string live_error,live_cancel_id;
 Json live_subscriptions=Json::array(),live_schedule=Json::array();
 bool live_rules_tab=false;
 void open_library(int kind);
+void show_personal_dvr();
 void activate_library_tab();
 bool warm_discovery_pending=false;
 double startup_begin=0,profile_select_begin=0,home_refresh_at=0,last_input_at=0;
@@ -134,7 +137,7 @@ enum Job {
     PinStart,
     PinPoll,
     ValidateAccount,
-    HomeFeed, LibraryFeed, LiveChannels, LiveGuide, LiveTune, LiveRecordings, LiveCancel,
+    HomeFeed, LibraryFeed, ArtworkAudit, LiveChannels, LiveGuide, LiveTune, LiveRecordings, LiveCancel,
     HomeUsers,
     HomeSwitch,
     ValidateProfile,
@@ -208,6 +211,7 @@ bool audio_available(bool books=false);
 void audio_home(bool books=false,bool load_default=true);
 void audio_library_tab(int tab);
 void library_tabs_frame();
+bool audiobook_card(const Item &item);
 void test_manual() {
     auto target=connection_target;
     target.connections={{manual_candidate,true,false}};
@@ -223,17 +227,21 @@ bool progress_pending = false;
 Progress progress;
 Item progress_item;
 const char *navigation[] = {"Home",      "Movies", "TV Shows", "Continue Watching",
-                            "Watchlist", "Search", "Settings", "Music", "Audiobooks", "Home Movies", "Live TV", "Rentals"};
+                            "Watchlist", "Search", "Settings", "Music", "Audiobooks", "Home Movies", "Live TV", "Personal DVR"};
+int sidebar_hidden(){
+    auto key=account_key("plex_sidebar_hidden_v2");if(pref_str(key.c_str(),"").empty())pref_set(key.c_str(),pref_int(account_key("plex_sidebar_hidden_v1").c_str(),0)&~(1<<11));
+    return pref_int(key.c_str(),0);
+}
 bool nav_visible(int i) {
     if(i>=12){size_t index=i-12;if(index>=home_sections.size())return false;const auto &item=home_sections[index];return (item.type=="movie" || item.type=="show") && pref_int((account_key("plex_pinned_library_v1")+"."+encode(selected_server.id)+"."+encode(item.id)).c_str(),0)!=0;}
     if(i<0)return false;
-    if(i!=0 && i!=6 && (pref_int(account_key("plex_sidebar_hidden_v1").c_str(),0)&(1<<i)))return false;
+    if(i!=0 && i!=6 && (sidebar_hidden()&(1<<i)))return false;
     if(i==9)return std::any_of(home_sections.begin(),home_sections.end(),personal_library);
     if((i==1 || i==2) && !selected_server.id.empty()) {
         const char *kind=i==1?"movie":"show";
         if(std::none_of(home_sections.begin(),home_sections.end(),[&](const Item &section){return section.type==kind;}))return false;
     }
-    return (i!=7 || audio_available()) && (i!=8 || audio_available(true));
+    return true;
 }
 std::string pin_order_key(){return account_key("plex_sidebar_pins_v1")+"."+encode(selected_server.id);}
 std::vector<int> library_pin_order(){
@@ -244,9 +252,15 @@ std::vector<int> library_pin_order(){
 }
 std::vector<int> sidebar_order() {
     std::vector<int> order;
-    auto json=Json::parse(pref_str(account_key("plex_sidebar_order_v1").c_str(),"[]"),nullptr,false);
+    auto saved=pref_str(account_key("plex_sidebar_order_v2").c_str(),"");
+    if(saved.empty()){
+        auto old=Json::parse(pref_str(account_key("plex_sidebar_order_v1").c_str(),"[]"),nullptr,false);Json migrated=Json::array();
+        if(old.is_array() && !old.empty()){for(const auto &value:old)if(value.is_number_integer()){auto n=number(Json{{"n",value}},"n",-1);if(n==11)migrated.push_back(8);else if(n>=0 && n<12 && n!=8)migrated.push_back(n);}migrated.push_back(11);}
+        saved=migrated.dump();pref_set(account_key("plex_sidebar_order_v2").c_str(),saved);
+    }
+    auto json=Json::parse(saved,nullptr,false);
     if(json.is_array())for(const auto &value:json)if(value.is_number_integer()){auto n=value.get<int>();if(n>=0 && n<12 && std::find(order.begin(),order.end(),n)==order.end())order.push_back(n);}
-    for(int n:{0,4,1,2,9,8,10,11,7,5,6,3})if(std::find(order.begin(),order.end(),n)==order.end())order.push_back(n);
+    for(int n:{0,4,1,2,9,10,8,7,11,5,6,3})if(std::find(order.begin(),order.end(),n)==order.end())order.push_back(n);
     for(int i:library_pin_order())if(nav_visible(12+i))order.push_back(12+i);
     return order;
 }
@@ -279,7 +293,7 @@ void load(const std::string &path, const std::string &title, bool push = true, i
 Result restore_presentation(Result result,const std::string &root,const std::string &scope,const std::string &server) {
     if(!result)return result;
     std::vector<std::string> ids;for(const auto &section:items(result.data,false))ids.push_back(section.id);
-    std::sort(ids.begin(),ids.end());std::string key=scope+"/"+server;for(const auto &id:ids)key+="/"+id;
+    std::sort(ids.begin(),ids.end());std::string key="presentation-v3/"+scope+"/"+server;for(const auto &id:ids)key+="/"+id;
     DiskCache cache(root+"/plexstation-home-cache",key,4u*1024*1024);
     auto bytes=cache.get("home",1024*1024);auto saved=Json::parse(bytes,nullptr,false);
     if(!saved.is_discarded())result.data["_presentation"]=std::move(saved);
@@ -298,7 +312,7 @@ void connect_server(const Server &s) {
 DiskCache home_presentation_cache;
 std::string presentation_scope() {
     std::vector<std::string> ids;for(const auto &section:home_sections)ids.push_back(section.id);
-    std::sort(ids.begin(),ids.end());std::string scope=account_id+"/"+selected_server.id;
+    std::sort(ids.begin(),ids.end());std::string scope="presentation-v3/"+account_id+"/"+selected_server.id;
     for(const auto &id:ids)scope+="/"+id;
     return scope;
 }
@@ -343,6 +357,24 @@ void connected(const Json &data) {
     }
 }
 int recommendation_month(){int mode=std::clamp(pref_int(account_key("plex_seasonal_mode_v1").c_str(),0),0,4);return mode==1?10:mode==2?12:mode==3?1:mode==4?7:season_month();}
+std::mutex home_snapshot_mutex;
+Json home_snapshot;uint64_t home_snapshot_epoch=0;
+Item deferred_media;int deferred_nav=-2;uint64_t deferred_action_epoch=0;
+void reconcile_home(const Json &data,bool partial=false){
+    auto updated=home_rows(data);
+    if(partial){auto merged=feed_rows;for(auto &row:updated){auto found=std::find_if(merged.begin(),merged.end(),[&](const Hub &old){return old.id==row.id;});if(found!=merged.end())*found=std::move(row);else merged.push_back(std::move(row));}updated=std::move(merged);}
+    std::vector<int> columns(updated.size(),0);std::vector<float> scroll(updated.size(),0);
+    std::string selected=feed_focus>=0 && feed_focus<static_cast<int>(feed_rows.size())?feed_rows[feed_focus].id:"";
+    for(size_t i=0;i<updated.size();++i)for(size_t j=0;j<feed_rows.size();++j)if(updated[i].id==feed_rows[j].id){
+        if(updated[i].id==selected)feed_focus=i;
+        if(j<feed_columns.size() && feed_columns[j]>=0 && feed_columns[j]<static_cast<int>(feed_rows[j].entries.size()))for(size_t n=0;n<updated[i].entries.size();++n)if(updated[i].entries[n].id==feed_rows[j].entries[feed_columns[j]].id)columns[i]=n;
+        if(j<feed_scroll.size())scroll[i]=feed_scroll[j];
+    }
+    feed_rows=std::move(updated);feed_columns=std::move(columns);feed_scroll=std::move(scroll);feed_focus=std::clamp(feed_focus,0,std::max(0,static_cast<int>(feed_rows.size())-1));home_screen=true;grid_checkpoint=false;
+}
+void publish_home(const Json &data,uint64_t epoch){if(feed_generation.load()!=epoch)return;std::lock_guard<std::mutex> lock(home_snapshot_mutex);home_snapshot=data;home_snapshot_epoch=epoch;}
+void consume_home(){std::lock_guard<std::mutex> lock(home_snapshot_mutex);if(home_snapshot.is_null())return;if(job==HomeFeed && home_snapshot_epoch==feed_generation.load())reconcile_home(home_snapshot,true);home_snapshot=Json();}
+void cancel_home(){++feed_generation;++screen_generation;deferred_action_epoch=screen_generation;}
 void load_home() {
     library_context=false;
     if(job!=None || base.empty())return;
@@ -351,7 +383,13 @@ void load_home() {
     auto b=base,t=server_token;auto sections=home_sections;
     home_active=true;home_draw_ready=false;home_checkpoint(7,"Home hubs requested");
     auto epoch=++feed_generation;feed_error.clear();home_screen=true;auto cache=home_presentation_cache;int month=recommendation_month();bool seasonal=pref_int(account_key("plex_seasonal_v1").c_str(),1)!=0;
-    submit(HomeFeed,[b,t,sections,epoch,cache,seasonal,month] {auto current=[epoch]{return feed_generation.load()==epoch;};auto result=home_feed(*client,b,t,sections,current);if(seasonal)append_seasonal_home(result,*client,b,t,sections,month,current);if(result && feed_generation.load()==epoch)cache.put("home",result.data.dump());return result;});
+    submit(HomeFeed,[b,t,sections,epoch,cache,seasonal,month]{
+        auto current=[epoch]{return feed_generation.load()==epoch;};auto home_client=client->bounded(1500,2500);
+        auto result=home_feed(home_client,b,t,sections,current,[epoch](const Json &data){publish_home(data,epoch);});
+        if(seasonal && current())append_seasonal_home(result,home_client,b,t,sections,month,current);
+        if(result && current())cache.put("home",result.data.dump());
+        return result;
+    });
 }
 void service_home_refresh(double now) {
     if(now<home_refresh_at || now-last_input_at<8 || job!=None || progress_pending || base.empty() ||
@@ -365,6 +403,7 @@ void refresh() {
     submit(Resources, [token] { return client->resources(token); });
 }
 void clear_profile() {
+    deferred_media={};deferred_nav=-2;{std::lock_guard<std::mutex> lock(home_snapshot_mutex);home_snapshot=Json();}
     home_active=false;home_draw_ready=false;
     live_cancel_id.clear();live_subscriptions=Json::array();live_schedule=Json::array();
     warm_discovery_pending=false;library_context=false;active_library={};live_channel_list=Json::array();live_program_list=Json::array();live_channel={};live_error.clear();live_guide_screen=false;
@@ -497,6 +536,12 @@ void finish_job() {
     job = None;
     if(deferred_profiles) {deferred_profiles=false;show_profiles();return;}
     if((done==Browse || done==Sections || done==Details || done==HomeFeed || done==LibraryFeed || done==AudioBrowse || done==AudioQueueLoad || done==AudioResolve || done==AudioFeed) && pending_generation!=screen_generation) return;
+    if(done==ArtworkAudit){
+        if(pending_generation!=screen_generation)return;
+        if(!result){message=result.error;return;}
+        message=std::string("Installed icon ")+(flag(result.data,"matches")?"matches":"DIFFERS FROM")+" package manifest. Installed SHA-256 "+text(result.data,"installed")+". PS5 registration/cache not inspected.";
+        fprintf(stderr,"icon: title=PPSA85301 installed-sha=%s expected-sha=%s matches=%d registration=uninspected\n",text(result.data,"installed").c_str(),text(result.data,"expected").c_str(),flag(result.data,"matches"));return;
+    }
     if(done==LiveRecordings || done==LiveCancel){
         if(pending_generation!=screen_generation)return;
         live_cancel_id.clear();
@@ -580,7 +625,7 @@ void finish_job() {
             account_error.clear();profile_error.clear();home_profiles.clear();
             if(home_enabled) {profile_screen=true;account_loading=false;auto token=account;submit(HomeUsers,[token]{return client->home_users(token);});}
             else {
-                home_profiles.push_back({std::to_string(id),text(result.data,"uuid"),text(result.data,"title",text(result.data,"username","Plex account")),text(result.data,"thumb"),false,true,false});
+                home_profiles.push_back({std::to_string(id),text(result.data,"uuid"),text(result.data,"title",text(result.data,"username","Plex account")),profile_avatar(result.data),false,true,false});
                 profiles_ready();
             }
         }
@@ -594,15 +639,7 @@ void finish_job() {
     if(done==HomeFeed || done==LibraryFeed) {
         home_checkpoint(8,"Home hub response ready",result?0:(result.status?result.status:-1));
         if(!result) {feed_error=result.error;home_refresh_at=plat_time()+45;return;}
-        auto updated=home_rows(result.data);std::vector<int> columns(updated.size(),0);std::vector<float> scroll(updated.size(),0);
-        std::string selected_row=feed_focus>=0 && feed_focus<static_cast<int>(feed_rows.size())?feed_rows[feed_focus].id:"";
-        for(size_t i=0;i<updated.size();++i)for(size_t j=0;j<feed_rows.size();++j)if(updated[i].id==feed_rows[j].id){
-            if(updated[i].id==selected_row)feed_focus=i;
-            if(j<feed_columns.size() && feed_columns[j]<static_cast<int>(feed_rows[j].entries.size())){const auto &id=feed_rows[j].entries[feed_columns[j]].id;for(size_t n=0;n<updated[i].entries.size();++n)if(updated[i].entries[n].id==id)columns[i]=n;}
-            if(j<feed_scroll.size())scroll[i]=feed_scroll[j];
-        }
-        feed_rows=std::move(updated);feed_columns=std::move(columns);feed_scroll=std::move(scroll);
-        grid_checkpoint=false;feed_focus=std::clamp(feed_focus,0,std::max(0,static_cast<int>(feed_rows.size())-1));home_screen=true;
+        reconcile_home(result.data);
         home_checkpoint(9,"Home UI populated",0,feed_rows.size());
         auto warnings=result.data.find("warnings");
         if(warnings!=result.data.end() && warnings->is_array() && !warnings->empty() && (*warnings)[0].is_string())feed_error=(*warnings)[0].get<std::string>();
@@ -759,6 +796,7 @@ void open_library(int kind) {
     library_context=true;library_tabs_focus=false;library_tab=0;activate_library_tab();
 }
 void open_media(const Item &item) {
+    if(job==HomeFeed){cancel_home();deferred_nav=-2;deferred_media=item;return;}
     if(job!=None)return;
     if(item.type=="track" || item.type=="album" || item.type=="artist" || item.type=="playlist"){open_audio_item(item);return;}
     if(item.type=="collection"){load("/library/collections/"+encode(item.id)+"/children",item.title);return;}
@@ -860,10 +898,11 @@ bool custom_focus_valid() {
     if(video)return !tracks || playback_tracks_focus_valid();
     if(editor)return edit_focus>=0 && edit_focus<static_cast<int>(alphabet.size());
     if(sidebar)return nav>=-1 && nav<12+static_cast<int>(home_sections.size()) && (nav<0 || nav_visible(nav));
-    if(settings)return focus>=0 && focus<(settings_page==2 ? 13 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==10 ? 13 : settings_page==11 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==9 ? 7 : settings_page==8 ? 8 : settings_page==7 ? 4 : settings_page==6 ? 4 : settings_page==5 ? 8 : settings_page==1 ? 2 : settings_page ? 1 : 13);
+    if(settings)return focus>=0 && focus<(settings_page==2 ? 14 : settings_page==3 ? 2 : settings_page==4 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==10 ? 13 : settings_page==11 ? std::max(1,static_cast<int>(home_sections.size())) : settings_page==9 ? 7 : settings_page==8 ? 8 : settings_page==7 ? 4 : settings_page==6 ? 4 : settings_page==5 ? 8 : settings_page==1 ? 2 : settings_page ? 1 : 13);
     if(audio_focus_state()>=0)return audio_focus_state()!=0;
     if(in_detail)return focus>=0 && focus<(cloud_available() && !cloud_id(detail).empty()?6:4);
     if(!available.empty())return focus>=0 && focus<static_cast<int>(available.size());
+    if(page_path=="free-live-tv")return focus==0;
     if(page_path=="live-recordings")return focus>=0 && focus<std::max(1,static_cast<int>((live_rules_tab?live_subscriptions:live_schedule).size()));
     if(page_path=="live-tv")return focus>=0 && focus<std::max(1,static_cast<int>((live_guide_screen?live_program_list:live_channel_list).size()));
     if(home_screen) {
@@ -933,26 +972,30 @@ std::string card_metadata(const Item &item){
     if(item.type=="episode")return item.series+" S"+std::to_string(std::max(0,item.season))+" E"+std::to_string(std::max(0,item.episode));
     return item.year?std::to_string(item.year):"";
 }
-void poster(float x,float y,float width,float height,const Item &item,bool selected) {
-    float scale=gfx.height/1080.f;
-    rect(x-5,y-5,width+10,height+10,selected?Theme::focus_color(plat_time()):Theme::Border);
-    auto texture=(item.type=="episode" || personal_item(item)) ? artwork->landscape(base,server_token,item.thumb) : artwork->get(base,server_token,item.thumb);
-    if(texture) {
-        float ratio=artwork->aspect(texture);
-        if(ratio<=0)ratio=item.type=="episode"?16.f/9:(item.type=="album" || item.type=="artist" || item.type=="track")?1.f:2.f/3;
-        float image_width=std::min(width,height*ratio);
-        float image_height=image_width/ratio;
-        float left=x+(width-image_width)*.5f;
-        float top=y+(height-image_height)*.5f;
-        ImGui::GetBackgroundDrawList()->AddImageRounded(texture,{left*scale,top*scale},{(left+image_width)*scale,(top+image_height)*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,Theme::Metric::ImageRadius*scale);
+std::vector<CardMeasure> rendered_cards;
+CardKind presentation_kind(const Item &item){return card_kind(item,audiobook_card(item),personal_item(item));}
+void poster(float x,float y,float width,float height,const Item &item,bool selected){
+    auto kind=presentation_kind(item);auto natural=card_size(kind);float ratio=natural.width/natural.height;
+    if(width/height>ratio)width=height*ratio;else height=width/ratio;
+    float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+    if(rendered_cards.size()<64)rendered_cards.push_back({kind,x*scale,y*scale,width*scale,height*scale,(x-4)*scale,(y-4)*scale,(width+8)*scale,(height+8)*scale,selected});
+    rect(x-4,y-4,width+8,height+8,selected?Theme::focus_color(plat_time()):Theme::Border);
+    bool wide=kind==CardKind::Episode || kind==CardKind::Category;
+    auto texture=artwork->media(base,server_token,item,wide);
+    if(!texture && kind==CardKind::Category)texture=artwork->asset(plat_data_dir(),category_art(item.title));
+    if(texture)cover_image(texture,x,y,width,height);
+    else {
+        rect(x,y,width,height,Theme::Sidebar);
+        gradient(x,y,width,height,Theme::alpha(Theme::Accent,70),Theme::alpha(Theme::Blue,30));
+        float cx=(x+width/2)*scale,cy=(y+height/2)*scale,r=std::min(width,height)*.22f*scale;
+        if(kind==CardKind::Square){draw->AddCircle({cx,cy},r,Theme::Focus,32,4*scale);draw->AddCircleFilled({cx,cy},r*.18f,Theme::Text);}
+        else if(kind==CardKind::Book){draw->AddRect({cx-r,cy-r*1.3f},{cx+r,cy+r*1.3f},Theme::Focus,3*scale,0,4*scale);draw->AddLine({cx-r*.6f,cy-r*1.3f},{cx-r*.6f,cy+r*1.3f},Theme::Text,2*scale);}
+        else {draw->AddTriangleFilled({cx-r*.6f,cy-r},{cx+r,cy},{cx-r*.6f,cy+r},Theme::Focus);}
     }
-    else {rect(x,y,width,height,Theme::Surface);draw_text(x+12,y+height*.45f,Theme::Font::Caption,item.thumb.empty()?"No poster":"Artwork unavailable",Theme::Secondary,width-24);}
-    if(item.watched) {rect(x+width-48,y+8,40,32,Theme::alpha(Theme::Success,245));draw_text(x+width-38,y+10,Theme::Font::Caption,"✓");}
-    if(item.duration>0 && item.offset>0) {
-        float progress=std::clamp(static_cast<float>(item.offset)/item.duration,0.f,1.f);
-        rect(x,y+height-8,width,8,Theme::Border);rect(x,y+height-8,width*progress,8,Theme::Accent);
-    }
+    if(item.watched){rect(x+width-40,y+8,32,28,Theme::Success);draw_text(x+width-35,y+8,Theme::Font::Caption,"✓");}
+    if(item.duration>0 && item.offset>0){float progress=std::clamp(static_cast<float>(item.offset)/item.duration,0.f,1.f);rect(x,y+height-6,width,6,Theme::Border);rect(x,y+height-6,width*progress,6,Theme::Accent);}
 }
+
 void home_frame(uint32_t hit,float dt) {
     home_draw_ready=true;
     if(!startup_home_drawn && !feed_rows.empty() && !library_context && !search_screen){
@@ -981,7 +1024,7 @@ void home_frame(uint32_t hit,float dt) {
         draw_text(390,180, Theme::Font::Heading,selected.title);
         int first=std::max(0,column-4);
         for(int i=first;i<static_cast<int>(selected.entries.size()) && i<first+7;++i)row(i,column,250+(i-first)*Theme::Metric::CompactStep,selected.entries[i].title);
-        if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
+        if((hit & PAD_CROSS) && (job==None || job==HomeFeed) && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
         return;
     }
     float amount=Theme::motion(dt);
@@ -989,7 +1032,7 @@ void home_frame(uint32_t hit,float dt) {
     float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
     if(!selected.entries.empty()) {
         const auto &featured=selected.entries[column];
-        if(featured.type=="episode")artwork->landscape(base,server_token,featured.thumb);else artwork->get(base,server_token,featured.thumb);
+        artwork->media(base,server_token,featured,presentation_kind(featured)==CardKind::Episode);
         float feature_y=library_context?210.f:160.f,feature_height=library_context?125.f:175.f;
         rect(390,feature_y,1440,feature_height,Theme::Sidebar);
         auto backdrop=artwork->landscape(base,server_token,featured.art.empty()?featured.thumb:featured.art);
@@ -1004,34 +1047,40 @@ void home_frame(uint32_t hit,float dt) {
         auto &hub=feed_rows[r];float y=370+(r-feed_vertical)*Theme::Metric::CarouselStep;
         if(y>938 || y+Theme::Metric::CarouselStep<355)continue;
         draw_text(390,y, Theme::Font::Heading,hub.title);
-        float dest=static_cast<float>(std::max(0,feed_columns[r]-4));feed_scroll[r]+=(dest-feed_scroll[r])*amount;
-        for(int c=std::max(0,static_cast<int>(feed_scroll[r]));c<static_cast<int>(hub.entries.size()) && c<static_cast<int>(feed_scroll[r])+5;++c) {
-            auto &item=hub.entries[c];float x=390+(c-feed_scroll[r])*Theme::Metric::CardStep;
-            if(plex::diagnostic(TextOnly))row(c,feed_columns[r],y+55+(c%3)*80,item.title);
-            else {
-                poster(x,y+60,240,245,item,!sidebar && r==feed_focus && c==feed_columns[r]);
-                draw->PushClipRect({x*scale,(y+315)*scale},{(x+240)*scale,(y+362)*scale},true);
-                draw->AddText(ImGui::GetFont(),Theme::Font::Caption*scale,{x*scale,(y+315)*scale},Theme::Text,item.title.c_str(),nullptr,240*scale);
-                draw->PopClipRect();
-                std::string secondary=card_metadata(item);
-                if(hub.continuing && item.duration>item.offset)secondary+="  "+std::to_string((item.duration-item.offset)/60000)+" min left";
-                if(secondary.size()>40)secondary=secondary.substr(0,37)+"...";
-                draw_text(x,y+365,Theme::Font::Caption,secondary,Theme::Secondary,240);
-            }
+        std::vector<CardKind> kinds;for(const auto &item:hub.entries)kinds.push_back(presentation_kind(item));
+        feed_scroll[r]=rail_offset(kinds,feed_columns[r],feed_scroll[r]);
+        float left=0;
+        for(size_t c=0;c<hub.entries.size();++c){
+            auto &item=hub.entries[c];auto size=card_size(kinds[c]);float x=390+left-feed_scroll[r];left+=size.width+24;
+            if(x+size.width<385 || x>1830)continue;
+            poster(x,y+55,size.width,size.height,item,!sidebar && r==feed_focus && static_cast<int>(c)==feed_columns[r]);
+            draw->PushClipRect({x*scale,(y+size.height+65)*scale},{(x+size.width)*scale,(y+size.height+115)*scale},true);
+            draw->AddText(ImGui::GetFont(),Theme::Font::Caption*scale,{x*scale,(y+size.height+65)*scale},Theme::Text,item.title.c_str(),nullptr,size.width*scale);
+            draw->PopClipRect();
+            auto secondary=card_metadata(item);if(hub.id.rfind("recentlyReleased",0)==0 && !item.released.empty())secondary=item.released+" • "+secondary;
+            if(hub.continuing && item.duration>item.offset)secondary+=" • "+std::to_string((item.duration-item.offset)/60000)+" min left";
+            draw_text(x,y+size.height+117,Theme::Font::Caption,secondary,Theme::Secondary,size.width);
         }
     }
     draw->PopClipRect();
     if(pref_int(account_key("plex_artwork_prefetch_v1").c_str(),1) && !artwork->busy() && column+1<static_cast<int>(selected.entries.size())) {
         const auto &next=selected.entries[column+1];
-        if(next.type=="episode")artwork->landscape(base,server_token,next.thumb);else artwork->get(base,server_token,next.thumb);
+        artwork->media(base,server_token,next,presentation_kind(next)==CardKind::Episode);
     }
-    if((hit & PAD_CROSS) && job==None && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
+    if((hit & PAD_CROSS) && (job==None || job==HomeFeed) && !sidebar && !selected.entries.empty())open_media(selected.entries[column]);
 }
 #include "plex_video_ui.h"
 #include "plex_audio_ui.h"
 #include "plex_progress_ui.h"
 #include "plex_cloud_ui.h"
 
+void show_personal_dvr(){
+    if(job!=None)return;
+    audio_leave_browse();library_context=false;home_screen=false;listing.clear();in_detail=false;settings=false;sidebar=false;
+    page_title="Personal Live TV & DVR";page_path="live-tv";nav=11;focus=0;
+    live_channel_list=Json::array();live_program_list=Json::array();live_guide_screen=false;live_error.clear();
+    auto b=base,t=server_token;submit(LiveChannels,[b,t]{return live_channels(*client,b,t);});
+}
 void profile_screen_frame(uint32_t hit) {
     scene_background();
     centered(130, Theme::Font::Activation,profile_pin ? "Enter profile PIN" : "Who's Watching?");
@@ -1079,7 +1128,7 @@ void profile_screen_frame(uint32_t hit) {
         auto avatar=artwork->avatar(home_profiles[i].avatar,account);
         if(avatar) {
             float scale=gfx.height/1080.f;ImGui::GetBackgroundDrawList()->AddImageRounded(avatar,{(x+50)*scale,340*scale},{(x+210)*scale,500*scale},ImVec2(0,0),ImVec2(1,1),Theme::White,80*scale);
-        } else {centered(390, Theme::Font::Avatar,"●",x+130);centered(470,Theme::Font::Caption,artwork->avatar_state(home_profiles[i].avatar),x+130);}
+        } else {auto letters=initials(home_profiles[i].name);float scale=gfx.height/1080.f;Theme::profile_placeholder(ImGui::GetBackgroundDrawList(),(x+50)*scale,340*scale,160*scale,letters=="?");if(letters!="?")centered(390,Theme::Font::Avatar,letters,x+130);centered(620,Theme::Font::Caption,artwork->avatar_state(home_profiles[i].avatar),x+130,250);}
         centered(510,Theme::Font::Body,home_profiles[i].name,x+130,240);
         if(home_profiles[i].protected_user)centered(560, Theme::Font::Caption,"PIN protected",x+130);
     }
@@ -1208,9 +1257,15 @@ bool ui_init() {
     return true;
 }
 void ui_frame(const PadState &pad, float dt) {
+    rendered_cards.clear();
     player_tick();
-    finish_job();
+    finish_job();consume_home();
     uint32_t hit = controller.update(pad, dt);
+    if(hit & (PAD_CIRCLE|PAD_OPTIONS)){deferred_media={};deferred_nav=-2;}
+    if(job==None && deferred_action_epoch==screen_generation){
+        if(!deferred_media.id.empty()){auto item=deferred_media;deferred_media={};open_media(item);}
+        else if(deferred_nav!=-2){nav=deferred_nav;deferred_nav=-2;sidebar=true;hit|=PAD_CROSS;}
+    }
     InputDiagnostic diagnostic{pad, hit};
     double now = plat_time();
     if(hit)last_input_at=now;
@@ -1408,7 +1463,7 @@ void ui_frame(const PadState &pad, float dt) {
         if (hit & PAD_CIRCLE)
             editor = 0;
         if ((hit & PAD_TRIANGLE) && job == None) {
-            if (editor == 3) {audio_load("/search?type=10&query="+encode(edit_text),"Music Search");editor=0;}
+            if (editor == 3) {audio_load("/search?type=10&query="+encode(edit_text),audio.books?"Audiobook Search":"Music Search");editor=0;}
             else if (editor == 1) {
                 search_query=edit_text;search_start=0;auto b=base,t=server_token,q=edit_text;
                 submit(GlobalSearch,[b,t,q]{return global_search(*client,b,t,q);});
@@ -1473,8 +1528,10 @@ void ui_frame(const PadState &pad, float dt) {
     bool on_home=home_screen && !settings && !in_detail && available.empty();
     bool grid = !on_home && !listing.empty() && page_path != "/library/sections" && !settings && !in_detail &&
                 available.empty() && !plex::diagnostic(TextOnly);
+    std::vector<CardBox> grid_boxes;
+    if(grid){std::vector<CardKind> kinds;for(const auto &item:listing)kinds.push_back(presentation_kind(item));grid_boxes=card_flow(kinds);}
     if ((hit & PAD_LEFT) && (!on_home || sidebar)) {
-        if (!sidebar && grid && focus % 5 > 0)
+        if (!sidebar && grid && focus>0 && grid_boxes[focus-1].row==grid_boxes[focus].row)
             --focus;
         else
             sidebar = true;
@@ -1539,8 +1596,9 @@ void ui_frame(const PadState &pad, float dt) {
             draw_text(390,920,Theme::Font::Caption,"Left/Right choose tab • Cross open • Down browse • Change library in Settings / Libraries");
             return;
         }
-        if((hit & PAD_UP) && (home_screen?feed_focus==0:focus<5)){library_tabs_focus=true;return;}
+        if((hit & PAD_UP) && (home_screen?feed_focus==0:grid && !grid_boxes.empty()?grid_boxes[focus].row==0:focus==0)){library_tabs_focus=true;return;}
     }
+    if(sidebar && (hit & PAD_CROSS) && job==HomeFeed){cancel_home();deferred_media={};deferred_nav=nav;return;}
     if (sidebar) {
         if (hit & PAD_UP)
             {nav=nav_step(nav,-1);}
@@ -1553,9 +1611,8 @@ void ui_frame(const PadState &pad, float dt) {
             library_context=false;settings=false;in_detail=false;
             if(nav>=12){active_library=home_sections[nav-12];library_context=true;library_kind=personal_library(active_library)?9:active_library.type=="show"?2:1;library_tab=0;activate_library_tab();return;}
             if(nav==9){open_library(9);return;}
-            if(nav==10 || nav==11){home_screen=false;listing.clear();page_title=navigation[nav];page_path=nav==10?"live-tv":"rentals";sidebar=false;
-                if(nav==10){live_channel_list=Json::array();live_program_list=Json::array();live_guide_screen=false;live_error.clear();auto b=base,t=server_token;submit(LiveChannels,[b,t]{return live_channels(*client,b,t);});}
-                return;}
+            if(nav==10){home_screen=false;listing.clear();page_title="Free Live TV";page_path="free-live-tv";sidebar=false;return;}
+            if(nav==11){show_personal_dvr();return;}
             settings = nav == 6; settings_page=0;
             in_detail = false;
             sidebar = false;
@@ -1576,16 +1633,16 @@ void ui_frame(const PadState &pad, float dt) {
         if(settings_page==10) {
             if(hit & PAD_UP)focus=std::max(0,focus-1);
             if(hit & PAD_DOWN)focus=std::min(12,focus+1);
-            auto order=sidebar_order();order.resize(12);int hidden=pref_int(account_key("plex_sidebar_hidden_v1").c_str(),0);
+            auto order=sidebar_order();order.resize(12);int hidden=sidebar_hidden();
             int first=std::max(0,focus-6);
             for(int i=first;i<13 && i<first+7;++i)row(i,focus,210+(i-first)*85,i==12?"Reset Sidebar":nav_label(order[i])+((hidden&(1<<order[i]))?" [Hidden]":" [Shown]"));
             draw_text(390,885,Theme::Font::Caption,"Cross show/hide • Left/Right reorder • Square pin accessible libraries");
             if(hit & PAD_SQUARE){settings_page=11;focus=0;return;}
-            if((hit & PAD_CROSS) && focus==12){pref_set(account_key("plex_sidebar_order_v1").c_str(),"[]");pref_set(account_key("plex_sidebar_hidden_v1").c_str(),0);pref_set(pin_order_key().c_str(),"[]");
+            if((hit & PAD_CROSS) && focus==12){pref_set(account_key("plex_sidebar_order_v2").c_str(),"[]");pref_set(account_key("plex_sidebar_hidden_v2").c_str(),0);pref_set(pin_order_key().c_str(),"[]");
                 for(const auto &section:home_sections)pref_set((account_key("plex_pinned_library_v1")+"."+encode(selected_server.id)+"."+encode(section.id)).c_str(),0);
             }
-            else if((hit & PAD_CROSS) && order[focus]!=0 && order[focus]!=6){hidden^=1<<order[focus];pref_set(account_key("plex_sidebar_hidden_v1").c_str(),hidden);}
-            if(focus<12 && (hit & (PAD_LEFT|PAD_RIGHT))){int other=std::clamp(focus+((hit & PAD_RIGHT)?1:-1),0,11);std::swap(order[focus],order[other]);focus=other;pref_set(account_key("plex_sidebar_order_v1").c_str(),Json(order).dump());}
+            else if((hit & PAD_CROSS) && order[focus]!=0 && order[focus]!=6){hidden^=1<<order[focus];pref_set(account_key("plex_sidebar_hidden_v2").c_str(),hidden);}
+            if(focus<12 && (hit & (PAD_LEFT|PAD_RIGHT))){int other=std::clamp(focus+((hit & PAD_RIGHT)?1:-1),0,11);std::swap(order[focus],order[other]);focus=other;pref_set(account_key("plex_sidebar_order_v2").c_str(),Json(order).dump());}
             return;
         }
         if(settings_page==11) {
@@ -1636,18 +1693,19 @@ void ui_frame(const PadState &pad, float dt) {
             return;
         }
         if(settings_page==2) {
-            const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information","Safe Startup (skip automatic Home)","Detailed Home Initialization Tracing","Retry Avatar"};
+            const char *labels[]={"Show Controller Diagnostics","Text-Only Library Mode","Disable Artwork Downloads","Disable Artwork Decoding","Disable Artwork GPU Uploads","Limit Library Results to 10","Detailed Library Tracing","Server Connection Diagnostics","Library / Artwork Diagnostics","Application Build Information","Safe Startup (skip automatic Home)","Detailed Home Initialization Tracing","Retry Avatar","Read-only installed icon audit"};
             if(hit & PAD_UP) focus=std::max(0,focus-1);
-            if(hit & PAD_DOWN) focus=std::min(12,focus+1);
+            if(hit & PAD_DOWN) focus=std::min(13,focus+1);
             int first=std::max(0,focus-6);
-            for(int i=first;i<13 && i<first+7;++i) {
+            for(int i=first;i<14 && i<first+7;++i) {
                 bool enabled=i==0 ? controller_overlay : i<=6 ? !!(diagnostic_flags.load() & (1u<<(i-1))) : i==10 ? plex::diagnostic(SafeHome) : i==11 ? plex::diagnostic(DetailedHome) : false;
-                row(i,focus,190+(i-first)*Theme::Metric::RowStep,std::string(labels[i])+(i<=6 || i>=10 ? (enabled ? ": On" : ": Off") : ""));
+                row(i,focus,190+(i-first)*Theme::Metric::RowStep,std::string(labels[i])+(i<=6 || i==10 || i==11 ? (enabled ? ": On" : ": Off") : ""));
             }
             if(hit & PAD_CROSS) {
                 if(focus==0) {controller_overlay=!controller_overlay; pref_set("plex_controller_overlay_v2",controller_overlay?1:0);}
                 else if(focus<=6) {diagnostic_flags.fetch_xor(1u<<(focus-1));pref_set("plex_developer_flags_v1",static_cast<int>(diagnostic_flags.load()));artwork->clear();diagnostic_lines=0;}
                 else if(focus==7) {connection_diagnostics=true;diagnostic_focus=0;}
+                else if(focus==13){auto root=std::string(plat_data_dir());submit(ArtworkAudit,[root]{return audit_installed_icon(root);});}
                 else if(focus==12){artwork->retry_avatars();message="Avatar retry queued. "+artwork->avatar_state(active_profile.avatar);}
                 else if(focus==8) message=artwork->diagnostics();
                 else if(focus==10){diagnostic_flags.fetch_xor(SafeHome);pref_set("plex_safe_home_v1",plex::diagnostic(SafeHome)?1:0);}
@@ -1839,32 +1897,34 @@ void ui_frame(const PadState &pad, float dt) {
         if(!live_error.empty())draw_text(390,850,Theme::Font::Caption,live_error,Theme::Warning);
         draw_text(390,910,Theme::Font::Caption,"L2/R2: schedule / rules • Cross: cancel selected rule • Square: refresh • Circle: channels");
         draw_text(390,950,Theme::Font::Caption,"Completed recordings are in your configured libraries. New recording setup uses Plex's supported app.");
-    } else if(page_path=="rentals") {
-        draw_text(390,240,Theme::Font::Heading,"Plex Rentals");
-        draw_text(390,350,Theme::Font::Body,"Rental catalog and entitlement APIs are not available to this client.");
-        draw_text(390,440,Theme::Font::Body,"Use an authorized Plex application for purchases and DRM-protected rental playback.");
+    } else if(page_path=="free-live-tv") {
+        draw_text(390,240,Theme::Font::Heading,"Plex Free Live TV");
+        draw_text(390,340,Theme::Font::Body,"Plex's free channels do not require your own tuner or DVR.");
+        draw_text(390,430,Theme::Font::Body,"A supported authorized free-channel catalog/playback interface is not available in this native client.");
+        draw_text(390,520,Theme::Font::Caption,"Use Plex's supported application for available free channels, advertising and regional access.");
+        row(0,0,680,"Square: open your separate Personal Live TV & DVR");
+        if((hit & PAD_SQUARE) && job==None)show_personal_dvr();
     } else if(home_screen) {
         if(search_screen && (hit & (PAD_L2|PAD_R2)) && job==None){search_start=std::max(0,search_start+((hit & PAD_R2)?12:-12));auto b=base,t=server_token,q=search_query;auto start=search_start;submit(GlobalSearch,[b,t,q,start]{return global_search(*client,b,t,q,start);});}
         home_frame(hit,dt);
     }
     else {
         if (!sidebar && (hit & PAD_UP))
-            focus = std::max(0, focus - (grid ? 5 : 1));
+            focus = grid?grid_neighbor(grid_boxes,focus,-1):std::max(0,focus-1);
         if (!sidebar && (hit & PAD_DOWN) && !listing.empty())
-            focus = std::min(static_cast<int>(listing.size()) - 1, focus + (grid ? 5 : 1));
+            focus = grid?grid_neighbor(grid_boxes,focus,1):std::min(static_cast<int>(listing.size())-1,focus+1);
         if (grid) {
             if(!grid_checkpoint) {checkpoint(15,"first movie grid",listing.size());grid_checkpoint=true;}
-            int first = std::max(0, (focus / 5 - 1) * 5);
-            for (int i = first; i < static_cast<int>(listing.size()) && i < first + 10; ++i) {
-                float x = 390 + (i - first) % 5 * 285, y = 210 + (i - first) / 5 * 350;
-                bool selected = i == focus && !sidebar;
-                poster(x,y,250,270,listing[i],selected);
-                auto label = listing[i].title;
-                if (label.size() > 22)
-                    label = label.substr(0, 19) + "…";
-                draw_text(x + 7, y + 285, Theme::Font::Caption, label);
-                draw_text(x+7,y+315,Theme::Font::Caption,page_path=="cloud-watchlist"?"Availability: check selected server":card_metadata(listing[i]));
+            float scroll=std::max(0.f,grid_boxes[focus].y-15);
+            float scale=gfx.height/1080.f;auto *draw=ImGui::GetBackgroundDrawList();
+            draw->PushClipRect({380*scale,204*scale},{1840*scale,932*scale},true);
+            for(size_t i=0;i<listing.size();++i){const auto &box=grid_boxes[i];float x=390+box.x,y=210+box.y-scroll;
+                if(y+box.height+90<204 || y>930)continue;
+                poster(x,y,box.width,box.height,listing[i],static_cast<int>(i)==focus && !sidebar);
+                draw_text(x,y+box.height+12,Theme::Font::Caption,listing[i].title,Theme::Text,box.width);
+                draw_text(x,y+box.height+48,Theme::Font::Caption,page_path=="cloud-watchlist"?"Check server availability":card_metadata(listing[i]),Theme::Secondary,box.width);
             }
+            draw->PopClipRect();
         } else {
             int first = std::max(0, focus - 7);
             for (int i = first; i < static_cast<int>(listing.size()) && i < first + 8; ++i)

@@ -14,7 +14,7 @@ class Artwork {
         int width = 0, height = 0;
         uint64_t generation = 0;
         std::string failure;
-        unsigned request_id=0;
+        unsigned request_id=0,attempt=1;
         std::vector<unsigned char> rgba;
     };
     struct Entry {
@@ -24,12 +24,12 @@ class Artwork {
         uint64_t retry_after = 0;
         int width=0,height=0;
         std::string failure;
-        unsigned request_id=0;
+        unsigned request_id=0,attempt=1;
     };
-    std::future<Decoded> pending;
+    std::future<Decoded> pending,media_pending,avatar_pending;
     std::optional<Decoded> ready;
     DiskCache disk,avatar_disk;
-    std::string pending_key;
+    std::string pending_key,media_pending_key,avatar_pending_key;
     std::string disk_scope;
     struct Stats {std::atomic<size_t> bytes{0},avatar_bytes{0},hits{0},misses{0},gpu_hits{0},gpu_misses{0},downloads{0},decode_failures{0},evictions{0},write_failures{0},upload_failures{0};};
     std::shared_ptr<Stats> stats=std::make_shared<Stats>();
@@ -45,7 +45,7 @@ class Artwork {
 
   public:
     explicit Artwork(Transport t) : transport(std::move(t)) {}
-    bool busy() const {return pending.valid() || ready.has_value();}
+    bool busy() const {return pending.valid() || media_pending.valid() || avatar_pending.valid() || ready.has_value();}
     size_t cached() const {return entries.size();}
     float aspect(ImTextureID texture) const {
         for(const auto &entry:entries)
@@ -65,6 +65,8 @@ class Artwork {
     void update();
     ImTextureID get(const std::string &base, const std::string &token, const std::string &thumb);
     ImTextureID landscape(const std::string &base,const std::string &token,const std::string &path);
+    ImTextureID media(const std::string &base,const std::string &token,const Item &item,bool landscape=false);
+    ImTextureID asset(const std::string &root,const std::string &name);
     ImTextureID avatar(const std::string &url,const std::string &primary_token);
     void clear();
 };

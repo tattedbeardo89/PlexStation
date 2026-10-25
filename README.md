@@ -1,5 +1,7 @@
 # PlexStation
 
+Current stabilization candidate: [PS5 UI/artwork/startup changes, measurements and acceptance evidence](docs/PS5-STABILIZATION.md).
+
 Native PS5 Plex client built on [ZiZc3/VLC](https://github.com/ZiZc3/VLC),
 using the existing native VLC decoder, Vulkan renderer and timestamped audio.
 The owner confirms launch, Plex authentication, Home profile selection, server
@@ -62,8 +64,8 @@ PS5 build succeeds on GitHub Actions. See the build guide.
 - Scoped cached-endpoint fast reconnect, warm Home presentation, library tabs,
   automatic video defaults, Home Movies, seasonal rows and sidebar controls.
 - Personal Live TV channel/guide/tune adapter, scheduled recording/rule lists
-  and confirmed authorized whole-rule cancellation; free cloud TV and protected
-  Rentals explicitly unavailable without verified supported authorization/DRM.
+  and confirmed authorized whole-rule cancellation; a separate accurate free cloud
+  TV availability page. Rentals is removed from navigation.
 - Original angular SVG/PNG/DXT1 branding and independent PPSA85301 metadata.
 
 These are implemented source paths, with host fixtures and successful native

@@ -52,6 +52,7 @@ struct Item {
     std::string artist, album, parent_id, grandparent_id, section_id, guid;
     int disc=0, track=0;
     int64_t added=0, last_played=0;
+    std::string parent_thumb,grandparent_thumb,parent_art,grandparent_art;
     bool personal = false; // local section designation; never trusted from server JSON
 };
 struct Pin {
@@ -84,6 +85,7 @@ class Client {
     Result home_users(const std::string &primary_token);
     Result switch_home(const std::string &primary_token,const std::string &id,const std::string &pin="");
     Result resources(const std::string &account_token);
+    Client bounded(int connect_ms,int total_ms) const;
     Result select(const Server &, bool allow_http, std::string &selected,
                   std::vector<ConnectionAttempt> *attempts = nullptr, const std::string &preferred = "");
     Result identity(const std::string &base, const std::string &token, const std::string &expected);

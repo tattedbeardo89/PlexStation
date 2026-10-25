@@ -51,12 +51,12 @@ codec/decoder, Vulkan and audio-clock paths are retained. No browser runtime.
   filter/page/sort and GUID-to-local resolution. Managed-user cloud access is
   disabled; no owner's cloud token is substituted. Provider acceptance pending.
 - `live_tv.h`: authorized personal DVR/provider channel/guide/tuning adapter.
-  No verified free-cloud-TV adapter or licensed Rentals DRM path. These remain
-  explicit capability limits, not simulated supported media.
+  Free cloud TV has a separate accurate unavailable state; its supported provider
+  adapter is unestablished. Rentals routes/UI are removed.
 
 ## Image storage and GPU lifetime
 
-`artwork.*` runs bounded image downloads/decodes on one asynchronous worker;
+`artwork.*` runs bounded image downloads/decodes on two bounded media lanes plus an independent avatar lane;
 GPU uploads/frees stay on the render thread. Poster and landscape requests use
 PMS image sizing. Up to 64 entries and 64 MiB retained RGBA are allowed; recently
 visible images and avatars receive eviction protection. `library_free_image`
@@ -67,7 +67,9 @@ private directories/files, bounded reads, atomic writes and LRU byte/entry
 limits. Scopes include account/profile/server; avatars have a separate primary
 account cache. PS5 prefers `/data/plexstation-client`, falling back to the app
 path when needed. Disk persistence/permissions still require console testing.
-Corrupt cache entries are discarded and repaired. Valid disk copies are read
+Corrupt cache entries are discarded and repaired. Absolute approved image URLs
+resolve directly, with cross-origin credentials withheld; parent/series fallback
+fields survive parsing and Home serialization. Automatic attempts are capped at three. Valid disk copies are read
 without redownloading. PNG/JPEG avatars are decoded and bounded to 256 square;
 WebP/SVG are unsupported. Avatar redirects are limited to permitted Plex HTTPS
 origins, at most three hops, with credentials withheld from image CDNs.

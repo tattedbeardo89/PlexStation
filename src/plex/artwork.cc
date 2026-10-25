@@ -2,6 +2,10 @@
 #include "artwork.h"
 #include "diagnostics.h"
 #include "library.h"
+#include "image_source.h"
+#include "presentation.h"
+#include <fstream>
+#include <limits>
 #include "stb_image.h"
 #include <algorithm>
 #include <chrono>
@@ -31,8 +35,10 @@ void Artwork::update() {
         pending=std::async(std::launch::async,[cache,state,erase]{if(erase)cache.clear_scope();else cache.trim();state->bytes=cache.usage();return Decoded{};});
     }
     if(!ready) {
-        if(!pending.valid() || pending.wait_for(std::chrono::milliseconds(0))!=std::future_status::ready)return;
-        ready=pending.get();
+        if(avatar_pending.valid() && avatar_pending.wait_for(std::chrono::milliseconds(0))==std::future_status::ready)ready=avatar_pending.get();
+        else if(pending.valid() && pending.wait_for(std::chrono::milliseconds(0))==std::future_status::ready)ready=pending.get();
+        else if(media_pending.valid() && media_pending.wait_for(std::chrono::milliseconds(0))==std::future_status::ready)ready=media_pending.get();
+        else return;
     }
     if(ready->generation!=generation || ready->key.empty()){ready.reset();return;}
     auto bytes=ready->rgba.size();
@@ -58,23 +64,33 @@ void Artwork::update() {
     else if(!image.rgba.empty()){++stats->upload_failures;image.failure="GPU upload failed";}
     if(image.key.rfind("avatar:",0)==0)fprintf(stderr,"avatar: request=%u stage=gpu-upload result=%s bytes=%zu\n",image.request_id,texture?"ready":"failed",image.rgba.size());
     if(image.key.rfind("avatar:",0)==0)avatar_checkpoint(texture?"gpu-cache-ready":"gpu-cache-unavailable",texture?0:-1,image.rgba.size());
-    entries.push_back({image.key, texture, frame, texture?0:frame+300,image.width,image.height,image.failure,image.request_id});
+    entries.push_back({image.key, texture, frame, texture?0:image.attempt>=3?std::numeric_limits<uint64_t>::max():frame+300*image.attempt,image.width,image.height,image.failure,image.request_id,image.attempt});
 }
-ImTextureID Artwork::get(const std::string &base, const std::string &token,
-                         const std::string &thumb) {
-    if(diagnostic(TextOnly) || diagnostic(NoDownloads)) return 0;
-    bool public_image=(thumb.rfind("https://metadata-static.plex.tv/",0)==0 || thumb.rfind("https://provider-static.plex.tv/",0)==0) && thumb.size()<=4096 && thumb.find_first_of("?#\\\r\n")==std::string::npos;
-    if (thumb.empty() || (!public_image && (thumb.front() != '/' || thumb.rfind("//", 0) == 0)) ||
-        !valid_base(base, true))
-        return 0;
-    Request q{"GET",base+"/photo/:/transcode?width=320&height=480&minSize=1&upscale=0&url="+encode(thumb),{{"X-Plex-Token",token}},""};
-    return request_image(q,"poster:"+(disk_scope.empty()?base:std::string())+thumb);
+ImTextureID Artwork::get(const std::string &base,const std::string &token,const std::string &path){
+    if(diagnostic(TextOnly) || diagnostic(NoDownloads))return 0;
+    Request request;std::string identity;if(!image_request(base,token,path,false,request,identity))return 0;
+    return request_image(request,"poster:"+(disk_scope.empty()?base:std::string())+identity);
 }
-ImTextureID Artwork::landscape(const std::string &base,const std::string &token,const std::string &path) {
-    if(diagnostic(TextOnly) || diagnostic(NoDownloads) || path.empty() || path.front()!='/' || path.rfind("//",0)==0 || !valid_base(base,true))return 0;
-    Request q{"GET",base+"/photo/:/transcode?width=640&height=360&minSize=0&upscale=0&url="+encode(path),{{"X-Plex-Token",token}},""};
-    return request_image(q,"landscape:"+(disk_scope.empty()?base:std::string())+path);
+ImTextureID Artwork::landscape(const std::string &base,const std::string &token,const std::string &path){
+    if(diagnostic(TextOnly) || diagnostic(NoDownloads))return 0;
+    Request request;std::string identity;if(!image_request(base,token,path,true,request,identity))return 0;
+    return request_image(request,"landscape:"+(disk_scope.empty()?base:std::string())+identity);
 }
+ImTextureID Artwork::media(const std::string &base,const std::string &token,const Item &item,bool wide){
+    auto sources=image_candidates(item,wide);std::string waiting;
+    for(const auto &source:sources){Request q;std::string id;if(!image_request(base,token,source,wide,q,id))continue;
+        auto key=(wide?"landscape:":"poster:")+(disk_scope.empty()?base:std::string())+id;
+        auto it=std::find_if(entries.begin(),entries.end(),[&](const Entry &e){return e.key==key;});
+        if(it!=entries.end() && it->texture){it->used=frame;++stats->gpu_hits;return it->texture;}
+        if(waiting.empty() && (it==entries.end() || frame>=it->retry_after))waiting=source;
+    }
+    return waiting.empty()?0:wide?landscape(base,token,waiting):get(base,token,waiting);
+}
+ImTextureID Artwork::asset(const std::string &root,const std::string &name){
+    if(name.empty() || name.find_first_not_of("abcdefghijklmnopqrstuvwxyz-")!=std::string::npos)return 0;
+    return request_image(Request{"GET","asset:"+root+"/artwork/categories/"+name+".png",{},""},"asset:"+name);
+}
+
 namespace {
 // Restrict credentials and redirects to Plex's known HTTPS image origins.
 bool avatar_url(std::string &url) {
@@ -100,7 +116,7 @@ bool avatar_url(std::string &url) {
         }
         url=std::move(safe);
     }
-    return allowed;
+    return allowed || plex_image_origin(image_origin(url));
 }
 }
 ImTextureID Artwork::avatar(const std::string &url,const std::string &token) {
@@ -115,54 +131,56 @@ ImTextureID Artwork::avatar(const std::string &url,const std::string &token) {
     return request_image(q,"avatar:"+normalized,true);
 }
 ImTextureID Artwork::request_image(const Request &request,const std::string &key,bool avatar_image) {
+    unsigned attempt=1;
     for (auto it=entries.begin();it!=entries.end();++it)
         if (it->key == key) {
             it->used = frame;
             if(it->texture)++stats->gpu_hits;
             if(it->texture || frame<it->retry_after){if(avatar_image)avatar_checkpoint(it->texture?"display-ready":"display-unavailable",0,0);return it->texture;}
-            entries.erase(it);break;
+            attempt=it->attempt+1;entries.erase(it);break;
         }
-    if (pending.valid() || ready)
-        return 0;
-    ++stats->gpu_misses;pending_key=key;
+    if((pending.valid() && pending_key==key) || (media_pending.valid() && media_pending_key==key) || (avatar_pending.valid() && avatar_pending_key==key))return 0;
+    auto &lane=avatar_image?avatar_pending:pending.valid()?media_pending:pending;
+    if(lane.valid() || ready)return 0;
+    ++stats->gpu_misses;
+    if(avatar_image)avatar_pending_key=key;else if(&lane==&pending)pending_key=key;else media_pending_key=key;
     auto network = transport;
     auto epoch = generation;
     auto cache=avatar_image?avatar_disk:disk;auto state=stats;
     bool decode=!diagnostic(NoDecode);
     checkpoint(11,"artwork schedule");
     if(home_active)home_checkpoint(10,"first Home artwork scheduled");
-    pending = std::async(std::launch::async, [network, request, key, epoch, decode, avatar_image,cache,state] {
+    lane = std::async(std::launch::async, [network, request, key, epoch, decode, avatar_image,cache,state,attempt] {
         Decoded out;
         static std::atomic<unsigned> serial{0};out.request_id=++serial;
-        out.key = key;
+        out.key = key;out.attempt=attempt;
         out.generation = epoch;
         auto current=request;int redirect_count=0;
-        auto cached=cache.get(key,4u*1024*1024);
+        bool local_asset=request.url.rfind("asset:",0)==0;
+        bool direct_source=avatar_image || local_asset || request.url.find("/photo/:/transcode?")==std::string::npos;
+        int max_width=direct_source?4096:640,max_height=direct_source?4096:960;
+        auto cached=local_asset?std::string():cache.get(key,4u*1024*1024);
         if(!cached.empty()) {
             int width=0,height=0,channels=0;
             auto *data=reinterpret_cast<const unsigned char *>(cached.data());
-            bool valid=stbi_info_from_memory(data,static_cast<int>(cached.size()),&width,&height,&channels) && width>0 && height>0 && width<=(avatar_image?2048:640) && height<=(avatar_image?2048:960);
+            bool valid=stbi_info_from_memory(data,static_cast<int>(cached.size()),&width,&height,&channels) && width>0 && height>0 && width<=max_width && height<=max_height && static_cast<size_t>(width)*height<=8u*1024*1024;
             unsigned char *checked=valid?stbi_load_from_memory(data,static_cast<int>(cached.size()),&width,&height,&channels,4):nullptr;
             if(!checked){++state->decode_failures;cache.erase(key);cached.clear();}
             stbi_image_free(checked);
         }
         const bool disk_hit=!cached.empty();
         if(disk_hit)++state->hits;else ++state->misses;
-        if(!disk_hit)++state->downloads;
-        auto reply=disk_hit?Reply{200,std::move(cached),""}:network(current);
-        for(int redirects=0;avatar_image && redirects<3 && reply.error.empty() &&
-            (reply.status==301 || reply.status==302 || reply.status==303 || reply.status==307 || reply.status==308);++redirects) {
-            auto next=reply.location;
-            if(!next.empty() && next.front()=='/' && next.rfind("//",0)!=0) {
-                auto slash=current.url.find('/',8);next=current.url.substr(0,slash)+next;
-            }
-            if(!avatar_url(next)){avatar_checkpoint("redirect-rejected",reply.status,0);break;}
-            const auto original_token=request.headers.find("X-Plex-Token");
-            ++redirect_count;current.url=next;current.headers.clear();
-            current.headers["Accept"]="image/png,image/jpeg;q=0.9";
-            if(next.rfind("https://plex.tv/",0)==0 && original_token!=request.headers.end())
-                current.headers["X-Plex-Token"]=original_token->second;
-            ++state->downloads;reply=network(current);
+        if(!disk_hit && !local_asset)++state->downloads;
+        Reply reply;
+        if(local_asset){std::ifstream file(request.url.substr(6),std::ios::binary|std::ios::ate);auto size=file?file.tellg():std::streampos(-1);if(size>0 && size<=4*1024*1024){reply.body.resize(static_cast<size_t>(size));file.seekg(0);if(file.read(&reply.body[0],reply.body.size()))reply.status=200;}}
+        else reply=disk_hit?Reply{200,std::move(cached),""}:network(current);
+        auto redirect_start=std::chrono::steady_clock::now();
+        for(int redirects=0;!local_asset && redirects<3 && reply.error.empty() &&
+            (reply.status==301 || reply.status==302 || reply.status==303 || reply.status==307 || reply.status==308);++redirects){
+            if(!image_redirect(request,current,reply.location)){if(avatar_image)avatar_checkpoint("redirect-rejected",reply.status,0);break;}
+            auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-redirect_start).count();
+            if(elapsed>=5000)break;
+            current.timeout_ms=static_cast<int>(5000-elapsed);++redirect_count;++state->downloads;reply=network(current);
         }
         if(avatar_image) {
             fprintf(stderr,"avatar: request=%u stage=fetch http=%d tls=%s redirects=%d bytes=%zu cache=%s format=%s\n",out.request_id,reply.status,disk_hit?"cached":reply.tls_verified?"verified":"unverified",redirect_count,reply.body.size(),disk_hit?"hit":"miss",reply.content_type.rfind("image/png",0)==0?"png":reply.content_type.rfind("image/jpeg",0)==0?"jpeg":reply.content_type.rfind("image/webp",0)==0?"webp-unsupported":"other");
@@ -177,13 +195,14 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
         if (reply.status != 200 || !reply.error.empty() || reply.body.empty() ||
             reply.body.size() > 4 * 1024 * 1024) {
             if(avatar_image)avatar_checkpoint("http-or-size-rejected",reply.status,reply.body.size());
-            out.failure="HTTP "+std::to_string(reply.status)+" / transport "+std::to_string(static_cast<int>(reply.failure));
+            out.failure=(reply.status==401 || reply.status==403?"Image authorization denied":reply.status==0?"Image transport/TLS failure":"Image HTTP "+std::to_string(reply.status))+" / code "+std::to_string(static_cast<int>(reply.failure));
+            fprintf(stderr,"art: request=%u stage=fetch http=%d transport=%d bytes=%zu attempt=%u\n",out.request_id,reply.status,static_cast<int>(reply.failure),reply.body.size(),attempt);
             return out;
         }
         const auto *bytes = reinterpret_cast<const unsigned char *>(reply.body.data());
         int w, h, c;
         if (!stbi_info_from_memory(bytes, reply.body.size(), &w, &h, &c) || w <= 0 || h <= 0 ||
-            w > (avatar_image?2048:640) || h > (avatar_image?2048:960)) {
+            w>max_width || h>max_height || static_cast<size_t>(w)*h>8u*1024*1024) {
             ++state->decode_failures;
             out.failure=reply.content_type.rfind("image/webp",0)==0?"WebP avatar is unsupported":
                 reply.content_type.rfind("image/svg",0)==0?"SVG avatar is unsupported":"Unsupported image format or dimensions";
@@ -192,7 +211,7 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
         }
         checkpoint(13,"image decode");
         unsigned char *decoded = stbi_load_from_memory(bytes, reply.body.size(), &w, &h, &c, 4);
-        if (decoded && w>0 && h>0 && w<=(avatar_image?2048:640) && h<=(avatar_image?2048:960)) {
+        if (decoded && w>0 && h>0 && w<=max_width && h<=max_height && static_cast<size_t>(w)*h<=8u*1024*1024) {
             if(home_active)home_checkpoint(11,"first Home image decoded");
             if(avatar_image) {
                 // Center-crop and bound retained RGBA to 256 square (256 KiB).
@@ -203,13 +222,14 @@ ImTextureID Artwork::request_image(const Request &request,const std::string &key
                     std::copy_n(decoded+(static_cast<size_t>(sy)*w+sx)*4,4,out.rgba.data()+(static_cast<size_t>(y)*side+x)*4);
                 }
             } else {
-                out.width = w;out.height = h;
-                out.rgba.assign(decoded, decoded + static_cast<size_t>(w) * h * 4);
+                float ratio=std::min(1.f,std::min(640.f/w,960.f/h));out.width=std::max(1,static_cast<int>(w*ratio));out.height=std::max(1,static_cast<int>(h*ratio));
+                out.rgba.resize(static_cast<size_t>(out.width)*out.height*4);
+                for(int y=0;y<out.height;++y)for(int x=0;x<out.width;++x)std::copy_n(decoded+(static_cast<size_t>(y*h/out.height)*w+x*w/out.width)*4,4,out.rgba.data()+(static_cast<size_t>(y)*out.width+x)*4);
             }
             if(avatar_image)avatar_checkpoint("decode-dimensions",out.width,static_cast<size_t>(out.height));
         }
         if(out.rgba.empty()){++state->decode_failures;out.failure="Image decoding failed";cache.erase(key);}
-        else if(!disk_hit && !cache.put(key,reply.body)){++state->write_failures;if(avatar_image)avatar_checkpoint("disk-write-failed",0,reply.body.size());}
+        else if(!local_asset && !disk_hit && !cache.put(key,reply.body)){++state->write_failures;if(avatar_image)avatar_checkpoint("disk-write-failed",0,reply.body.size());}
         if(avatar_image)state->avatar_bytes=cache.usage();else state->bytes=cache.usage();
         if(avatar_image)fprintf(stderr,"avatar: request=%u stage=decode result=%s bytes=%zu\n",out.request_id,out.rgba.empty()?"failed":"ready",out.rgba.size());
         if(avatar_image)avatar_checkpoint(disk_hit?"disk-hit":"disk-miss",0,out.rgba.size());
@@ -232,7 +252,7 @@ std::string Artwork::avatar_state(const std::string &url) const {
     if(!avatar_url(normalized))return "Unsupported avatar origin";
     auto key="avatar:"+normalized;
     for(const auto &entry:entries)if(entry.key==key)return entry.texture?"Ready":entry.failure.empty()?"Avatar unavailable":entry.failure+" (#"+std::to_string(entry.request_id)+")";
-    return pending_key==key && busy()?"Loading avatar…":"Waiting for avatar…";
+    return avatar_pending_key==key && avatar_pending.valid()?"Loading avatar…":"Waiting for avatar…";
 }
 void Artwork::retry_avatars() {
     // Retain healthy posters and avatars. Retry failures without disk destruction.
@@ -245,7 +265,7 @@ void Artwork::set_scope(const std::string &root,const std::string &scope,size_t 
     disk=DiskCache(root,scope,max_bytes);trim_disk_pending=true;
 }
 void Artwork::clear() {
-    ready.reset();pending_key.clear();gpu_bytes=0;
+    ready.reset();pending_key.clear();media_pending_key.clear();avatar_pending_key.clear();gpu_bytes=0;
     ++generation; // An obsolete in-flight request is discarded by update(), without blocking the
                   // UI.
     // clear() can run after an avatar was drawn earlier in the SAME UI frame.

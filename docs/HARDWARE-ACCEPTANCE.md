@@ -1,5 +1,7 @@
 # Physical PS5 acceptance — current audit candidate
 
+> Historical audit candidate. For this stabilization branch use [the current report](PS5-STABILIZATION.md), including Rentals removal, free TV/DVR separation, shared card geometry and icon diagnostics.
+
 No check below passes merely because a host fixture or native compilation passes.
 Use PS5 13.40, kstuff Lite, ShadowMountPlus 1.7 Beta 5 Fix 1, DualSense and
 PPSA85301. Keep `5d8adb9` and `1ad4f6c4ab562762bd4c2ffa958cc098e234528a`

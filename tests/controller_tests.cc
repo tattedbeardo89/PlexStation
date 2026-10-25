@@ -47,6 +47,8 @@ namespace plex {
 Transport transport_override;
 Transport ps5_transport() { return transport_override ? transport_override : Transport([](const Request &) { return Reply{}; }); }
 void Artwork::update() {}
+ImTextureID Artwork::media(const std::string &,const std::string &,const Item &,bool){return 0;}
+ImTextureID Artwork::asset(const std::string &,const std::string &){return 0;}
 void Artwork::clear() {}
 void Artwork::retry_avatars() {}
 std::string Artwork::avatar_state(const std::string &) const {return "Waiting";}
@@ -122,8 +124,8 @@ int main() {
     settings=false; in_detail=true; sidebar=false; focus=2;
     press(PAD_UP); assert(focus==1); press(PAD_UP); assert(focus==0); press(PAD_CIRCLE); assert(!in_detail);
     listing.resize(12); page_path="/library/metadata/grid"; focus=0; sidebar=false;
-    press(PAD_DOWN); assert(focus==5); press(PAD_RIGHT); assert(focus==6);
-    press(PAD_LEFT); assert(focus==5); press(PAD_UP); assert(focus==0);
+    press(PAD_DOWN); assert(focus==6); press(PAD_RIGHT); assert(focus==7);
+    press(PAD_LEFT); assert(focus==6); press(PAD_UP); assert(focus==0);
     frame(0,.9f,0); assert(focus==1); frame();
     history.push_back({"/old", "Previous", listing, 3, 0, 12});
     press(PAD_CIRCLE); assert(page_path=="/old" && focus==3 && history.empty());
@@ -578,6 +580,42 @@ int main() {
     film.section_id="home-movies";assert(personal_item(film));
     film.section_id.clear();assert(!personal_item(film));
     search_screen=false;library_context=false;
+    // Rendered card/focus measurements, including first/middle/last mixed-media rail items.
+    audio.screen=false;settings=false;in_detail=false;sidebar=false;profile_screen=false;account_loading=false;editor=0;library_context=false;search_screen=false;available.clear();
+    home_refresh_at=clock_now+10000;home_screen=true;feed_rows.clear();feed_columns.clear();feed_scroll.clear();
+    Item book_section_item;book_section_item.id="books-render";book_section_item.type="artist";home_sections={book_section_item};pref_set((audio_scope()+".books."+encode(book_section_item.id)).c_str(),1);
+    for(const char *kind:{"movie","show","episode","album","category"}){Hub hub;hub.id=kind;hub.title=kind;for(int i=0;i<12;++i){Item card;card.id=std::string(kind)+std::to_string(i);card.type=kind;card.title="Representative title "+std::to_string(i);if(hub.id=="album")card.section_id="books-render";hub.entries.push_back(card);}feed_rows.push_back(hub);feed_columns.push_back(0);feed_scroll.push_back(0);}
+    for(int height:{1080,2160}){
+        gfx.height=height;gfx.width=height*16/9;io.DisplaySize={static_cast<float>(gfx.width),static_cast<float>(height)};float scale=height/1080.f;
+        for(size_t row_index=0;row_index<feed_rows.size();++row_index)for(int selected:{0,6,11}){
+            feed_focus=row_index;feed_vertical=static_cast<float>(row_index);feed_columns[row_index]=selected;frame();bool found=false;
+            for(const auto &measure:rendered_cards){
+                float expected=measure.kind==CardKind::Square?1.f:(measure.kind==CardKind::Episode || measure.kind==CardKind::Category)?16.f/9:2.f/3;
+                assert(std::abs(measure.width/measure.height-expected)<.001f);
+                assert(std::abs(measure.focus_width-measure.width-8*scale)<.01f && std::abs(measure.focus_x-measure.x+4*scale)<.01f);
+                if(measure.selected){found=true;assert(measure.focus_x>=380*scale && measure.focus_x+measure.focus_width<=1840*scale);}
+            }
+            assert(found);
+        }
+    }
+    gfx.width=1920;gfx.height=1080;io.DisplaySize={1920,1080};
+    // Free Live TV is not a DVR setup route; Rentals has no registry or route.
+    home_screen=false;sidebar=true;nav=10;press(PAD_CROSS);assert(page_path=="free-live-tv" && job==None);
+    assert(std::string(navigation[8])=="Audiobooks" && nav_visible(8));for(const auto *label:navigation)assert(std::string(label)!="Rentals");
+    auto order=sidebar_order();auto live_pos=std::find(order.begin(),order.end(),10),book_pos=std::find(order.begin(),order.end(),8);assert(live_pos!=order.end() && book_pos!=order.end());
+    auto nav_owner=account_id;account_id="fresh-navigation-profile";auto defaults=sidebar_order();
+    auto free_position=std::find(defaults.begin(),defaults.end(),10);assert(free_position!=defaults.end() && free_position+2<defaults.end() && *(free_position+1)==8 && *(free_position+2)==7);
+    account_id="legacy-navigation-profile";pref_set(account_key("plex_sidebar_order_v1").c_str(),Json::array({0,7,10,11,6}).dump());pref_set(account_key("plex_sidebar_hidden_v1").c_str(),1<<11);
+    auto migrated=sidebar_order();assert(migrated[3]==8 && std::count(migrated.begin(),migrated.end(),8)==1 && nav_visible(11));account_id=nav_owner;
+    assert(initials("Admin User")=="AU" && initials("Guest")=="G");
+    // A partial Home is visible and navigation cancels the rest without blocking.
+    std::promise<Result> slow_home;pending=slow_home.get_future();job=HomeFeed;pending_generation=screen_generation;
+    auto epoch=++feed_generation;Json partial={{"rows",Json::array({{{"id","partial"},{"title","Continue Watching"},{"payload",{{"MediaContainer",{{"Metadata",Json::array({{{"ratingKey","partial-film"},{"type","movie"},{"title","First usable item"}}})}}}}}}})}};
+    feed_rows.clear();feed_columns.clear();feed_scroll.clear();publish_home(partial,epoch);consume_home();assert(!feed_rows.empty() && feed_rows[0].entries[0].id=="partial-film");
+    home_screen=true;sidebar=false;open_media(feed_rows[0].entries[0]);assert(deferred_media.id=="partial-film" && feed_generation!=epoch && job==HomeFeed);
+    slow_home.set_value(Result{{},"cancelled",0});frame();assert(deferred_media.id.empty() && (job==Details || in_detail));if(job!=None){pending.wait();finish_job();}
+    // A snapshot from an obsolete user/generation cannot populate the next Home.
+    feed_rows.clear();publish_home(partial,epoch);consume_home();assert(feed_rows.empty());
     puts("Subtitle controller settings: default Off, persistence, nonremembered reset, menu Off passed");
     unlink(credential_file.c_str());unlink((std::string(temp)+"/plexstation-listening.json").c_str());unlink((std::string(temp)+"/plexstation-progress.json").c_str()); rmdir(temp);
     puts("Authentication UI transitions passed: cancellation, approval, server selection, startup validation, retryable network failure, invalid-token clearing, sign-out");
