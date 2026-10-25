@@ -1,5 +1,6 @@
 // Called from the existing presentation suite; real parser/composition, fixture PMS.
 inline void physical_composition_cases(){
+    for(const auto &malformed:{Json(),Json::array(),Json(7),Json("invalid cache shape")})assert(home_rows(ordered_home(malformed)).empty());
     Item movies;movies.id="films";movies.type="movie";
     Item series;series.id="shows";series.type="show";
     Client feed([](const Request &request){
@@ -34,6 +35,13 @@ inline void physical_composition_cases(){
         if(section.type=="show")assert(std::count_if(library.begin(),library.end(),[](const Hub &row){return row.id=="recentlyAddedTV" && row.entries[0].id=="top-added";})==1);
     }
     auto resources=Json::array({{{"provides","server"},{"clientIdentifier","same"},{"accessToken","scoped"},{"connections",Json::array({{{"uri","https://local.invalid"}},{{"uri","https://local.invalid"}}})}},{{"provides","server"},{"machineIdentifier","same"},{"accessToken","scoped"},{"connections",Json::array({{{"uri","https://remote.invalid"}}})}}});
+    Client fallback([](const Request &request){
+        if(request.url.find("inProgress=1")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};
+        if(request.url.find("/hubs/sections/")!=std::string::npos)return Reply{200,R"({"MediaContainer":{"Hub":[{"hubIdentifier":"movie.inprogress","type":"movie","Metadata":[{"ratingKey":"fallback-resume","type":"movie","viewOffset":50,"duration":1000}]}]}})",""};
+        return Reply{200,R"({"MediaContainer":{"Metadata":[{"ratingKey":"added","type":"movie","originallyAvailableAt":"2020-01-01"}]}})",""};
+    },"fallback-position");
+    auto fallback_rows=home_rows(library_feed(fallback,"https://fixture.invalid","profile",movies,false).data);
+    assert(fallback_rows.size()>=2 && fallback_rows[0].id=="continueWatching" && fallback_rows[0].entries[0].id=="fallback-resume");
     auto unique=servers(resources);assert(unique.size()==1 && unique[0].id=="same" && unique[0].connections.size()==2);
     std::cout<<"Physical report regressions: exact five populated Home slots, forbidden hubs/unauthorized items excluded, deterministic refresh, top Continue Watching/TV-added aliases and machine-ID dedup passed\n";
 }

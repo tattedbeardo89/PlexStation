@@ -128,5 +128,13 @@ static void permission_and_selection_cases(){
     save_account_pref("plex_preferred_server","other");complete_case(Resources,{Json::array({one,record("other")}),"",200});
     assert(job==Select && connection_target.id=="other");pending.wait();finish_job();assert(reconnect_screen && account_pref("plex_preferred_server")=="other");
     force_picker=true;reconnect_screen=false;complete_case(Resources,{Json::array({one}),"",200});assert(job==None && available.size()==1);
+    // A new connection must open Home even if the new server reuses an old
+    // section ID and the previous library's tabs retained input focus.
+    client=std::make_unique<Client>([](const Request &){return Reply{200,R"({"MediaContainer":{"Metadata":[]}})",""};},"connection-context");
+    active_library.id="retained-section";library_context=true;library_tabs_focus=true;
+    connection_target={};connection_target.id="only";connection_target.token="scoped";next_base="https://only.invalid";
+    complete_case(Select,{Json{{"MediaContainer",{{"Directory",Json::array({{{"key","retained-section"},{"type","movie"},{"title","Authorized library"}}})}}}},"",200});
+    assert(!library_context && !library_tabs_focus && active_library.id.empty() && home_screen);
+    while(job!=None){pending.wait();finish_job();}
     puts("Permission-aware library routes, profile/server-scoped classifications, Settings controls, stable selection, one/multiple/offline/remembered/duplicate server cases passed");
 }

@@ -31,6 +31,7 @@ inline const std::vector<std::string> &home_order(){
     static const std::vector<std::string> value={"continueWatching","recentlyReleasedMovies","recentlyReleasedTV","recentlyAddedMovies","recentlyAddedTV","seasonal"};return value;
 }
 inline Json ordered_home(const Json &source){
+    if(!source.is_object())return Json{{"rows",Json::array()},{"warnings",Json::array()}};
     Json rows=Json::array();auto list=source.find("rows");
     if(list!=source.end() && list->is_array())for(const auto &id:home_order())for(const auto &row:*list)
         if(text(row,"id")==id){rows.push_back(row);break;}

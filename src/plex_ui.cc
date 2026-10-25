@@ -353,6 +353,7 @@ void connected(const Json &data) {
     reset_cloud();
     live_cancel_id.clear();live_subscriptions=Json::array();live_schedule=Json::array();
     clear_next();audio_reset();restore_video_preferences();
+    library_context=false;library_tabs_focus=false;active_library={};
     base=next_base; selected_server=connection_target; server_token=connection_target.token;
     save_account_pref("plex_preferred_server",selected_server.id);
     save_account_pref("plex_verified_endpoint_v2",base);

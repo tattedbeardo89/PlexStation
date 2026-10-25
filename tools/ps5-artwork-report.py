@@ -118,7 +118,7 @@ def inspect(ftp, roots):
                 except (ValueError, UnicodeDecodeError):
                     observations.append({'kind': kind, 'path': path, 'state': 'invalid-title-metadata'})
                     break
-                if metadata.get('titleId') != TITLE:
+                if not isinstance(metadata, dict) or metadata.get('titleId') != TITLE:
                     observations.append({'kind': kind, 'path': path, 'state': 'different-title-not-inspected'})
                     break
             observations.append({'kind': kind, 'path': path, 'state': 'read', **describe(data)})
@@ -151,7 +151,7 @@ def main():
     if args.package:
         files = package_files(args.package)
         metadata = json.loads(files.get('sce_sys/param.json', b'{}'))
-        if metadata.get('titleId') != TITLE:
+        if not isinstance(metadata, dict) or metadata.get('titleId') != TITLE:
             parser.error('Package identity is not PPSA85301')
         report['package'] = {name: describe(data) for name, data in files.items()}
         packaged = files.get('sce_sys/icon0.png')

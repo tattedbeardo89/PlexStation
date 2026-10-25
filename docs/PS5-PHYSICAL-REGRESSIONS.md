@@ -138,6 +138,9 @@ recently-added episode hub as a second added rail beside generated series entrie
 Aliases now normalize before page insertion. The manually generated top Continue
 Watching and first series-level Recently Added rows take precedence. Movie/episode
 types, section IDs, progress and artwork remain attached to their original items.
+If only a server fallback supplies Continue Watching, it is inserted at the top
+even when other recommended rows have already been composed. Connecting a server
+also clears the prior library/tab context before opening its Home.
 
 ### Blank initial pages
 

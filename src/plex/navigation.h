@@ -94,7 +94,10 @@ inline Result library_feed(Client &client,const std::string &base,const std::str
         }
         if(id.rfind("recentlyReleased",0)==0)std::stable_sort(metadata.begin(),metadata.end(),[](const Json &a,const Json &b){return text(a,"originallyAvailableAt")>text(b,"originallyAvailableAt");});
         if(id.rfind("recentlyAdded",0)==0)std::stable_sort(metadata.begin(),metadata.end(),[](const Json &a,const Json &b){return number(a,"addedAt")>number(b,"addedAt");});
-        if(!metadata.empty())rows.push_back({{"id",id},{"title",title},{"continuing",continuing},{"payload",{{"MediaContainer",{{"Metadata",std::move(metadata)}}}}}});
+        if(!metadata.empty()){
+            Json row={{"id",id},{"title",title},{"continuing",continuing},{"payload",{{"MediaContainer",{{"Metadata",std::move(metadata)}}}}}};
+            if(continuing)rows.insert(rows.begin(),std::move(row));else rows.push_back(std::move(row));
+        }
     };
     auto path="/library/sections/"+encode(section.id);
     auto type=section.type=="show"?"4":"1";
