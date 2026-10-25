@@ -25,6 +25,7 @@ int main(){
  episode.thumb=episode.parent_thumb;sources=image_candidates(episode,true);assert(sources.front()=="/series-art");
  assert(initials("Alice Beardo")=="AB" && initials("")=="?" && category_art("Genre: Science Fiction")=="science-fiction" && category_art("Unknown category")=="other");
  Request q;std::string key;
+ assert(!image_request("https://server.invalid","private","?X-Plex-Token=secret",false,q,key));
  assert(image_request("https://server.invalid","private","/library/a?ts=1",false,q,key) && q.headers.at("X-Plex-Token")=="private");
  assert(image_request("https://server.invalid","private","https://metadata-static.plex.tv/image?width=320&X-Plex-Token=secret",false,q,key));
  assert(q.headers.count("X-Plex-Token")==0 && key=="https://metadata-static.plex.tv/image?width=320");

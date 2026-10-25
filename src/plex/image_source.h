@@ -12,7 +12,7 @@ inline bool clean_image_url(std::string &url){
         while(at<url.size()){auto end=url.find('&',at);if(end==std::string::npos)end=url.size();auto pair=url.substr(at,end-at),key=pair.substr(0,pair.find('='));std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return std::tolower(c);});
             if(!pair.empty() && key!="token" && key!="x-plex-token" && key!="auth_token" && key!="authtoken" && key!="access_token" && key!="authorization" && key!="jwt" && key.find('%')==std::string::npos){clean+=first?'?':'&';clean+=pair;first=false;}at=end+1;}
         url=std::move(clean);
-    }return true;
+    }return !url.empty();
 }
 inline bool image_request(const std::string &base,const std::string &token,std::string path,bool landscape,Request &request,std::string &identity){
     if(!clean_image_url(path))return false;
